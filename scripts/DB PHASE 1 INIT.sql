@@ -9,11 +9,10 @@ CREATE TABLE users (
   type ENUM('admin', 'warehouse', 'inspector', 'operator') NOT NULL
 );
 
-select * from users;
-
 CREATE TABLE warehouses (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  name VARCHAR(100) NOT NULL UNIQUE
+  name VARCHAR(100) NOT NULL UNIQUE,
+  type ENUM('Fabric', 'RMG', 'Accessory') NOT NULL
 );
 
 CREATE TABLE warehouse_racks (

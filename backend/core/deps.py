@@ -5,7 +5,7 @@ from jose import jwt
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
-from .. import crud, models, schemas
+from .. import models, schemas
 from . import security
 from .config import settings
 from ..database import SessionLocal

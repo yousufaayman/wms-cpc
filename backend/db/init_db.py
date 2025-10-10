@@ -3,7 +3,8 @@ from ..database import engine
 from ..models import Base, User, UserType
 from ..core.security import get_password_hash
 from sqlalchemy.orm import Session
-from .. import crud, schemas
+from .. import schemas
+from ..crud import users
 from ..core.config import settings
 
 def init_db() -> None:
@@ -25,6 +26,6 @@ def create_initial_admin() -> None:
                 password="admin123",
                 type=schemas.UserType.ADMIN
             )
-            crud.create_user(db, obj_in=admin_in)
+            users.create_user(db, obj_in=admin_in)
     finally:
         db.close()

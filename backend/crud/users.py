@@ -1,22 +1,21 @@
 from sqlalchemy.orm import Session
-from . import models, schemas
-from typing import List, Dict, Optional, Any, Union, Tuple
-import pandas as pd
-import base36
-import hashlib
-from .core.security import get_password_hash, verify_password
-from .models import User
-from .schemas import UserCreate, UserUpdate
-import uuid
-# User CRUD operations
+from typing import List, Dict, Optional, Any, Union
+from ..models import User
+from ..schemas import UserCreate, UserUpdate
+from ..core.security import get_password_hash
+
+
 def get_user(db: Session, id: int) -> Optional[User]:
     return db.query(User).filter(User.id == id).first()
+
 
 def get_user_by_username(db: Session, username: str) -> Optional[User]:
     return db.query(User).filter(User.username == username).first()
 
+
 def get_users(db: Session, *, skip: int = 0, limit: int = 100) -> List[User]:
     return db.query(User).offset(skip).limit(limit).all()
+
 
 def create_user(db: Session, *, obj_in: UserCreate) -> User:
     db_obj = User(
@@ -28,6 +27,7 @@ def create_user(db: Session, *, obj_in: UserCreate) -> User:
     db.commit()
     db.refresh(db_obj)
     return db_obj
+
 
 def update_user(
     db: Session, *, db_obj: User, obj_in: Union[UserUpdate, Dict[str, Any]]
@@ -50,8 +50,9 @@ def update_user(
     db.refresh(db_obj)
     return db_obj
 
+
 def delete_user(db: Session, *, id: int) -> User:
     obj = db.query(User).get(id)
     db.delete(obj)
     db.commit()
-    return obj 
+    return obj
