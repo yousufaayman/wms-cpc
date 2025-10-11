@@ -6,6 +6,7 @@ import { warehouseApi, Warehouse } from "@/lib/api";
 import LanguageToggle from "./LanguageToggle";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { clearToken } from "@/lib/auth";
 
 const Sidebar = () => {
   const navigate = useNavigate();
@@ -27,6 +28,7 @@ const Sidebar = () => {
   };
 
   const handleLogout = () => {
+    clearToken();
     navigate("/");
   };
 

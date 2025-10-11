@@ -8,6 +8,7 @@ import Login from "./pages/Login";
 import Warehouses from "./pages/Warehouses";
 import NotFound from "./pages/NotFound";
 import LoadingSpinner from "./components/LoadingSpinner";
+import ProtectedRoute from "./components/ProtectedRoute";
 import { LanguageProvider } from "./contexts/LanguageContext";
 
 // Lazy load Dashboard component
@@ -25,21 +26,29 @@ const App = () => (
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<Login />} />
-            <Route path="/warehouses" element={<Warehouses />} />
+            <Route path="/warehouses" element={
+              <ProtectedRoute>
+                <Warehouses />
+              </ProtectedRoute>
+            } />
             <Route 
               path="/dashboard" 
               element={
-                <Suspense fallback={<LoadingSpinner message="Loading Dashboard..." />}>
-                  <Dashboard />
-                </Suspense>
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Dashboard..." />}>
+                    <Dashboard />
+                  </Suspense>
+                </ProtectedRoute>
               } 
             />
             <Route 
               path="/manage-racks" 
               element={
-                <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
-                  <ManageWarehouseRacks />
-                </Suspense>
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
+                    <ManageWarehouseRacks />
+                  </Suspense>
+                </ProtectedRoute>
               } 
             />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

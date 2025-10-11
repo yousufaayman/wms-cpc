@@ -6,6 +6,9 @@ import { ArrowRight, Loader2, Package, Shirt, Zap } from "lucide-react";
 import { useEffect, useState } from "react";
 import { warehouseApi, Warehouse, WarehouseType } from "@/lib/api";
 import PageTransition from "@/components/PageTransition";
+import { useTranslation } from "@/hooks/useTranslation";
+import { useLanguage } from "@/contexts/LanguageContext";
+import LanguageToggle from "@/components/LanguageToggle";
 
 const Warehouses = () => {
   const navigate = useNavigate();
@@ -13,6 +16,8 @@ const Warehouses = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState<number | null>(null);
+  const { t } = useTranslation();
+  const { language } = useLanguage();
 
   // Helper function to get warehouse type icon
   const getWarehouseTypeIcon = (type: WarehouseType) => {
@@ -69,9 +74,12 @@ const Warehouses = () => {
   if (loading) {
     return (
       <PageTransition>
-        <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+          <div className="absolute top-4 right-4">
+            <LanguageToggle />
+          </div>
           <div className="text-center">
-            <h1 className="text-4xl font-bold text-primary mb-4">Loading Warehouses...</h1>
+            <h1 className="text-4xl font-bold text-primary mb-4">{t('loadingWarehouses')}</h1>
           </div>
         </div>
       </PageTransition>
@@ -81,9 +89,12 @@ const Warehouses = () => {
   if (error) {
     return (
       <PageTransition>
-        <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+          <div className="absolute top-4 right-4">
+            <LanguageToggle />
+          </div>
           <div className="text-center">
-            <h1 className="text-4xl font-bold text-primary mb-4">Error Loading Warehouses</h1>
+            <h1 className="text-4xl font-bold text-primary mb-4">{t('errorLoadingWarehouses')}</h1>
             <p className="text-muted-foreground">{error}</p>
           </div>
         </div>
@@ -93,20 +104,23 @@ const Warehouses = () => {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+      <div className="absolute top-4 right-4">
+        <LanguageToggle />
+      </div>
       <div className={`w-full mx-auto px-4 ${
         warehouses.length <= 2 ? 'max-w-4xl' : 
         warehouses.length <= 4 ? 'max-w-5xl' : 
         'max-w-7xl'
       }`}>
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-primary mb-4">Select Warehouse</h1>
+          <h1 className="text-4xl font-bold text-primary mb-4">{t('selectWarehouse')}</h1>
           <Button 
             variant="outline" 
             size="lg"
             className="mt-4 hover:bg-primary hover:text-primary-foreground transition-all duration-300"
           >
-            Warehouse Management
+            {t('warehouseManagement')}
           </Button>
         </div>
 
@@ -155,11 +169,11 @@ const Warehouses = () => {
                     {navigating === warehouse.id ? (
                       <>
                         <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-                        Loading...
+                        {t('loading')}
                       </>
                     ) : (
                       <>
-                        Select
+                        {t('select')}
                         <ArrowRight className="ml-1 h-4 w-4 group-hover:translate-x-1 transition-transform duration-300" />
                       </>
                     )}

@@ -1,11 +1,19 @@
-// Update this page (the content is just a fallback if you fail to update the page)
+import { useTranslation } from "@/hooks/useTranslation";
+import { useLanguage } from "@/contexts/LanguageContext";
+import LanguageToggle from "@/components/LanguageToggle";
 
 const Index = () => {
+  const { t } = useTranslation();
+  const { language } = useLanguage();
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background">
+    <div className={`flex min-h-screen items-center justify-center bg-background ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+      <div className="absolute top-4 right-4">
+        <LanguageToggle />
+      </div>
       <div className="text-center">
-        <h1 className="mb-4 text-4xl font-bold">Welcome to Your Blank App</h1>
-        <p className="text-xl text-muted-foreground">Start building your amazing project here!</p>
+        <h1 className="mb-4 text-4xl font-bold">{t('welcomeToApp')}</h1>
+        <p className="text-xl text-muted-foreground">{t('startBuilding')}</p>
       </div>
     </div>
   );

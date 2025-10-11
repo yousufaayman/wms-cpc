@@ -86,4 +86,13 @@ All colors MUST be HSL.
   body {
     @apply bg-background text-foreground;
   }
+
+  /* RTL Support */
+  .rtl {
+    direction: rtl;
+  }
+
+  .ltr {
+    direction: ltr;
+  }
 }

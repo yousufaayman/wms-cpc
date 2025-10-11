@@ -7,12 +7,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Package } from "lucide-react";
 import { toast } from "sonner";
 import { login, saveToken } from "@/lib/auth";
+import { useTranslation } from "@/hooks/useTranslation";
+import { useLanguage } from "@/contexts/LanguageContext";
+import LanguageToggle from "@/components/LanguageToggle";
 
 const Login = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const { language } = useLanguage();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,17 +25,20 @@ const Login = () => {
     try {
       const res = await login(username, password);
       saveToken(res.access_token);
-      toast.success("Login successful!");
+      toast.success(t('loginSuccessful'));
       navigate("/warehouses");
     } catch (err: any) {
-      toast.error(err?.message || "Login failed");
+      toast.error(err?.message || t('loginFailed'));
     } finally {
       setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+    <div className={`min-h-screen flex items-center justify-center bg-background px-4 ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+      <div className="absolute top-4 right-4">
+        <LanguageToggle />
+      </div>
       <Card className="w-full max-w-md shadow-lg">
         <CardHeader className="space-y-1 text-center">
           <div className="flex justify-center mb-4">
@@ -39,20 +47,20 @@ const Login = () => {
             </div>
           </div>
           <CardTitle className="text-2xl font-bold text-primary">
-            Warehouse Management System
+            {t('warehouseManagementSystem')}
           </CardTitle>
           <CardDescription>
-            Enter your credentials to access your warehouses
+            {t('enterCredentials')}
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">{t('username')}</Label>
               <Input
                 id="username"
                 type="text"
-                placeholder="Enter your username"
+                placeholder={t('enterUsername')}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
@@ -60,7 +68,7 @@ const Login = () => {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">{t('password')}</Label>
               <Input
                 id="password"
                 type="password"
@@ -76,14 +84,14 @@ const Login = () => {
               className="w-full"
               disabled={isLoading}
             >
-              {isLoading ? "Signing in..." : "Sign In"}
+              {isLoading ? t('signingIn') : t('signIn')}
             </Button>
             <div className="text-center">
               <a
                 href="#"
                 className="text-sm text-primary hover:underline"
               >
-                Forgot password?
+                {t('forgotPassword')}
               </a>
             </div>
           </form>
