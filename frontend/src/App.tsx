@@ -14,6 +14,9 @@ import { LanguageProvider } from "./contexts/LanguageContext";
 // Lazy load Dashboard component
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ManageWarehouseRacks = lazy(() => import("./pages/ManageWarehouseRacks"));
+const ManageInventory = lazy(() => import("./pages/ManageInventory"));
+const Receipts = lazy(() => import("./pages/Receipts"));
+const ReceiptDetail = lazy(() => import("./pages/ReceiptDetail"));
 
 const queryClient = new QueryClient();
 
@@ -47,6 +50,36 @@ const App = () => (
                 <ProtectedRoute>
                   <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
                     <ManageWarehouseRacks />
+                  </Suspense>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/manage-inventory" 
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Inventory..." />}>
+                    <ManageInventory />
+                  </Suspense>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/receipts" 
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Receipts..." />}>
+                    <Receipts />
+                  </Suspense>
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/receipts/:id" 
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Receipt Details..." />}>
+                    <ReceiptDetail />
                   </Suspense>
                 </ProtectedRoute>
               } 

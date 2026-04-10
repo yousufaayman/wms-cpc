@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, Package, Boxes, FileText } from "lucide-react";
 import { useEffect, useState } from "react";
 import { warehouseApi, Warehouse } from "@/lib/api";
 import LanguageToggle from "./LanguageToggle";
@@ -22,6 +22,8 @@ const Sidebar = () => {
   // Determine active page
   const isDashboardActive = location.pathname === "/dashboard";
   const isManageRacksActive = location.pathname === "/manage-racks";
+  const isManageInventoryActive = location.pathname === "/manage-inventory";
+  const isReceiptsActive = location.pathname.startsWith("/receipts");
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -42,6 +44,14 @@ const Sidebar = () => {
 
   const handleManageRacks = () => {
     navigate(`/manage-racks?warehouse=${warehouseId}`);
+  };
+
+  const handleManageInventory = () => {
+    navigate(`/manage-inventory?warehouse=${warehouseId}`);
+  };
+
+  const handleReceipts = () => {
+    navigate(`/receipts?warehouse=${warehouseId}`);
   };
 
   useEffect(() => {
@@ -101,6 +111,15 @@ const Sidebar = () => {
           {!isCollapsed && <span className="ml-2">{t('dashboard')}</span>}
         </Button>
         <Button
+          variant={isManageInventoryActive ? "secondary" : "ghost"}
+          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isManageInventoryActive ? "bg-primary/10 text-primary" : ""}`}
+          onClick={handleManageInventory}
+          title={isCollapsed ? "Manage Inventory" : ''}
+        >
+          <Boxes className="h-4 w-4" />
+          {!isCollapsed && <span className="ml-2">Manage Inventory</span>}
+        </Button>
+        <Button
           variant={isManageRacksActive ? "secondary" : "ghost"}
           className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isManageRacksActive ? "bg-primary/10 text-primary" : ""}`}
           onClick={handleManageRacks}
@@ -108,6 +127,15 @@ const Sidebar = () => {
         >
           <Layout className="h-4 w-4" />
           {!isCollapsed && <span className="ml-2">{t('manageWarehouseRacks')}</span>}
+        </Button>
+        <Button
+          variant={isReceiptsActive ? "secondary" : "ghost"}
+          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isReceiptsActive ? "bg-primary/10 text-primary" : ""}`}
+          onClick={handleReceipts}
+          title={isCollapsed ? "Receipts" : ''}
+        >
+          <FileText className="h-4 w-4" />
+          {!isCollapsed && <span className="ml-2">Receipts</span>}
         </Button>
       </div>
 

@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
-from typing import List, Dict, Optional, Any, Union
+from typing import Any, List, Mapping, Optional, Union
 from ..models import User
-from ..schemas import UserCreate, UserUpdate
 from ..core.security import get_password_hash
 
 
@@ -17,11 +16,21 @@ def get_users(db: Session, *, skip: int = 0, limit: int = 100) -> List[User]:
     return db.query(User).offset(skip).limit(limit).all()
 
 
-def create_user(db: Session, *, obj_in: UserCreate) -> User:
+def _to_update_dict(obj_in: Any) -> dict[str, Any]:
+    if isinstance(obj_in, Mapping):
+        return dict(obj_in)
+    if hasattr(obj_in, "model_dump"):
+        return obj_in.model_dump(exclude_unset=True)
+    if hasattr(obj_in, "dict"):
+        return obj_in.dict(exclude_unset=True)
+    raise TypeError("Unsupported payload type")
+
+
+def create_user(db: Session, *, obj_in: Any) -> User:
+    data = _to_update_dict(obj_in)
     db_obj = User(
-        username=obj_in.username,
-        password_hash=get_password_hash(obj_in.password),
-        type=obj_in.type
+        username=data["username"],
+        password_hash=get_password_hash(data["password"])
     )
     db.add(db_obj)
     db.commit()
@@ -30,12 +39,9 @@ def create_user(db: Session, *, obj_in: UserCreate) -> User:
 
 
 def update_user(
-    db: Session, *, db_obj: User, obj_in: Union[UserUpdate, Dict[str, Any]]
+    db: Session, *, db_obj: User, obj_in: Union[Mapping[str, Any], Any]
 ) -> User:
-    if isinstance(obj_in, dict):
-        update_data = obj_in
-    else:
-        update_data = obj_in.dict(exclude_unset=True)
+    update_data = _to_update_dict(obj_in)
     
     if update_data.get("password"):
         hashed_password = get_password_hash(update_data["password"])

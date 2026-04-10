@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from typing import List
 from backend import schemas
-from backend.crud import warehouses
 from backend.core.deps import get_db
+from backend.domains.warehouse import service as warehouse_service
 
 router = APIRouter()
 
@@ -16,16 +16,7 @@ def create_warehouse(
     """
     Create a new warehouse.
     """
-    # Check if warehouse with this name already exists
-    warehouse = warehouses.get_warehouse_by_name(db, name=warehouse_in.name)
-    if warehouse:
-        raise HTTPException(
-            status_code=400,
-            detail="A warehouse with this name already exists.",
-        )
-    
-    warehouse = warehouses.create_warehouse(db=db, obj_in=warehouse_in)
-    return warehouse
+    return warehouse_service.create_warehouse(db, warehouse_in)
 
 @router.get("/", response_model=List[schemas.Warehouse])
 def read_warehouses(
@@ -36,8 +27,7 @@ def read_warehouses(
     """
     Retrieve warehouses.
     """
-    warehouse_list = warehouses.get_warehouses(db, skip=skip, limit=limit)
-    return warehouse_list
+    return warehouse_service.list_warehouses(db, skip=skip, limit=limit)
 
 @router.get("/{warehouse_id}", response_model=schemas.Warehouse)
 def read_warehouse(
@@ -48,13 +38,7 @@ def read_warehouse(
     """
     Get a specific warehouse by id.
     """
-    warehouse = warehouses.get_warehouse(db=db, id=warehouse_id)
-    if not warehouse:
-        raise HTTPException(
-            status_code=404,
-            detail="Warehouse not found",
-        )
-    return warehouse
+    return warehouse_service.get_warehouse(db, warehouse_id)
 
 @router.put("/{warehouse_id}", response_model=schemas.Warehouse)
 def update_warehouse(
@@ -66,24 +50,7 @@ def update_warehouse(
     """
     Update a warehouse.
     """
-    warehouse = warehouses.get_warehouse(db=db, id=warehouse_id)
-    if not warehouse:
-        raise HTTPException(
-            status_code=404,
-            detail="Warehouse not found",
-        )
-    
-    # Check if new name already exists (if name is being updated)
-    if warehouse_in.name and warehouse_in.name != warehouse.name:
-        existing_warehouse = warehouses.get_warehouse_by_name(db, name=warehouse_in.name)
-        if existing_warehouse:
-            raise HTTPException(
-                status_code=400,
-                detail="A warehouse with this name already exists.",
-            )
-    
-    warehouse = warehouses.update_warehouse(db=db, db_obj=warehouse, obj_in=warehouse_in)
-    return warehouse
+    return warehouse_service.update_warehouse(db, warehouse_id, warehouse_in)
 
 @router.delete("/{warehouse_id}", response_model=schemas.Warehouse)
 def delete_warehouse(
@@ -94,12 +61,4 @@ def delete_warehouse(
     """
     Delete a warehouse.
     """
-    warehouse = warehouses.get_warehouse(db=db, id=warehouse_id)
-    if not warehouse:
-        raise HTTPException(
-            status_code=404,
-            detail="Warehouse not found",
-        )
-    
-    warehouse = warehouses.delete_warehouse(db=db, id=warehouse_id)
-    return warehouse
+    return warehouse_service.delete_warehouse(db, warehouse_id)

@@ -12,11 +12,11 @@ class Settings(BaseSettings):
     CORS_ORIGINS: str = "" 
     
     # Database Configuration
-    MYSQL_HOST: str = "localhost"
-    MYSQL_PORT: int = 3306
-    MYSQL_USER: str = "root"
-    MYSQL_PASSWORD: str = ""
-    MYSQL_DATABASE: str = "wms_cpc"
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = ""
+    POSTGRES_DATABASE: str = "wms_cpc"
     
     # JWT Configuration
     SECRET_KEY: str = ""
@@ -37,7 +37,7 @@ class Settings(BaseSettings):
             pass
         return [origin.strip() for origin in value.split(',') if origin.strip()]
 
-    @field_validator("MYSQL_PASSWORD", "SECRET_KEY", mode="after")
+    @field_validator("POSTGRES_PASSWORD", "SECRET_KEY", mode="after")
     @classmethod
     def ensure_non_empty(cls, v: str) -> str:
         if not v:

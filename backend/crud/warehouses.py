@@ -1,7 +1,16 @@
 from sqlalchemy.orm import Session
-from typing import List, Dict, Optional, Any, Union
+from typing import Any, List, Mapping, Optional, Union
 from ..models import Warehouse
-from ..schemas import WarehouseCreate, WarehouseUpdate
+
+
+def _to_update_dict(obj_in: Any) -> dict[str, Any]:
+    if isinstance(obj_in, Mapping):
+        return dict(obj_in)
+    if hasattr(obj_in, "model_dump"):
+        return obj_in.model_dump(exclude_unset=True)
+    if hasattr(obj_in, "dict"):
+        return obj_in.dict(exclude_unset=True)
+    raise TypeError("Unsupported payload type")
 
 
 def get_warehouse(db: Session, id: int) -> Optional[Warehouse]:
@@ -16,8 +25,9 @@ def get_warehouses(db: Session, *, skip: int = 0, limit: int = 100) -> List[Ware
     return db.query(Warehouse).offset(skip).limit(limit).all()
 
 
-def create_warehouse(db: Session, *, obj_in: WarehouseCreate) -> Warehouse:
-    db_obj = Warehouse(name=obj_in.name, type=obj_in.type)
+def create_warehouse(db: Session, *, obj_in: Any) -> Warehouse:
+    data = _to_update_dict(obj_in)
+    db_obj = Warehouse(name=data["name"], type=data["type"])
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
@@ -25,12 +35,9 @@ def create_warehouse(db: Session, *, obj_in: WarehouseCreate) -> Warehouse:
 
 
 def update_warehouse(
-    db: Session, *, db_obj: Warehouse, obj_in: Union[WarehouseUpdate, Dict[str, Any]]
+    db: Session, *, db_obj: Warehouse, obj_in: Union[Mapping[str, Any], Any]
 ) -> Warehouse:
-    if isinstance(obj_in, dict):
-        update_data = obj_in
-    else:
-        update_data = obj_in.dict(exclude_unset=True)
+    update_data = _to_update_dict(obj_in)
     
     for field in update_data:
         setattr(db_obj, field, update_data[field])

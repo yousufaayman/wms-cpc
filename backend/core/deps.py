@@ -1,4 +1,3 @@
-from typing import Generator, Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt
@@ -8,18 +7,12 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 from . import security
 from .config import settings
-from ..database import SessionLocal
+from ..database import get_db
+from .authz import ensure_superuser
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login"
 )
-
-def get_db() -> Generator:
-    try:
-        db = SessionLocal()
-        yield db
-    finally:
-        db.close()
 
 def get_current_user(
     db: Session = Depends(get_db),
@@ -46,10 +39,7 @@ def get_current_active_user(
     return current_user
 
 def get_current_active_superuser(
+    db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ) -> models.User:
-    if current_user.type != "admin":
-        raise HTTPException(
-            status_code=400, detail="The user doesn't have enough privileges"
-        )
-    return current_user 
+    return ensure_superuser(db, current_user)
