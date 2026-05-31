@@ -849,3 +849,90 @@ class UndyedClientInventoryGroup(BaseModel):
     total_length: Optional[float] = None
     roll_count: int
     materials: List[UndyedMaterialInventory]
+
+
+# ── Expected Delivery schemas ────────────────────────────────────────────────
+
+class ExpectedDeliveryItemBase(BaseModel):
+    # Exactly one of these must be set (enforced by DB check constraint)
+    client_fabric_code_id: Optional[int] = None  # dyed fabric path
+    material_id: Optional[int] = None             # undyed fabric path
+    lot_reference: Optional[str] = Field(None, max_length=100)
+    expected_weight_kg: Optional[float] = Field(None, ge=0)
+    expected_length_m: Optional[float] = Field(None, ge=0)
+    notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_exactly_one_type(self) -> "ExpectedDeliveryItemBase":
+        has_cfc = self.client_fabric_code_id is not None
+        has_mat = self.material_id is not None
+        if has_cfc == has_mat:
+            raise ValueError("Exactly one of client_fabric_code_id (dyed) or material_id (undyed) must be set")
+        return self
+
+
+class ExpectedDeliveryItemCreate(ExpectedDeliveryItemBase):
+    pass
+
+
+class ExpectedDeliveryItemUpdate(BaseModel):
+    client_fabric_code_id: Optional[int] = None
+    material_id: Optional[int] = None
+    lot_reference: Optional[str] = Field(None, max_length=100)
+    expected_weight_kg: Optional[float] = Field(None, ge=0)
+    expected_length_m: Optional[float] = Field(None, ge=0)
+    received_weight_kg: Optional[float] = Field(None, ge=0)
+    received_length_m: Optional[float] = Field(None, ge=0)
+    notes: Optional[str] = None
+
+
+class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
+    id: int
+    delivery_id: int
+    received_weight_kg: float
+    received_length_m: float
+    client_fabric_code: Optional[ClientFabricCode] = None
+    material: Optional[Material] = None
+
+    class Config:
+        from_attributes = True
+
+
+class ExpectedDeliveryItem(ExpectedDeliveryItemInDB):
+    pass
+
+
+class ExpectedDeliveryBase(BaseModel):
+    supplier: str = Field(..., min_length=1, max_length=200)
+    warehouse_id: Optional[int] = None
+    expected_date: Optional[datetime] = None
+    notes: Optional[str] = None
+
+
+class ExpectedDeliveryCreate(ExpectedDeliveryBase):
+    pass
+
+
+class ExpectedDeliveryUpdate(BaseModel):
+    supplier: Optional[str] = Field(None, min_length=1, max_length=200)
+    warehouse_id: Optional[int] = None
+    expected_date: Optional[datetime] = None
+    status: Optional[str] = Field(None, pattern="^(pending|partial|received|cancelled)$")
+    notes: Optional[str] = None
+
+
+class ExpectedDeliveryInDB(ExpectedDeliveryBase):
+    id: int
+    status: str
+    created_by: Optional[int] = None
+    created_at: datetime
+    closed_at: Optional[datetime] = None
+    closed_by: Optional[int] = None
+    items: List[ExpectedDeliveryItem] = []
+
+    class Config:
+        from_attributes = True
+
+
+class ExpectedDelivery(ExpectedDeliveryInDB):
+    pass

@@ -32,6 +32,7 @@ _FK_USERS         = "core.users.id"
 _FK_WAREHOUSES    = "wms.warehouses.id"
 _FK_RACKS         = "wms.warehouse_racks.id"
 _FK_LOG_LOCATIONS    = "wms.logical_locations.id"
+_FK_CLIENT_FABRIC_CODES = "core.client_fabric_codes.id"
 _FK_SUPPLIER_RECEIPTS  = "wms.supplier_receipts.id"
 _FK_INTERNAL_RECEIPTS = "wms.internal_receipts.id"
 _FK_EXTERNAL_RECEIPTS = "wms.external_receipts.id"
@@ -276,7 +277,7 @@ class Lot(Base):
     __table_args__ = {"schema": "wms"}
 
     id = Column(Integer, primary_key=True, index=True)
-    client_fabric_code_id = Column(Integer, ForeignKey("core.client_fabric_codes.id", onupdate="CASCADE", ondelete="RESTRICT"), nullable=False)
+    client_fabric_code_id = Column(Integer, ForeignKey(_FK_CLIENT_FABRIC_CODES, onupdate="CASCADE", ondelete="RESTRICT"), nullable=False)
     lot_number = Column(String(50), nullable=False)
 
     client_fabric_code = relationship("ClientFabricCode", back_populates="lots", foreign_keys=[client_fabric_code_id])
@@ -294,7 +295,7 @@ class DyedFabricRoll(Base):
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    client_fabric_code_id = Column(Integer, ForeignKey("core.client_fabric_codes.id", onupdate="CASCADE", ondelete="RESTRICT"), nullable=False)
+    client_fabric_code_id = Column(Integer, ForeignKey(_FK_CLIENT_FABRIC_CODES, onupdate="CASCADE", ondelete="RESTRICT"), nullable=False)
     lot_id = Column(Integer, ForeignKey("wms.lots.id", onupdate="CASCADE", ondelete=_ON_DELETE_SET_NULL), nullable=True)
     gsm = Column(NUMERIC(6, 2), nullable=True)
     fabric_width = Column(NUMERIC(6, 2), nullable=True)
@@ -575,6 +576,76 @@ class SingleTransaction(Base):
 
     def __repr__(self):
         return f"<SingleTransaction {self.id} {self.type} {self.item_type}>"
+
+
+_CK_DELIVERY_ITEM_ONE_TYPE = (
+    "CASE WHEN client_fabric_code_id IS NOT NULL THEN 1 ELSE 0 END + "
+    "CASE WHEN material_id IS NOT NULL THEN 1 ELSE 0 END = 1"
+)
+
+
+class ExpectedDelivery(Base):
+    __tablename__ = "expected_deliveries"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'partial', 'received', 'cancelled')",
+            name="ck_expected_deliveries_status",
+        ),
+        {'schema': 'wms'},
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    supplier = Column(String(200), nullable=False)
+    warehouse_id = Column(Integer, ForeignKey(_FK_WAREHOUSES, onupdate="CASCADE", ondelete="SET NULL"), nullable=True)
+    expected_date = Column(DateTime, nullable=True)
+    status = Column(String(20), nullable=False, default='pending')
+    notes = Column(Text, nullable=True)
+    created_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
+    created_at = Column(TIMESTAMP, default=func.current_timestamp())
+    closed_at = Column(TIMESTAMP, nullable=True)
+    closed_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
+
+    warehouse = relationship("Warehouse", foreign_keys=[warehouse_id])
+    creator = relationship("User", foreign_keys=[created_by])
+    closer = relationship("User", foreign_keys=[closed_by])
+    items = relationship("ExpectedDeliveryItem", back_populates="delivery", cascade=_CASCADE_DELETE)
+
+    def __repr__(self):
+        return f"<ExpectedDelivery {self.id} {self.supplier}>"
+
+
+class ExpectedDeliveryItem(Base):
+    """One expected line on a delivery.
+
+    Exactly one of client_fabric_code_id (dyed fabric) or material_id (undyed
+    fabric) must be set — enforced by the DB check constraint.
+    """
+
+    __tablename__ = "expected_delivery_items"
+    __table_args__ = (
+        CheckConstraint(_CK_DELIVERY_ITEM_ONE_TYPE, name="ck_expected_delivery_items_one_type"),
+        {'schema': 'wms'},
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_id = Column(Integer, ForeignKey("wms.expected_deliveries.id", ondelete=_ON_DELETE_CASCADE), nullable=False)
+    # Dyed fabric: references client_fabric_code (carries client + material + color)
+    client_fabric_code_id = Column(Integer, ForeignKey(_FK_CLIENT_FABRIC_CODES, onupdate="CASCADE", ondelete="RESTRICT"), nullable=True)
+    # Undyed fabric: references material directly
+    material_id = Column(Integer, ForeignKey("core.materials.material_id", onupdate="CASCADE", ondelete="RESTRICT"), nullable=True)
+    lot_reference = Column(String(100), nullable=True)
+    expected_weight_kg = Column(NUMERIC(10, 2), nullable=True)
+    expected_length_m = Column(NUMERIC(10, 2), nullable=True)
+    received_weight_kg = Column(NUMERIC(10, 2), nullable=False, default=0)
+    received_length_m = Column(NUMERIC(10, 2), nullable=False, default=0)
+    notes = Column(Text, nullable=True)
+
+    delivery = relationship("ExpectedDelivery", back_populates="items")
+    client_fabric_code = relationship("ClientFabricCode", foreign_keys=[client_fabric_code_id])
+    material = relationship("Material", foreign_keys=[material_id])
+
+    def __repr__(self):
+        return f"<ExpectedDeliveryItem {self.id} delivery={self.delivery_id}>"
 
 
 # Backward compatibility alias; canonical definition lives in backend.schemas.

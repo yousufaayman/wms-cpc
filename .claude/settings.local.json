@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(Get-ChildItem -Path \"s:\\\\CS_Projects\\\\Projects\\\\wms-cpc\" -Force)",
+      "Bash(Select-Object -Property Name, Mode)"
     ]
   }
 }

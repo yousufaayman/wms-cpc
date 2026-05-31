@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers } from "lucide-react";
+import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen } from "lucide-react";
 import { useEffect, useState } from "react";
 import { warehouseApi, Warehouse } from "@/lib/api";
 import LanguageToggle from "./LanguageToggle";
@@ -26,6 +26,7 @@ const Sidebar = () => {
   const isFabricRollsActive = location.pathname === "/fabric-rolls";
   const isUndyedFabricRollsActive = location.pathname === "/undyed-fabric-rolls";
   const isFabricInventoryActive = location.pathname === "/fabric-inventory";
+  const isExpectedDeliveriesActive = location.pathname.startsWith("/expected-deliveries");
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -62,6 +63,10 @@ const Sidebar = () => {
 
   const handleFabricInventory = () => {
     navigate(`/fabric-inventory?warehouse=${warehouseId}`);
+  };
+
+  const handleExpectedDeliveries = () => {
+    navigate(`/expected-deliveries?warehouse=${warehouseId}`);
   };
 
   useEffect(() => {
@@ -115,13 +120,13 @@ const Sidebar = () => {
           {!isCollapsed && <span className="ml-2">{t('dashboard')}</span>}
         </Button>
         <Button
-          variant={isManageRacksActive ? "secondary" : "ghost"}
-          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isManageRacksActive ? "bg-primary/10 text-primary" : ""}`}
-          onClick={handleManageRacks}
-          title={isCollapsed ? t('manageWarehouseRacks') : ''}
+          variant={isFabricInventoryActive ? "secondary" : "ghost"}
+          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isFabricInventoryActive ? "bg-primary/10 text-primary" : ""}`}
+          onClick={handleFabricInventory}
+          title={isCollapsed ? t('fabricInventory') : ''}
         >
-          <Layout className="h-4 w-4" />
-          {!isCollapsed && <span className="ml-2">{t('manageWarehouseRacks')}</span>}
+          <Layers className="h-4 w-4" />
+          {!isCollapsed && <span className="ml-2">{t('fabricInventory')}</span>}
         </Button>
         <Button
           variant={isReceiptsActive ? "secondary" : "ghost"}
@@ -131,6 +136,15 @@ const Sidebar = () => {
         >
           <FileText className="h-4 w-4" />
           {!isCollapsed && <span className="ml-2">{t('receipts')}</span>}
+        </Button>
+        <Button
+          variant={isExpectedDeliveriesActive ? "secondary" : "ghost"}
+          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isExpectedDeliveriesActive ? "bg-primary/10 text-primary" : ""}`}
+          onClick={handleExpectedDeliveries}
+          title={isCollapsed ? t('expectedDeliveries') : ''}
+        >
+          <PackageOpen className="h-4 w-4" />
+          {!isCollapsed && <span className="ml-2">{t('expectedDeliveries')}</span>}
         </Button>
         {warehouse?.type === 'Fabric' && (
           <>
@@ -152,17 +166,32 @@ const Sidebar = () => {
               <Scissors className="h-4 w-4" />
               {!isCollapsed && <span className="ml-2">{t('undyedFabricRolls')}</span>}
             </Button>
-            <Button
-              variant={isFabricInventoryActive ? "secondary" : "ghost"}
-              className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isFabricInventoryActive ? "bg-primary/10 text-primary" : ""}`}
-              onClick={handleFabricInventory}
-              title={isCollapsed ? t('fabricInventory') : ''}
-            >
-              <Layers className="h-4 w-4" />
-              {!isCollapsed && <span className="ml-2">{t('fabricInventory')}</span>}
-            </Button>
           </>
         )}
+      </div>
+
+      {/* Administrative section */}
+      <div className="mt-4">
+        <div className={`flex items-center gap-2 mb-2 ${isCollapsed ? 'justify-center' : ''}`}>
+          <div className="flex-1 h-px bg-border" />
+          {!isCollapsed && (
+            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+              {t('administrativeSection')}
+            </span>
+          )}
+          <div className="flex-1 h-px bg-border" />
+        </div>
+        <div className="space-y-2">
+          <Button
+            variant={isManageRacksActive ? "secondary" : "ghost"}
+            className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isManageRacksActive ? "bg-primary/10 text-primary" : ""}`}
+            onClick={handleManageRacks}
+            title={isCollapsed ? t('manageWarehouseRacks') : ''}
+          >
+            <Layout className="h-4 w-4" />
+            {!isCollapsed && <span className="ml-2">{t('manageWarehouseRacks')}</span>}
+          </Button>
+        </div>
       </div>
 
       {/* Spacer */}

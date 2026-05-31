@@ -20,6 +20,8 @@ const CreateReceipt = lazy(() => import("./pages/CreateReceipt"));
 const FabricRolls = lazy(() => import("./pages/FabricRolls"));
 const FabricInventory = lazy(() => import("./pages/FabricInventory"));
 const UndyedFabricRolls = lazy(() => import("./pages/UndyedFabricRolls"));
+const ExpectedDeliveries = lazy(() => import("./pages/ExpectedDeliveries"));
+const ExpectedDeliveryDetail = lazy(() => import("./pages/ExpectedDeliveryDetail"));
 
 const queryClient = new QueryClient();
 
@@ -113,6 +115,26 @@ const App = () => (
                 <ProtectedRoute>
                   <Suspense fallback={<LoadingSpinner message="Loading Undyed Fabric Rolls..." />}>
                     <UndyedFabricRolls />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/expected-deliveries"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Expected Deliveries..." />}>
+                    <ExpectedDeliveries />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/expected-deliveries/:id"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Delivery..." />}>
+                    <ExpectedDeliveryDetail />
                   </Suspense>
                 </ProtectedRoute>
               }

@@ -19,6 +19,7 @@ from .endpoints import (
     fabric_rolls,
     undyed_fabric_rolls,
     receipt_items,
+    expected_deliveries,
 )
 
 api_router = APIRouter()
@@ -41,3 +42,4 @@ api_router.include_router(lots.router, prefix="/lots", tags=["lots"])
 api_router.include_router(fabric_rolls.router, prefix="/dyed-fabric-rolls", tags=["dyed-fabric-rolls"])
 api_router.include_router(undyed_fabric_rolls.router, prefix="/undyed-fabric-rolls", tags=["undyed-fabric-rolls"])
 api_router.include_router(receipt_items.router, prefix="/receipts", tags=["receipt-items"])
+api_router.include_router(expected_deliveries.router, prefix="/expected-deliveries", tags=["expected-deliveries"])
