@@ -596,6 +596,8 @@ class ExpectedDelivery(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     supplier = Column(String(200), nullable=False)
+    supplier_client_id = Column(Integer, ForeignKey(_FK_CLIENTS, onupdate="CASCADE", ondelete="SET NULL"), nullable=True)
+    supplier_location_id = Column(Integer, ForeignKey(_FK_LOG_LOCATIONS, onupdate="CASCADE", ondelete="SET NULL"), nullable=True)
     warehouse_id = Column(Integer, ForeignKey(_FK_WAREHOUSES, onupdate="CASCADE", ondelete="SET NULL"), nullable=True)
     expected_date = Column(DateTime, nullable=True)
     status = Column(String(20), nullable=False, default='pending')
@@ -606,6 +608,8 @@ class ExpectedDelivery(Base):
     closed_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
 
     warehouse = relationship("Warehouse", foreign_keys=[warehouse_id])
+    supplier_client = relationship("Client", foreign_keys=[supplier_client_id])
+    supplier_location = relationship("LogicalLocation", foreign_keys=[supplier_location_id])
     creator = relationship("User", foreign_keys=[created_by])
     closer = relationship("User", foreign_keys=[closed_by])
     items = relationship("ExpectedDeliveryItem", back_populates="delivery", cascade=_CASCADE_DELETE)
@@ -633,9 +637,11 @@ class ExpectedDeliveryItem(Base):
     client_fabric_code_id = Column(Integer, ForeignKey(_FK_CLIENT_FABRIC_CODES, onupdate="CASCADE", ondelete="RESTRICT"), nullable=True)
     # Undyed fabric: references material directly
     material_id = Column(Integer, ForeignKey("core.materials.material_id", onupdate="CASCADE", ondelete="RESTRICT"), nullable=True)
+    lot_id = Column(Integer, ForeignKey("wms.lots.id", onupdate="CASCADE", ondelete="SET NULL"), nullable=True)
     lot_reference = Column(String(100), nullable=True)
     expected_weight_kg = Column(NUMERIC(10, 2), nullable=True)
     expected_length_m = Column(NUMERIC(10, 2), nullable=True)
+    expected_gsm = Column(NUMERIC(8, 2), nullable=True)
     received_weight_kg = Column(NUMERIC(10, 2), nullable=False, default=0)
     received_length_m = Column(NUMERIC(10, 2), nullable=False, default=0)
     notes = Column(Text, nullable=True)
@@ -643,9 +649,29 @@ class ExpectedDeliveryItem(Base):
     delivery = relationship("ExpectedDelivery", back_populates="items")
     client_fabric_code = relationship("ClientFabricCode", foreign_keys=[client_fabric_code_id])
     material = relationship("Material", foreign_keys=[material_id])
+    lot = relationship("Lot", foreign_keys=[lot_id])
 
     def __repr__(self):
         return f"<ExpectedDeliveryItem {self.id} delivery={self.delivery_id}>"
+
+
+class DeliveryItemRoll(Base):
+    """Tracks which dyed fabric rolls have contributed to a delivery item's received quantities.
+    Unique constraint prevents the same roll from being counted twice against the same item.
+    """
+    __tablename__ = "delivery_item_rolls"
+    __table_args__ = (
+        UniqueConstraint("roll_id", name="uq_delivery_item_rolls_roll"),
+        {"schema": "wms"},
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    delivery_item_id = Column(Integer, ForeignKey("wms.expected_delivery_items.id", ondelete=_ON_DELETE_CASCADE), nullable=False)
+    roll_id = Column(BigInteger, ForeignKey("wms.dyed_fabric_rolls.id", ondelete=_ON_DELETE_CASCADE), nullable=False)
+    weight_kg = Column(NUMERIC(10, 3), nullable=False)
+    length_m = Column(NUMERIC(10, 2), nullable=False, default=0)
+
+    delivery_item = relationship("ExpectedDeliveryItem", foreign_keys=[delivery_item_id])
 
 
 # Backward compatibility alias; canonical definition lives in backend.schemas.

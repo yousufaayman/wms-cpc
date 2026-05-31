@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pydantic import BaseModel, Field
 
 from backend.core.deps import get_db
 from backend.crud import expected_deliveries as crud
+from backend.crud.expected_deliveries import RollAlreadyLinkedError
 from backend.schemas import (
     ExpectedDelivery,
     ExpectedDeliveryCreate,
@@ -12,6 +14,12 @@ from backend.schemas import (
     ExpectedDeliveryItemCreate,
     ExpectedDeliveryItemUpdate,
 )
+
+
+class ReceiveQty(BaseModel):
+    weight_kg: float = Field(0, ge=0)
+    length_m: float = Field(0, ge=0)
+    roll_id: Optional[int] = None
 
 router = APIRouter()
 
@@ -94,3 +102,14 @@ def update_delivery_item(
 def delete_delivery_item(item_id: int, db: Session = Depends(get_db)):
     if not crud.delete_delivery_item(db, item_id=item_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ITEM_NOT_FOUND)
+
+
+@router.patch("/items/{item_id}/receive", response_model=ExpectedDeliveryItem)
+def receive_delivery_item(item_id: int, body: ReceiveQty, db: Session = Depends(get_db)):
+    try:
+        result = crud.receive_delivery_item(db, item_id=item_id, weight_kg=body.weight_kg, length_m=body.length_m, roll_id=body.roll_id)
+    except RollAlreadyLinkedError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    if not result:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ITEM_NOT_FOUND)
+    return result

@@ -50,3 +50,10 @@ def get_fabric_roll(roll_id: int, db: Session = Depends(get_db)):
 def create_fabric_roll(roll: DyedFabricRollCreate, db: Session = Depends(get_db)):
     """Create a new dyed fabric roll."""
     return crud_rolls.create_fabric_roll(db, roll)
+
+
+@router.delete("/{roll_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_fabric_roll(roll_id: int, db: Session = Depends(get_db)):
+    """Delete a roll and reverse any expected delivery contributions."""
+    if not crud_rolls.delete_fabric_roll(db, roll_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dyed fabric roll not found")

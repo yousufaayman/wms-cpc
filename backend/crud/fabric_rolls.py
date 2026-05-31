@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 from typing import List, Optional, Any, Dict
 from backend.models import DyedFabricRoll, ClientFabricCode, Client, Material, Color, Lot, WarehouseRack
 from backend.schemas import DyedFabricRollCreate
+from backend.crud.expected_deliveries import reverse_roll_delivery_contributions
 
 
 def create_fabric_roll(db: Session, roll: DyedFabricRollCreate) -> DyedFabricRoll:
@@ -29,6 +30,16 @@ def get_fabric_rolls(
 
 def get_fabric_roll(db: Session, roll_id: int) -> Optional[DyedFabricRoll]:
     return db.query(DyedFabricRoll).filter(DyedFabricRoll.id == roll_id).first()
+
+
+def delete_fabric_roll(db: Session, roll_id: int) -> bool:
+    db_roll = db.query(DyedFabricRoll).filter(DyedFabricRoll.id == roll_id).first()
+    if not db_roll:
+        return False
+    reverse_roll_delivery_contributions(db, roll_id)
+    db.delete(db_roll)
+    db.commit()
+    return True
 
 
 def get_fabric_roll_detail(db: Session, roll_id: int):

@@ -857,9 +857,11 @@ class ExpectedDeliveryItemBase(BaseModel):
     # Exactly one of these must be set (enforced by DB check constraint)
     client_fabric_code_id: Optional[int] = None  # dyed fabric path
     material_id: Optional[int] = None             # undyed fabric path
+    lot_id: Optional[int] = None
     lot_reference: Optional[str] = Field(None, max_length=100)
     expected_weight_kg: Optional[float] = Field(None, ge=0)
     expected_length_m: Optional[float] = Field(None, ge=0)
+    expected_gsm: Optional[float] = Field(None, ge=0)
     notes: Optional[str] = None
 
     @model_validator(mode="after")
@@ -878,9 +880,11 @@ class ExpectedDeliveryItemCreate(ExpectedDeliveryItemBase):
 class ExpectedDeliveryItemUpdate(BaseModel):
     client_fabric_code_id: Optional[int] = None
     material_id: Optional[int] = None
+    lot_id: Optional[int] = None
     lot_reference: Optional[str] = Field(None, max_length=100)
     expected_weight_kg: Optional[float] = Field(None, ge=0)
     expected_length_m: Optional[float] = Field(None, ge=0)
+    expected_gsm: Optional[float] = Field(None, ge=0)
     received_weight_kg: Optional[float] = Field(None, ge=0)
     received_length_m: Optional[float] = Field(None, ge=0)
     notes: Optional[str] = None
@@ -893,6 +897,7 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     received_length_m: float
     client_fabric_code: Optional[ClientFabricCode] = None
     material: Optional[Material] = None
+    lot: Optional[Lot] = None
 
     class Config:
         from_attributes = True
@@ -904,6 +909,8 @@ class ExpectedDeliveryItem(ExpectedDeliveryItemInDB):
 
 class ExpectedDeliveryBase(BaseModel):
     supplier: str = Field(..., min_length=1, max_length=200)
+    supplier_client_id: Optional[int] = None
+    supplier_location_id: Optional[int] = None
     warehouse_id: Optional[int] = None
     expected_date: Optional[datetime] = None
     notes: Optional[str] = None
@@ -915,6 +922,8 @@ class ExpectedDeliveryCreate(ExpectedDeliveryBase):
 
 class ExpectedDeliveryUpdate(BaseModel):
     supplier: Optional[str] = Field(None, min_length=1, max_length=200)
+    supplier_client_id: Optional[int] = None
+    supplier_location_id: Optional[int] = None
     warehouse_id: Optional[int] = None
     expected_date: Optional[datetime] = None
     status: Optional[str] = Field(None, pattern="^(pending|partial|received|cancelled)$")
@@ -929,6 +938,8 @@ class ExpectedDeliveryInDB(ExpectedDeliveryBase):
     closed_at: Optional[datetime] = None
     closed_by: Optional[int] = None
     items: List[ExpectedDeliveryItem] = []
+    supplier_client: Optional[Client] = None
+    supplier_location: Optional[LogicalLocation] = None
 
     class Config:
         from_attributes = True

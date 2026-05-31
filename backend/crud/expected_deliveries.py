@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.sql import func
 from typing import List, Optional
 
-from backend.models import ExpectedDelivery, ExpectedDeliveryItem
+from backend.models import ExpectedDelivery, ExpectedDeliveryItem, DeliveryItemRoll
 from backend.schemas import (
     ExpectedDeliveryCreate,
     ExpectedDeliveryUpdate,
@@ -12,15 +12,16 @@ from backend.schemas import (
 
 
 def _load_delivery(db: Session, delivery_id: int) -> Optional[ExpectedDelivery]:
-    # selectinload avoids the cartesian product that two separate joinedload
-    # chains on the same collection would produce.
     return (
         db.query(ExpectedDelivery)
         .options(
+            joinedload(ExpectedDelivery.supplier_client),
+            joinedload(ExpectedDelivery.supplier_location),
             selectinload(ExpectedDelivery.items).options(
                 joinedload(ExpectedDeliveryItem.material),
                 joinedload(ExpectedDeliveryItem.client_fabric_code),
-            )
+                joinedload(ExpectedDeliveryItem.lot),
+            ),
         )
         .filter(ExpectedDelivery.id == delivery_id)
         .first()
@@ -94,6 +95,7 @@ def _load_item(db: Session, item_id: int) -> Optional[ExpectedDeliveryItem]:
         .options(
             joinedload(ExpectedDeliveryItem.material),
             joinedload(ExpectedDeliveryItem.client_fabric_code),
+            joinedload(ExpectedDeliveryItem.lot),
         )
         .filter(ExpectedDeliveryItem.id == item_id)
         .first()
@@ -138,3 +140,48 @@ def delete_delivery_item(db: Session, item_id: int) -> bool:
     db.delete(db_item)
     db.commit()
     return True
+
+
+class RollAlreadyLinkedError(Exception):
+    """Raised when a roll is already linked to a different delivery."""
+
+
+def receive_delivery_item(
+    db: Session,
+    item_id: int,
+    weight_kg: float,
+    length_m: float,
+    roll_id: Optional[int] = None,
+) -> Optional[ExpectedDeliveryItem]:
+    db_item = db.query(ExpectedDeliveryItem).filter(ExpectedDeliveryItem.id == item_id).first()
+    if not db_item:
+        return None
+    if roll_id is not None:
+        existing = (
+            db.query(DeliveryItemRoll)
+            .filter(DeliveryItemRoll.roll_id == roll_id)
+            .first()
+        )
+        if existing:
+            if existing.delivery_item_id == item_id:
+                # Same roll, same item — idempotent, no-op
+                return _load_item(db, item_id)
+            # Roll already counted in a different delivery item
+            raise RollAlreadyLinkedError(f"Roll {roll_id} is already linked to delivery item {existing.delivery_item_id}")
+        db.add(DeliveryItemRoll(delivery_item_id=item_id, roll_id=roll_id, weight_kg=weight_kg, length_m=length_m))
+    db_item.received_weight_kg = (db_item.received_weight_kg or 0) + weight_kg
+    db_item.received_length_m = (db_item.received_length_m or 0) + length_m
+    db.commit()
+    return _load_item(db, item_id)
+
+
+def reverse_roll_delivery_contributions(db: Session, roll_id: int) -> None:
+    """Called before deleting a roll — subtracts its contributions from delivery items."""
+    links = db.query(DeliveryItemRoll).filter(DeliveryItemRoll.roll_id == roll_id).all()
+    for link in links:
+        db_item = db.query(ExpectedDeliveryItem).filter(ExpectedDeliveryItem.id == link.delivery_item_id).first()
+        if db_item:
+            db_item.received_weight_kg = max(0, (db_item.received_weight_kg or 0) - float(link.weight_kg))
+            db_item.received_length_m = max(0, (db_item.received_length_m or 0) - float(link.length_m))
+        db.delete(link)
+    db.flush()
