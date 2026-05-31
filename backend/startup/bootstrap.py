@@ -7,9 +7,7 @@ def create_enum_types() -> None:
     """Create PostgreSQL ENUM types in wms schema if they do not exist."""
     enum_types = [
         ("warehouse_type", ["Fabric", "RMG", "Accessory"]),
-        ("receipt_type", ["inbound", "dyehouse", "cutting", "shipping"]),
-        ("receipt_status", ["issued", "confirmed", "cancelled"]),
-        ("transaction_type", ["IN", "OUT"]),
+        ("logical_location_type", ["supplier", "internal"]),
     ]
 
     with engine.connect() as conn:

@@ -1,12 +1,25 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 
 from ....core.deps import get_db
 from ....domains.warehouse import schemas
 from ....domains.warehouse import service as warehouse_service
+from ....crud.warehouse_racks import search_racks_by_code
 
 router = APIRouter()
+
+@router.get("/search", response_model=List[schemas.WarehouseRack])
+def search_warehouse_racks_by_code(
+    rack_code: str = Query(..., description="Rack code to search for"),
+    warehouse_id: Optional[int] = Query(None, description="Optionally restrict to a warehouse"),
+    db: Session = Depends(get_db),
+):
+    """Look up racks by code (exact match). Optionally scoped to a warehouse."""
+    results = search_racks_by_code(db, rack_code=rack_code, warehouse_id=warehouse_id)
+    if not results:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"No rack found with code '{rack_code}'")
+    return results
 
 @router.get("/", response_model=List[schemas.WarehouseRackWithWarehouse])
 def read_warehouse_racks(

@@ -1,115 +1,247 @@
-import { useEffect, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useEffect, useState, useMemo, Fragment } from "react";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, FileText, Calendar, User, Package, CheckCircle, XCircle, Clock, Loader2 } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, User, Loader2, CheckCircle, XCircle, Plus } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import LanguageToggle from "@/components/LanguageToggle";
-import { receiptApi, type Receipt } from "@/lib/api";
+import {
+  supplierReceiptApi, type SupplierReceipt,
+  internalReceiptApi, type InternalReceipt,
+  externalReceiptApi, type ExternalReceipt,
+  warehouseApi, type Warehouse,
+  logicalLocationApi, type LogicalLocation,
+  fabricReceiptItemApi, type FabricReceiptItem, type ReceiptKind,
+  fabricRollApi, type FabricRollDetail,
+} from "@/lib/api";
+import { buildMaterialGroups, fmt, type RollSummary, type MaterialGroup } from "@/lib/receiptAggregation";
+
+type AnyReceipt = SupplierReceipt | InternalReceipt | ExternalReceipt;
+
+const CURRENT_USER_ID = 1;
+
+function formatDate(ds: string) {
+  return new Date(ds).toLocaleDateString("en-US", {
+    year: "numeric", month: "long", day: "numeric",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
+function ClosedBadge({ closed, t }: Readonly<{ closed: boolean; t: (k: string) => string }>) {
+  return <Badge variant={closed ? "destructive" : "default"}>{closed ? t("closedReceipt") : t("openReceipt")}</Badge>;
+}
+
+async function fetchReceiptByKind(kind: ReceiptKind, id: number): Promise<AnyReceipt> {
+  if (kind === "supplier") return supplierReceiptApi.getById(id);
+  if (kind === "internal") return internalReceiptApi.getById(id);
+  return externalReceiptApi.getById(id);
+}
+
+async function closeReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
+  if (kind === "supplier") { await supplierReceiptApi.close(id, CURRENT_USER_ID); return; }
+  if (kind === "internal") { await internalReceiptApi.close(id, CURRENT_USER_ID); return; }
+  await externalReceiptApi.close(id, CURRENT_USER_ID);
+}
+
+async function openReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
+  if (kind === "supplier") { await supplierReceiptApi.open(id); return; }
+  if (kind === "internal") { await internalReceiptApi.open(id); return; }
+  await externalReceiptApi.open(id);
+}
+
+function getKindLabel(kind: ReceiptKind | undefined, t: (key: string) => string): string {
+  if (kind === "internal") return t("internalReceipts");
+  if (kind === "external") return t("externalReceipts");
+  return t("supplierReceipts");
+}
+
+interface RollDetail extends RollSummary {
+  roll_id: number;
+}
+
+async function fetchItemsWithDetails(
+  kind: ReceiptKind,
+  receiptId: number,
+): Promise<{ items: FabricReceiptItem[]; rollDetails: Map<number, FabricRollDetail> }> {
+  const items = await fabricReceiptItemApi.list(kind, receiptId);
+  const dyedRollIds = items
+    .filter((i): i is FabricReceiptItem & { dyed_roll_id: number } =>
+      i.item_type === "FabricRoll" && i.dyed_roll_id != null)
+    .map(i => i.dyed_roll_id);
+  const results = await Promise.allSettled(dyedRollIds.map(rid => fabricRollApi.getDetail(rid)));
+  const rollDetails = new Map<number, FabricRollDetail>();
+  results.forEach((res, idx) => {
+    if (res.status === "fulfilled") rollDetails.set(dyedRollIds[idx], res.value);
+  });
+  return { items, rollDetails };
+}
+
+function ItemsContent({
+  itemsLoading, fabricGroups, fabricSummaries, grandLength, grandWeight, t,
+}: Readonly<{
+  itemsLoading: boolean;
+  fabricGroups: MaterialGroup[];
+  fabricSummaries: RollDetail[];
+  grandLength: number | null;
+  grandWeight: number;
+  t: (k: string) => string;
+}>) {
+  if (itemsLoading) {
+    return (
+      <div className="flex justify-center py-4">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (fabricGroups.length === 0) {
+    return <p className="text-muted-foreground text-sm text-center py-4">{t("noItemsFound")}</p>;
+  }
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>{t("material")} / {t("color")}</TableHead>
+            <TableHead className="text-right">{t("rollsCount")}</TableHead>
+            <TableHead className="text-right">{t("lengthM")}</TableHead>
+            <TableHead className="text-right">{t("weightKg")}</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {fabricGroups.map(mat => (
+            <Fragment key={mat.material_name}>
+              <TableRow className="bg-muted/40 font-semibold">
+                <TableCell>{mat.material_name}</TableCell>
+                <TableCell className="text-right">{mat.count}</TableCell>
+                <TableCell className="text-right">{fmt(mat.total_length)}</TableCell>
+                <TableCell className="text-right">{fmt(mat.total_weight)}</TableCell>
+              </TableRow>
+              {mat.colors.map(col => (
+                <TableRow key={`${mat.material_name}-${col.color_name}`} className="text-sm">
+                  <TableCell className="pl-8 text-muted-foreground">{col.color_name}</TableCell>
+                  <TableCell className="text-right">{col.count}</TableCell>
+                  <TableCell className="text-right">{fmt(col.total_length)}</TableCell>
+                  <TableCell className="text-right">{fmt(col.total_weight)}</TableCell>
+                </TableRow>
+              ))}
+            </Fragment>
+          ))}
+          <TableRow className="border-t-2 font-bold">
+            <TableCell>{t("overallTotal")}</TableCell>
+            <TableCell className="text-right">{fabricSummaries.length}</TableCell>
+            <TableCell className="text-right">{fmt(grandLength)}</TableCell>
+            <TableCell className="text-right">{fmt(grandWeight)}</TableCell>
+          </TableRow>
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
 
 const ReceiptDetail = () => {
-  const { id } = useParams<{ id: string }>();
+  const { kind, id } = useParams<{ kind: ReceiptKind; id: string }>();
   const navigate = useNavigate();
-  const [receipt, setReceipt] = useState<Receipt | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [searchParams] = useSearchParams();
   const { t } = useTranslation();
   const { language } = useLanguage();
+  const { isAdmin } = useCurrentUser();
 
-  useEffect(() => {
-    const loadReceipt = async () => {
-      if (!id) {
-        setError("Receipt ID is required");
-        setLoading(false);
-        return;
+  const warehouseParam = searchParams.get("warehouse");
+  const warehouseQuery = warehouseParam ? `?warehouse=${warehouseParam}` : "";
+
+  const [receipt, setReceipt] = useState<AnyReceipt | null>(null);
+  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [logicalLocations, setLogicalLocations] = useState<LogicalLocation[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  const [items, setItems] = useState<FabricReceiptItem[]>([]);
+  const [rollDetails, setRollDetails] = useState<Map<number, FabricRollDetail>>(new Map());
+  const [itemsLoading, setItemsLoading] = useState(false);
+
+  async function loadItems(receiptId: number) {
+    if (!kind) return;
+    setItemsLoading(true);
+    try {
+      const result = await fetchItemsWithDetails(kind, receiptId);
+      setItems(result.items);
+      setRollDetails(result.rollDetails);
+    } finally {
+      setItemsLoading(false);
+    }
+  }
+
+  async function loadReceipt() {
+    if (!id || !kind) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const rid = parseInt(id);
+      const [ws, lls] = await Promise.all([
+        warehouseApi.getAll(),
+        logicalLocationApi.getAll({ limit: 500 }),
+      ]);
+      setWarehouses(ws);
+      setLogicalLocations(lls);
+      const data = await fetchReceiptByKind(kind, rid);
+      setReceipt(data);
+      await loadItems(rid);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load receipt");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadReceipt(); }, [id, kind]);
+
+  async function handleAction(op: () => Promise<void>) {
+    setActionLoading(true);
+    try { await op(); loadReceipt(); }
+    finally { setActionLoading(false); }
+  }
+
+  const fabricSummaries = useMemo<RollDetail[]>(() => {
+    const dyedItems = items.filter(
+      (i): i is FabricReceiptItem & { dyed_roll_id: number } =>
+        i.item_type === "FabricRoll" && i.dyed_roll_id != null,
+    );
+    return dyedItems.reduce<RollDetail[]>((acc, i) => {
+      const d = rollDetails.get(i.dyed_roll_id);
+      if (d) {
+        acc.push({ roll_id: i.dyed_roll_id, material_name: d.material_name, color_name: d.color_name, weight: d.weight, length: d.length ?? null });
       }
+      return acc;
+    }, []);
+  }, [items, rollDetails]);
 
-      try {
-        setLoading(true);
-        const receiptData = await receiptApi.getById(parseInt(id));
-        setReceipt(receiptData);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load receipt");
-      } finally {
-        setLoading(false);
-      }
-    };
+  const fabricGroups = useMemo<MaterialGroup[]>(
+    () => buildMaterialGroups(fabricSummaries),
+    [fabricSummaries],
+  );
 
-    loadReceipt();
-  }, [id]);
+  const grandWeight = fabricSummaries.reduce((s, r) => s + r.weight, 0);
+  const hasLength = fabricSummaries.some(r => r.length !== null);
+  const grandLength = hasLength ? fabricSummaries.reduce((s, r) => s + (r.length ?? 0), 0) : null;
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case 'cancelled':
-        return <XCircle className="h-5 w-5 text-red-500" />;
-      case 'issued':
-        return <Clock className="h-5 w-5 text-yellow-500" />;
-      default:
-        return <Clock className="h-5 w-5 text-gray-500" />;
-    }
-  };
-
-  const getStatusBadgeVariant = (status: string) => {
-    switch (status) {
-      case 'confirmed':
-        return 'default';
-      case 'issued':
-        return 'secondary';
-      case 'cancelled':
-        return 'destructive';
-      default:
-        return 'outline';
-    }
-  };
-
-  const getTypeBadgeVariant = (type: string) => {
-    switch (type) {
-      case 'inbound':
-        return 'default';
-      case 'dyehouse':
-        return 'secondary';
-      case 'cutting':
-        return 'outline';
-      case 'shipping':
-        return 'destructive';
-      default:
-        return 'outline';
-    }
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const handleBack = () => {
-    navigate('/receipts');
-  };
+  const kindLabel = getKindLabel(kind, t);
 
   if (loading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background ${language === 'ar' ? 'rtl' : 'ltr'}`}>
-          <div className="absolute top-4 right-4">
-            <LanguageToggle />
-          </div>
+        <div className={`min-h-screen bg-background ${language === "ar" ? "rtl" : "ltr"}`}>
+          <div className="absolute top-4 right-4"><LanguageToggle /></div>
           <div className="flex items-center justify-center h-screen">
             <div className="text-center">
               <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-              <h1 className="text-2xl font-bold text-primary">{t('loading')}</h1>
+              <h1 className="text-2xl font-bold text-primary">{t("loading")}</h1>
             </div>
           </div>
         </div>
@@ -122,17 +254,12 @@ const ReceiptDetail = () => {
       <PageTransition>
         <div className="min-h-screen bg-background flex">
           <Sidebar />
-          <main className="flex-1 p-8">
-            <div className="flex items-center justify-center h-screen">
-              <div className="text-center">
-                <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                <h1 className="text-2xl font-bold text-primary mb-2">Receipt Not Found</h1>
-                <p className="text-muted-foreground mb-4">{error || "The requested receipt could not be found."}</p>
-                <Button onClick={handleBack}>
-                  <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Receipts
-                </Button>
-              </div>
+          <main className="flex-1 p-8 flex items-center justify-center">
+            <div className="text-center">
+              <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+              <h1 className="text-2xl font-bold mb-2">{t("receiptNotFound")}</h1>
+              <p className="text-muted-foreground mb-4">{error}</p>
+              <Button onClick={() => navigate(`/receipts${warehouseQuery}`)}><ArrowLeft className="h-4 w-4 mr-2" />{t("back")}</Button>
             </div>
           </main>
         </div>
@@ -140,197 +267,171 @@ const ReceiptDetail = () => {
     );
   }
 
+  const warehouseName = (wid: number) => warehouses.find(w => w.id === wid)?.name ?? `#${wid}`;
+  const locationName = (lid: number) => logicalLocations.find(l => l.id === lid)?.name ?? `#${lid}`;
+
+  const internalReceipt = kind === "internal" ? (receipt as InternalReceipt) : null;
+  const supplierReceipt = kind === "supplier" ? (receipt as SupplierReceipt) : null;
+  const externalReceipt = kind === "external" ? (receipt as ExternalReceipt) : null;
+
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex">
+      <div className={`min-h-screen bg-background flex ${language === "ar" ? "rtl" : "ltr"}`}>
         <Sidebar />
-        <main className="flex-1 p-8">
-          <div className="space-y-6">
-            {/* Header */}
+        <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">
+          <div className="space-y-4">
+            {/* Page header */}
             <div className="flex items-center gap-3">
-              <Button variant="ghost" onClick={handleBack}>
-                <ArrowLeft className="h-4 w-4 mr-2" />
-                Back to Receipts
+              <Button variant="ghost" size="sm" onClick={() => navigate(`/receipts${warehouseQuery}`)} className="p-1 h-auto">
+                <ArrowLeft className="h-4 w-4" />
               </Button>
+              <FileText className="h-6 w-6 text-primary" />
+              <div>
+                <h1 className="text-2xl font-bold text-primary leading-tight">Receipt #{receipt.id}</h1>
+                <p className="text-muted-foreground text-sm">{kindLabel}</p>
+              </div>
             </div>
 
-            <div className="flex items-center gap-3">
-              <FileText className="h-8 w-8 text-primary" />
-              <h1 className="text-3xl font-bold text-primary">Receipt #{receipt.id}</h1>
-            </div>
-
-            {/* Receipt Information */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Basic Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Package className="h-5 w-5" />
-                    Receipt Information
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Receipt ID</label>
-                      <p className="text-lg font-semibold">#{receipt.id}</p>
-                    </div>
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Type</label>
-                      <div className="mt-1">
-                        <Badge variant={getTypeBadgeVariant(receipt.receipt_type)}>
-                          {receipt.receipt_type}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Status</label>
-                    <div className="flex items-center gap-2 mt-1">
-                      {getStatusIcon(receipt.status)}
-                      <Badge variant={getStatusBadgeVariant(receipt.status)}>
-                        {receipt.status}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Closed Status</label>
-                    <div className="mt-1">
-                      <Badge variant={receipt.closed ? "destructive" : "default"}>
-                        {receipt.closed ? "Closed" : "Open"}
-                      </Badge>
-                    </div>
-                  </div>
-
-                  {receipt.reference_receipt_id && (
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Reference Receipt</label>
-                      <div className="mt-1">
-                        <Badge variant="secondary">
-                          Receipt #{receipt.reference_receipt_id}
-                        </Badge>
-                      </div>
-                    </div>
-                  )}
-
-                  {receipt.source_location_id && (
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Source Location</label>
-                      <p className="text-lg">Location #{receipt.source_location_id}</p>
-                    </div>
-                  )}
-
-                  {receipt.target_location_id && (
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Target Location</label>
-                      <p className="text-lg">Location #{receipt.target_location_id}</p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Timeline Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Calendar className="h-5 w-5" />
-                    Timeline
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Issued By</label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <User className="h-4 w-4 text-muted-foreground" />
-                      <span>User #{receipt.issued_by}</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-sm font-medium text-muted-foreground">Issued At</label>
-                    <div className="flex items-center gap-2 mt-1">
-                      <Calendar className="h-4 w-4 text-muted-foreground" />
-                      <span>{formatDate(receipt.issued_at)}</span>
-                    </div>
-                  </div>
-
-                  {receipt.confirmed_by && (
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Confirmed By</label>
-                      <div className="flex items-center gap-2 mt-1">
-                        <User className="h-4 w-4 text-muted-foreground" />
-                        <span>User #{receipt.confirmed_by}</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {receipt.confirmed_at && (
-                    <div>
-                      <label className="text-sm font-medium text-muted-foreground">Confirmed At</label>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Calendar className="h-4 w-4 text-muted-foreground" />
-                        <span>{formatDate(receipt.confirmed_at)}</span>
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Receipt Items - Placeholder for future implementation */}
+            {/* Details — full width */}
             <Card>
-              <CardHeader>
-                <CardTitle>Receipt Items</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>{t("details")}</CardTitle></CardHeader>
               <CardContent>
-                <div className="text-center py-8 text-muted-foreground">
-                  <Package className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                  <p>Receipt items functionality will be implemented in a future update.</p>
-                  <p className="text-sm">This will show the boxes, rolls, and other items associated with this receipt.</p>
+                <div className="flex flex-wrap gap-x-8 gap-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-sm">{t("status")}</span>
+                    <ClosedBadge closed={receipt.closed} t={t} />
+                  </div>
+                  {internalReceipt && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">{t("workflow")}</span>
+                      <Badge variant={internalReceipt.status === "confirmed" ? "default" : "secondary"}>
+                        {internalReceipt.status}
+                      </Badge>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground text-sm">{t("sourceWarehouse")}</span>
+                    <span className="font-medium">{warehouseName(receipt.source_warehouse_id)}</span>
+                  </div>
+                  {(supplierReceipt || internalReceipt) && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">{t("targetLocation")}</span>
+                      <span className="font-medium">
+                        {locationName((supplierReceipt ?? internalReceipt)!.target_logical_location_id)}
+                      </span>
+                    </div>
+                  )}
+                  {externalReceipt && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">{t("receiver")}</span>
+                      <span className="font-medium">{externalReceipt.receiver}</span>
+                    </div>
+                  )}
+                  {supplierReceipt?.remarks && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">{t("receiptRemarks")}</span>
+                      <span className="font-medium">{supplierReceipt.remarks}</span>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
-            {/* Actions */}
+            {/* Timeline — full width, one row */}
             <Card>
-              <CardHeader>
-                <CardTitle>Actions</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={handleBack}>
-                    <ArrowLeft className="h-4 w-4 mr-2" />
-                    Back to Receipts
-                  </Button>
-                  {receipt.status === 'issued' && (
-                    <>
-                      <Button variant="default">
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Confirm Receipt
-                      </Button>
-                      <Button variant="destructive">
-                        <XCircle className="h-4 w-4 mr-2" />
-                        Cancel Receipt
-                      </Button>
-                    </>
+              <CardContent className="pt-4">
+                <div className="flex flex-wrap gap-x-8 gap-y-2">
+                  {receipt.issued_by != null && (
+                    <div className="flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">{t("issuedBy")}</span>
+                      <span className="text-sm font-medium">User #{receipt.issued_by}</span>
+                    </div>
                   )}
-                  {!receipt.closed ? (
-                    <Button variant="destructive">
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Close Receipt
-                    </Button>
-                  ) : (
-                    <Button variant="default">
-                      <CheckCircle className="h-4 w-4 mr-2" />
-                      Open Receipt
-                    </Button>
+                  <div className="flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                    <span className="text-sm text-muted-foreground">{t("issuedAt")}</span>
+                    <span className="text-sm font-medium">{formatDate(receipt.issued_at)}</span>
+                  </div>
+                  {internalReceipt?.confirmed_by != null && (
+                    <div className="flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">{t("confirmedBy")}</span>
+                      <span className="text-sm font-medium">User #{internalReceipt.confirmed_by}</span>
+                    </div>
+                  )}
+                  {receipt.closed_by != null && (
+                    <div className="flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">{t("closedBy")}</span>
+                      <span className="text-sm font-medium">User #{receipt.closed_by}</span>
+                    </div>
+                  )}
+                  {(supplierReceipt?.closed_at || externalReceipt?.closed_at) && (
+                    <div className="flex items-center gap-1.5">
+                      <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">{t("closedAt")}</span>
+                      <span className="text-sm font-medium">
+                        {formatDate(supplierReceipt?.closed_at ?? externalReceipt?.closed_at ?? "")}
+                      </span>
+                    </div>
                   )}
                 </div>
               </CardContent>
             </Card>
-          </div>
+
+            {/* Actions — no header, one row */}
+            <div className="flex flex-wrap items-center gap-2 px-1">
+              {internalReceipt && internalReceipt.status === "issued" && (
+                <Button onClick={() => handleAction(() => internalReceiptApi.confirm(receipt.id, CURRENT_USER_ID))} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                  {t("confirmReceipt")}
+                </Button>
+              )}
+              {receipt.closed && isAdmin && (
+                <Button variant="outline" onClick={() => handleAction(() => openReceiptByKind(kind, receipt.id))} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
+                  {t("reopenReceipt")}
+                </Button>
+              )}
+              {!receipt.closed && (
+                <Button variant="destructive" onClick={() => handleAction(() => closeReceiptByKind(kind, receipt.id))} disabled={actionLoading}>
+                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
+                  {t("closeReceipt")}
+                </Button>
+              )}
+            </div>
+
+            {/* Receipt items — full width */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <CardTitle>{t("receiptItems")}</CardTitle>
+                  {!receipt.closed && (
+                    <Button
+                      size="sm"
+                      onClick={() =>
+                        navigate(`/receipts/create/${kind}?receipt_id=${receipt.id}&warehouse=${receipt.source_warehouse_id}`)
+                      }
+                    >
+                      <Plus className="h-4 w-4 mr-1" />{t("addItem")}
+                    </Button>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <ItemsContent
+                  itemsLoading={itemsLoading}
+                  fabricGroups={fabricGroups}
+                  fabricSummaries={fabricSummaries}
+                  grandLength={grandLength}
+                  grandWeight={grandWeight}
+                  t={t}
+                />
+              </CardContent>
+            </Card>
+
+          </div>{/* end space-y-4 */}
         </main>
       </div>
     </PageTransition>

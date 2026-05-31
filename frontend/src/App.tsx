@@ -14,9 +14,12 @@ import { LanguageProvider } from "./contexts/LanguageContext";
 // Lazy load Dashboard component
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ManageWarehouseRacks = lazy(() => import("./pages/ManageWarehouseRacks"));
-const ManageInventory = lazy(() => import("./pages/ManageInventory"));
 const Receipts = lazy(() => import("./pages/Receipts"));
 const ReceiptDetail = lazy(() => import("./pages/ReceiptDetail"));
+const CreateReceipt = lazy(() => import("./pages/CreateReceipt"));
+const FabricRolls = lazy(() => import("./pages/FabricRolls"));
+const FabricInventory = lazy(() => import("./pages/FabricInventory"));
+const UndyedFabricRolls = lazy(() => import("./pages/UndyedFabricRolls"));
 
 const queryClient = new QueryClient();
 
@@ -55,16 +58,6 @@ const App = () => (
               } 
             />
             <Route 
-              path="/manage-inventory" 
-              element={
-                <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Inventory..." />}>
-                    <ManageInventory />
-                  </Suspense>
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
               path="/receipts" 
               element={
                 <ProtectedRoute>
@@ -74,15 +67,55 @@ const App = () => (
                 </ProtectedRoute>
               } 
             />
-            <Route 
-              path="/receipts/:id" 
+            <Route
+              path="/receipts/create/:kind"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                    <CreateReceipt />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/receipts/:kind/:id"
               element={
                 <ProtectedRoute>
                   <Suspense fallback={<LoadingSpinner message="Loading Receipt Details..." />}>
                     <ReceiptDetail />
                   </Suspense>
                 </ProtectedRoute>
-              } 
+              }
+            />
+            <Route
+              path="/fabric-rolls"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Fabric Rolls..." />}>
+                    <FabricRolls />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/fabric-inventory"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Fabric Inventory..." />}>
+                    <FabricInventory />
+                  </Suspense>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/undyed-fabric-rolls"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading Undyed Fabric Rolls..." />}>
+                    <UndyedFabricRolls />
+                  </Suspense>
+                </ProtectedRoute>
+              }
             />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />

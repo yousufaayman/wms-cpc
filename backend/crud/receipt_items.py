@@ -1,45 +1,132 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from backend.models import ReceiptItem
-from backend.schemas import ReceiptItemCreate, ReceiptItemUpdate
+from .. import models, schemas
 
-def get_receipt_item(db: Session, item_id: int) -> Optional[ReceiptItem]:
-    """Get a receipt item by ID."""
-    return db.query(ReceiptItem).filter(ReceiptItem.id == item_id).first()
 
-def get_receipt_items_by_receipt(db: Session, receipt_id: int, skip: int = 0, limit: int = 100) -> List[ReceiptItem]:
-    """Get all items for a specific receipt."""
-    return db.query(ReceiptItem).filter(ReceiptItem.receipt_id == receipt_id).offset(skip).limit(limit).all()
+def _fabric_filter(query, receipt_kind: str, receipt_id: int):
+    if receipt_kind == "supplier":
+        return query.filter(models.FabricReceiptItem.supplier_receipt_id == receipt_id)
+    if receipt_kind == "internal":
+        return query.filter(models.FabricReceiptItem.internal_receipt_id == receipt_id)
+    return query.filter(models.FabricReceiptItem.external_receipt_id == receipt_id)
 
-def get_receipt_items(db: Session, skip: int = 0, limit: int = 100) -> List[ReceiptItem]:
-    """Get all receipt items with pagination."""
-    return db.query(ReceiptItem).offset(skip).limit(limit).all()
 
-def create_receipt_item(db: Session, item: ReceiptItemCreate) -> ReceiptItem:
-    """Create a new receipt item."""
-    db_item = ReceiptItem(**item.dict())
+def _box_filter(query, receipt_kind: str, receipt_id: int):
+    if receipt_kind == "supplier":
+        return query.filter(models.BoxReceiptItem.supplier_receipt_id == receipt_id)
+    if receipt_kind == "internal":
+        return query.filter(models.BoxReceiptItem.internal_receipt_id == receipt_id)
+    return query.filter(models.BoxReceiptItem.external_receipt_id == receipt_id)
+
+
+def _accessory_filter(query, receipt_kind: str, receipt_id: int):
+    if receipt_kind == "supplier":
+        return query.filter(models.AccessoryReceiptItem.supplier_receipt_id == receipt_id)
+    if receipt_kind == "internal":
+        return query.filter(models.AccessoryReceiptItem.internal_receipt_id == receipt_id)
+    return query.filter(models.AccessoryReceiptItem.external_receipt_id == receipt_id)
+
+
+def _set_receipt_fk(data: dict, receipt_kind: str, receipt_id: int) -> dict:
+    data["supplier_receipt_id"] = receipt_id if receipt_kind == "supplier" else None
+    data["internal_receipt_id"] = receipt_id if receipt_kind == "internal" else None
+    data["external_receipt_id"] = receipt_id if receipt_kind == "external" else None
+    return data
+
+
+# ── Fabric ───────────────────────────────────────────────────────────────────
+
+def get_fabric_receipt_item(db: Session, item_id: int):
+    return db.query(models.FabricReceiptItem).filter(models.FabricReceiptItem.id == item_id).first()
+
+
+def get_fabric_items_for_receipt(
+    db: Session, receipt_kind: str, receipt_id: int, skip: int = 0, limit: int = 100
+):
+    q = db.query(models.FabricReceiptItem)
+    return _fabric_filter(q, receipt_kind, receipt_id).offset(skip).limit(limit).all()
+
+
+def create_fabric_receipt_item(
+    db: Session, receipt_kind: str, receipt_id: int, item: schemas.FabricReceiptItemCreate
+):
+    data = _set_receipt_fk(item.model_dump(), receipt_kind, receipt_id)
+    db_item = models.FabricReceiptItem(**data)
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
     return db_item
 
-def update_receipt_item(db: Session, item_id: int, item: ReceiptItemUpdate) -> Optional[ReceiptItem]:
-    """Update a receipt item."""
-    db_item = get_receipt_item(db, item_id)
-    if db_item:
-        update_data = item.dict(exclude_unset=True)
-        for field, value in update_data.items():
-            setattr(db_item, field, value)
-        db.commit()
-        db.refresh(db_item)
+
+def delete_fabric_receipt_item(db: Session, item_id: int):
+    db_item = get_fabric_receipt_item(db, item_id)
+    if not db_item:
+        return None
+    db.delete(db_item)
+    db.commit()
     return db_item
 
-def delete_receipt_item(db: Session, item_id: int) -> bool:
-    """Delete a receipt item."""
-    db_item = get_receipt_item(db, item_id)
-    if db_item:
-        db.delete(db_item)
-        db.commit()
-        return True
-    return False
 
+# ── Box ──────────────────────────────────────────────────────────────────────
+
+def get_box_receipt_item(db: Session, item_id: int):
+    return db.query(models.BoxReceiptItem).filter(models.BoxReceiptItem.id == item_id).first()
+
+
+def get_box_items_for_receipt(
+    db: Session, receipt_kind: str, receipt_id: int, skip: int = 0, limit: int = 100
+):
+    q = db.query(models.BoxReceiptItem)
+    return _box_filter(q, receipt_kind, receipt_id).offset(skip).limit(limit).all()
+
+
+def create_box_receipt_item(
+    db: Session, receipt_kind: str, receipt_id: int, item: schemas.BoxReceiptItemCreate
+):
+    data = _set_receipt_fk(item.model_dump(), receipt_kind, receipt_id)
+    db_item = models.BoxReceiptItem(**data)
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
+def delete_box_receipt_item(db: Session, item_id: int):
+    db_item = get_box_receipt_item(db, item_id)
+    if not db_item:
+        return None
+    db.delete(db_item)
+    db.commit()
+    return db_item
+
+
+# ── Accessory ────────────────────────────────────────────────────────────────
+
+def get_accessory_receipt_item(db: Session, item_id: int):
+    return db.query(models.AccessoryReceiptItem).filter(models.AccessoryReceiptItem.id == item_id).first()
+
+
+def get_accessory_items_for_receipt(
+    db: Session, receipt_kind: str, receipt_id: int, skip: int = 0, limit: int = 100
+):
+    q = db.query(models.AccessoryReceiptItem)
+    return _accessory_filter(q, receipt_kind, receipt_id).offset(skip).limit(limit).all()
+
+
+def create_accessory_receipt_item(
+    db: Session, receipt_kind: str, receipt_id: int, item: schemas.AccessoryReceiptItemCreate
+):
+    data = _set_receipt_fk(item.model_dump(), receipt_kind, receipt_id)
+    db_item = models.AccessoryReceiptItem(**data)
+    db.add(db_item)
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
+def delete_accessory_receipt_item(db: Session, item_id: int):
+    db_item = get_accessory_receipt_item(db, item_id)
+    if not db_item:
+        return None
+    db.delete(db_item)
+    db.commit()
+    return db_item

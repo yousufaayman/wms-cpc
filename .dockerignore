@@ -1,0 +1,12 @@
+.git
+.gitignore
+.claude/
+docs/
+*.md
+frontend/node_modules/
+frontend/dist/
+frontend/.env*
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.pytest_cache/

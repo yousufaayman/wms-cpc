@@ -24,6 +24,15 @@ def get_warehouse_rack_by_code(db: Session, warehouse_id: int, rack_code: str) -
     ).first()
 
 
+def search_racks_by_code(
+    db: Session, rack_code: str, warehouse_id: Optional[int] = None
+) -> List[WarehouseRack]:
+    q = db.query(WarehouseRack).filter(WarehouseRack.rack_code == rack_code)
+    if warehouse_id is not None:
+        q = q.filter(WarehouseRack.warehouse_id == warehouse_id)
+    return q.all()
+
+
 def get_warehouse_racks(db: Session, *, skip: int = 0, limit: int = 100) -> List[WarehouseRack]:
     return db.query(WarehouseRack).offset(skip).limit(limit).all()
 

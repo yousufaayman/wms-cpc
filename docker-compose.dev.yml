@@ -1,0 +1,42 @@
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      target: dev
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app/backend
+    develop:
+      watch:
+        - action: sync
+          path: ./backend
+          target: /app/backend
+          ignore:
+            - __pycache__/
+            - "*.pyc"
+            - .pytest_cache/
+        - action: rebuild
+          path: backend/requirements.txt
+
+  frontend:
+    build:
+      target: dev
+    environment:
+      API_PROXY_TARGET: http://backend:8000
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /app/src
+        - action: sync
+          path: ./frontend/public
+          target: /app/public
+        - action: rebuild
+          path: frontend/package.json

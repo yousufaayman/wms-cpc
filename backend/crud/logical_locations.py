@@ -17,7 +17,7 @@ def get_logical_locations(db: Session, skip: int = 0, limit: int = 100) -> List[
 
 def create_logical_location(db: Session, location: LogicalLocationCreate) -> LogicalLocation:
     """Create a new logical location."""
-    db_location = LogicalLocation(**location.dict())
+    db_location = LogicalLocation(**location.model_dump())
     db.add(db_location)
     db.commit()
     db.refresh(db_location)
@@ -27,7 +27,7 @@ def update_logical_location(db: Session, location_id: int, location: LogicalLoca
     """Update a logical location."""
     db_location = get_logical_location(db, location_id)
     if db_location:
-        update_data = location.dict(exclude_unset=True)
+        update_data = location.model_dump(exclude_unset=True)
         for field, value in update_data.items():
             setattr(db_location, field, value)
         db.commit()

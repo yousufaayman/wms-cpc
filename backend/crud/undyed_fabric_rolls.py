@@ -1,0 +1,136 @@
+from sqlalchemy.orm import Session
+from typing import List, Optional, Any, Dict
+from backend.models import UndyedFabricRoll, Client, Material, WarehouseRack
+from backend.schemas import UndyedFabricRollCreate, UndyedFabricRollUpdate
+
+
+def create_undyed_fabric_roll(db: Session, roll: UndyedFabricRollCreate) -> UndyedFabricRoll:
+    db_roll = UndyedFabricRoll(**roll.model_dump())
+    db.add(db_roll)
+    db.commit()
+    db.refresh(db_roll)
+    return db_roll
+
+
+def get_undyed_fabric_rolls(
+    db: Session,
+    skip: int = 0,
+    limit: int = 200,
+    client_id: Optional[int] = None,
+    material_id: Optional[int] = None,
+) -> List[UndyedFabricRoll]:
+    q = db.query(UndyedFabricRoll)
+    if client_id is not None:
+        q = q.filter(UndyedFabricRoll.client_id == client_id)
+    if material_id is not None:
+        q = q.filter(UndyedFabricRoll.material_id == material_id)
+    return q.order_by(UndyedFabricRoll.id.desc()).offset(skip).limit(limit).all()
+
+
+def get_undyed_fabric_roll(db: Session, roll_id: int) -> Optional[UndyedFabricRoll]:
+    return db.query(UndyedFabricRoll).filter(UndyedFabricRoll.id == roll_id).first()
+
+
+def update_undyed_fabric_roll(
+    db: Session, roll_id: int, roll: UndyedFabricRollUpdate
+) -> Optional[UndyedFabricRoll]:
+    db_roll = get_undyed_fabric_roll(db, roll_id)
+    if not db_roll:
+        return None
+    for field, value in roll.model_dump(exclude_unset=True).items():
+        setattr(db_roll, field, value)
+    db.commit()
+    db.refresh(db_roll)
+    return db_roll
+
+
+def _build_undyed_lot_groups(rolls_with_racks: list) -> list:
+    lot_key_map: Dict[tuple, Dict[str, Any]] = {}
+    for roll, rack in rolls_with_racks:
+        key = (roll.lot_number, roll.supplier)
+        if key not in lot_key_map:
+            lot_key_map[key] = {
+                "lot_number": roll.lot_number,
+                "supplier": roll.supplier,
+                "rolls": [],
+            }
+        lot_key_map[key]["rolls"].append({
+            "id": roll.id,
+            "weight": float(roll.weight),
+            "length": float(roll.length) if roll.length is not None else None,
+            "gsm": float(roll.gsm) if roll.gsm is not None else None,
+            "fabric_width": float(roll.fabric_width) if roll.fabric_width is not None else None,
+            "status": roll.status,
+            "received_date": roll.received_date,
+            "issued_date": roll.issued_date,
+            "rack_id": roll.rack_id,
+            "rack_code": rack.rack_code if rack else None,
+            "quality_grade": roll.quality_grade,
+            "defect_points": roll.defect_points,
+            "remarks": roll.remarks,
+        })
+
+    lot_groups = []
+    for lg in lot_key_map.values():
+        rolls = lg["rolls"]
+        lg["total_weight"] = sum(r["weight"] for r in rolls)
+        lengths = [r["length"] for r in rolls if r["length"] is not None]
+        lg["total_length"] = sum(lengths) if lengths else None
+        lg["roll_count"] = len(rolls)
+        lot_groups.append(lg)
+    return lot_groups
+
+
+def _totals(items: list) -> tuple:
+    total_weight = sum(i["total_weight"] for i in items)
+    lengths = [i["total_length"] for i in items if i["total_length"] is not None]
+    total_length = sum(lengths) if lengths else None
+    roll_count = sum(i["roll_count"] for i in items)
+    return total_weight, total_length, roll_count
+
+
+def get_undyed_fabric_inventory(db: Session) -> List[Dict[str, Any]]:
+    """Return undyed fabric rolls grouped by client → material → lot/supplier → rolls."""
+    rows = (
+        db.query(UndyedFabricRoll, Client, Material, WarehouseRack)
+        .join(Client, UndyedFabricRoll.client_id == Client.client_id)
+        .join(Material, UndyedFabricRoll.material_id == Material.material_id)
+        .outerjoin(WarehouseRack, UndyedFabricRoll.rack_id == WarehouseRack.id)
+        .filter(UndyedFabricRoll.status == "in")
+        .order_by(Client.client_name, Material.material_name, UndyedFabricRoll.id)
+        .all()
+    )
+
+    # client_id → { meta, _mats: { material_id → { meta, _rolls } } }
+    client_map: Dict[int, Dict[str, Any]] = {}
+
+    for roll, client, material, rack in rows:
+        if client.client_id not in client_map:
+            client_map[client.client_id] = {
+                "client_id": client.client_id,
+                "client_name": client.client_name,
+                "_mats": {},
+            }
+        mats = client_map[client.client_id]["_mats"]
+        if material.material_id not in mats:
+            mats[material.material_id] = {
+                "material_id": material.material_id,
+                "material_name": material.material_name,
+                "_rolls": [],
+            }
+        mats[material.material_id]["_rolls"].append((roll, rack))
+
+    result = []
+    for client_entry in client_map.values():
+        materials = []
+        for mat_entry in client_entry.pop("_mats").values():
+            lot_groups = _build_undyed_lot_groups(mat_entry.pop("_rolls"))
+            mat_entry["lot_groups"] = lot_groups
+            mat_entry["total_weight"], mat_entry["total_length"], mat_entry["roll_count"] = _totals(lot_groups)
+            materials.append(mat_entry)
+
+        client_entry["materials"] = materials
+        client_entry["total_weight"], client_entry["total_length"], client_entry["roll_count"] = _totals(materials)
+        result.append(client_entry)
+
+    return result

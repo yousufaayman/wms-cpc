@@ -8,8 +8,10 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     PROJECT_NAME: str = "CPC WMS API"
     
-    # CORS Configuration (string in .env; supports comma-separated or JSON array)
-    CORS_ORIGINS: str = "" 
+    # CORS Configuration (string in .env; supports comma-separated or JSON array).
+    # BACKEND_CORS_ORIGINS is accepted as a legacy name (same format as CORS_ORIGINS).
+    CORS_ORIGINS: str = ""
+    BACKEND_CORS_ORIGINS: str = ""
     
     # Database Configuration
     POSTGRES_HOST: str = "localhost"
@@ -21,12 +23,12 @@ class Settings(BaseSettings):
     # JWT Configuration
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 300
     
     model_config = SettingsConfigDict(case_sensitive=True, env_file=(".env", "backend/.env"))
 
     def cors_origins_list(self) -> List[str]:
-        value = self.CORS_ORIGINS
+        value = self.CORS_ORIGINS or self.BACKEND_CORS_ORIGINS
         if not value:
             return []
         try:
