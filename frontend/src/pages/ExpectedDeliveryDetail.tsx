@@ -12,7 +12,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
   ArrowLeft, PackageOpen, Loader2, Plus, Trash2, Check, ChevronsUpDown,
-  TrendingUp, TrendingDown, Minus,
+  TrendingUp, TrendingDown, Minus, Pencil,
 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
@@ -147,6 +147,15 @@ export default function ExpectedDeliveryDetail() {
   const [deleteItemId, setDeleteItemId] = useState<number | null>(null);
   const [deletingItem, setDeletingItem] = useState(false);
 
+  // Edit item state
+  const [editItem, setEditItem] = useState<ExpectedDeliveryItem | null>(null);
+  const [editExpWeight, setEditExpWeight] = useState("");
+  const [editExpLength, setEditExpLength] = useState("");
+  const [editExpGsm, setEditExpGsm] = useState("");
+  const [editLotRef, setEditLotRef] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
   // Status update state
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
@@ -232,6 +241,42 @@ export default function ExpectedDeliveryDetail() {
     }
   };
 
+  // ── Open edit dialog ──────────────────────────────────────────────────────
+
+  const openEditItem = (item: ExpectedDeliveryItem) => {
+    setEditItem(item);
+    setEditExpWeight(item.expected_weight_kg != null ? String(item.expected_weight_kg) : "");
+    setEditExpLength(item.expected_length_m != null ? String(item.expected_length_m) : "");
+    setEditExpGsm(item.expected_gsm != null ? String(item.expected_gsm) : "");
+    setEditLotRef(item.lot_reference ?? "");
+    setEditNotes(item.notes ?? "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editItem) return;
+    if (editExpWeight === "" && editExpLength === "") {
+      toast.error(t("weightOrLengthRequired"));
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      await expectedDeliveryApi.updateItem(editItem.id, {
+        lot_reference: editItem.client_fabric_code_id == null ? (editLotRef.trim() || null) : undefined,
+        expected_weight_kg: editExpWeight !== "" ? Number(editExpWeight) : null,
+        expected_length_m: editExpLength !== "" ? Number(editExpLength) : null,
+        expected_gsm: editExpGsm !== "" ? Number(editExpGsm) : null,
+        notes: editNotes.trim() || null,
+      });
+      toast.success(t("saveChanges"));
+      setEditItem(null);
+      loadDelivery();
+    } catch {
+      toast.error("Failed to save changes");
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   // ── Delete item ────────────────────────────────────────────────────────────
 
   const handleDeleteItem = async () => {
@@ -273,6 +318,10 @@ export default function ExpectedDeliveryDetail() {
     if (!delivery) return;
     if (addType === "dyed" && !resolvedCfc) return;
     if (addType === "undyed" && !addMaterialId) return;
+    if (addExpWeight === "" && addExpLength === "") {
+      toast.error(t("weightOrLengthRequired"));
+      return;
+    }
 
     let resolvedLotId: number | null = addLotId;
     if (addType === "dyed" && addLotMode === "new" && addNewLotNumber.trim() && resolvedCfc) {
@@ -499,10 +548,16 @@ export default function ExpectedDeliveryDetail() {
                       </TableCell>
                       {canEdit && (
                         <TableCell>
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive"
-                            title={t("deleteDeliveryItem")} onClick={() => setDeleteItemId(item.id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-1">
+                            <Button size="sm" variant="ghost" title={t("editDeliveryItem")}
+                              onClick={() => openEditItem(item)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive"
+                              title={t("deleteDeliveryItem")} onClick={() => setDeleteItemId(item.id)}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
                         </TableCell>
                       )}
                     </TableRow>
@@ -546,40 +601,62 @@ export default function ExpectedDeliveryDetail() {
 
       {/* Add item dialog */}
       <Dialog open={addOpen} onOpenChange={open => { setAddOpen(open); if (!open) resetAddForm(); }}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t("addDeliveryItem")}</DialogTitle>
+        <DialogContent className="sm:max-w-lg max-h-[90vh] flex flex-col p-0 gap-0">
+          <DialogHeader className="px-6 pt-6 pb-4 shrink-0 border-b">
+            <DialogTitle className="text-lg">{t("addDeliveryItem")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
-            {/* Fabric type toggle */}
-            <div className="space-y-1.5">
-              <Label>{t("fabricType")}</Label>
-              <div className="flex gap-2">
-                <Button
+
+          <div className="flex-1 overflow-y-auto px-6 py-5 space-y-6">
+
+            {/* Step 1 — Fabric type */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">1</span>
+                <span className="text-sm font-semibold">{t("fabricType")}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
                   type="button"
-                  size="sm"
-                  variant={addType === "dyed" ? "default" : "outline"}
                   onClick={() => { setAddType("dyed"); setAddMaterialId(""); }}
+                  className={`rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors text-left ${
+                    addType === "dyed"
+                      ? "border-primary bg-primary/5 text-primary"
+                      : "border-border bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  }`}
                 >
-                  {t("dyedFabric")}
-                </Button>
-                <Button
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-primary shrink-0" />
+                    {t("dyedFabric")}
+                  </div>
+                </button>
+                <button
                   type="button"
-                  size="sm"
-                  variant={addType === "undyed" ? "default" : "outline"}
                   onClick={() => { setAddType("undyed"); setAddClientId(null); setAddDyedMaterialId(null); setAddColorId(null); setResolvedCfc(null); }}
+                  className={`rounded-lg border-2 px-4 py-3 text-sm font-medium transition-colors text-left ${
+                    addType === "undyed"
+                      ? "border-amber-500 bg-amber-500/5 text-amber-700"
+                      : "border-border bg-card text-muted-foreground hover:border-amber-400/40 hover:text-foreground"
+                  }`}
                 >
-                  {t("undyedFabric")}
-                </Button>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 shrink-0" />
+                    {t("undyedFabric")}
+                  </div>
+                </button>
               </div>
             </div>
 
-            {/* Dyed: client + material + color → auto-resolve CFC */}
-            {addType === "dyed" && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-1 gap-3">
-                  <div className="space-y-1">
-                    <Label>{t("client")} *</Label>
+            {/* Step 2 — Fabric identification */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">2</span>
+                <span className="text-sm font-semibold">{addType === "dyed" ? t("fabricCode") : t("material")}</span>
+              </div>
+
+              {addType === "dyed" && (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("client")} <span className="text-destructive">*</span></Label>
                     <Combobox
                       items={clients.map(c => ({ id: c.id, label: c.name }))}
                       value={addClientId}
@@ -588,8 +665,8 @@ export default function ExpectedDeliveryDetail() {
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <Label>{t("material")} *</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("material")} <span className="text-destructive">*</span></Label>
                       <Combobox
                         items={materials.map(m => ({ id: m.id, label: m.name }))}
                         value={addDyedMaterialId}
@@ -597,8 +674,8 @@ export default function ExpectedDeliveryDetail() {
                         placeholder={t("selectMaterial")}
                       />
                     </div>
-                    <div className="space-y-1">
-                      <Label>{t("color")} *</Label>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("color")} <span className="text-destructive">*</span></Label>
                       <Combobox
                         items={colors.map(c => ({ id: c.id, label: c.name }))}
                         value={addColorId}
@@ -607,130 +684,235 @@ export default function ExpectedDeliveryDetail() {
                       />
                     </div>
                   </div>
+                  {cfcResolving && (
+                    <div className="flex items-center gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+                      <Loader2 className="h-3 w-3 animate-spin" /> {t("resolvingFabricCode")}
+                    </div>
+                  )}
+                  {resolvedCfc && !cfcResolving && (
+                    <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700">
+                      <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                      <span>{t("fabricCodeColon")}</span>
+                      <span className="font-semibold">{resolvedCfc.fabric_code ?? `#${resolvedCfc.id}`}</span>
+                    </div>
+                  )}
                 </div>
-                {cfcResolving && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Loader2 className="h-3 w-3 animate-spin" /> {t("resolvingFabricCode")}
-                  </div>
-                )}
-                {resolvedCfc && !cfcResolving && (
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Check className="h-3 w-3 text-green-600" />
-                    {t("fabricCodeColon")} <span className="font-medium text-foreground">{resolvedCfc.fabric_code ?? `#${resolvedCfc.id}`}</span>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
 
-            {/* Undyed: material select */}
-            {addType === "undyed" && (
-              <div className="space-y-1.5">
-                <Label>{t("selectMaterial")} *</Label>
-                <Select value={addMaterialId} onValueChange={setAddMaterialId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("selectMaterial")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {materials.map(m => (
-                      <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+              {addType === "undyed" && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("material")} <span className="text-destructive">*</span></Label>
+                  <Select value={addMaterialId} onValueChange={setAddMaterialId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("selectMaterial")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {materials.map(m => (
+                        <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            {/* Step 3 — Lot */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">3</span>
+                <span className="text-sm font-semibold">{t("lotSelection")}</span>
+                <span className="text-xs text-muted-foreground">({t("optional") ?? "optional"})</span>
+              </div>
+
+              {addType === "dyed" ? (
+                <div className="space-y-2">
+                  <div className="flex gap-2 flex-wrap">
+                    {(["none", "existing", "new"] as const).map(mode => (
+                      <Button key={mode} size="sm"
+                        variant={addLotMode === mode ? "secondary" : "outline"}
+                        disabled={mode === "existing" && cfcLots.length === 0}
+                        className={addLotMode === mode ? "border-primary/30" : ""}
+                        onClick={() => { setAddLotMode(mode); setAddLotId(null); setAddNewLotNumber(""); }}
+                      >
+                        {mode === "none" ? t("noLotLinked") : mode === "existing" ? t("existingLots") : t("newLot")}
+                        {mode === "existing" && cfcLots.length > 0 && (
+                          <span className="ml-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-xs font-medium text-primary">{cfcLots.length}</span>
+                        )}
+                      </Button>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <Separator />
-
-            {/* Lot selection — dyed: link to actual lot; undyed: free-text reference */}
-            {addType === "dyed" ? (
-              <div className="space-y-2">
-                <Label>{t("lotSelection")}</Label>
-                <div className="flex gap-2 flex-wrap">
-                  {(["none", "existing", "new"] as const).map(mode => (
-                    <Button key={mode} size="sm"
-                      variant={addLotMode === mode ? "default" : "outline"}
-                      disabled={mode === "existing" && cfcLots.length === 0}
-                      onClick={() => { setAddLotMode(mode); setAddLotId(null); setAddNewLotNumber(""); }}
-                    >
-                      {mode === "none" ? t("noLotLinked") : mode === "existing" ? t("existingLots") : t("newLot")}
-                      {mode === "existing" && cfcLots.length > 0 && ` (${cfcLots.length})`}
-                    </Button>
-                  ))}
+                  </div>
+                  {addLotMode === "existing" && (
+                    cfcLotsLoading ? (
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground py-1">
+                        <Loader2 className="h-3 w-3 animate-spin" /> Loading lots…
+                      </div>
+                    ) : (
+                      <Select value={addLotId ? String(addLotId) : ""} onValueChange={v => setAddLotId(Number(v))}>
+                        <SelectTrigger><SelectValue placeholder={t("selectLot")} /></SelectTrigger>
+                        <SelectContent>
+                          {cfcLots.map(l => <SelectItem key={l.id} value={String(l.id)}>{l.lot_number}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )
+                  )}
+                  {addLotMode === "new" && (
+                    <Input placeholder={t("enterNewLotNumber")} value={addNewLotNumber} onChange={e => setAddNewLotNumber(e.target.value)} />
+                  )}
                 </div>
-                {addLotMode === "existing" && (
-                  cfcLotsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : (
-                    <Select value={addLotId ? String(addLotId) : ""} onValueChange={v => setAddLotId(Number(v))}>
-                      <SelectTrigger><SelectValue placeholder={t("selectLot")} /></SelectTrigger>
-                      <SelectContent>
-                        {cfcLots.map(l => <SelectItem key={l.id} value={String(l.id)}>{l.lot_number}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  )
-                )}
-                {addLotMode === "new" && (
-                  <Input placeholder={t("enterNewLotNumber")} value={addNewLotNumber} onChange={e => setAddNewLotNumber(e.target.value)} />
-                )}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <Label>{t("lotReference")}</Label>
+              ) : (
                 <Input value={addLotRef} onChange={e => setAddLotRef(e.target.value)} placeholder="e.g. LOT-A1" />
-              </div>
-            )}
+              )}
+            </div>
 
-            <div className="grid grid-cols-3 gap-3">
-              <div className="space-y-1.5">
-                <Label>{t("expectedWeightKg")}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={addExpWeight}
-                  onChange={e => setAddExpWeight(e.target.value)}
-                  placeholder="0.00"
-                />
+            {/* Step 4 — Quantities */}
+            <div className="space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold shrink-0">4</span>
+                <span className="text-sm font-semibold">{t("expectedQuantities") ?? "Expected Quantities"}</span>
               </div>
-              <div className="space-y-1.5">
-                <Label>{t("expectedLengthM")}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={addExpLength}
-                  onChange={e => setAddExpLength(e.target.value)}
-                  placeholder="0.00"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("expectedGsm")}</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={addExpGsm}
-                  onChange={e => setAddExpGsm(e.target.value)}
-                  placeholder="0.00"
-                />
+              <div className={`rounded-lg border p-4 space-y-3 ${addExpWeight === "" && addExpLength === "" ? "border-destructive/50 bg-destructive/5" : "bg-muted/30"}`}>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                      {t("expectedWeightKg")}
+                      {addExpLength === "" && <span className="text-destructive ml-0.5">*</span>}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type="number" min="0" step="0.01"
+                        value={addExpWeight}
+                        onChange={e => setAddExpWeight(e.target.value)}
+                        placeholder="0.00"
+                        className={`pr-8 ${addExpWeight === "" && addExpLength === "" ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">kg</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">
+                      {t("expectedLengthM")}
+                      {addExpWeight === "" && <span className="text-destructive ml-0.5">*</span>}
+                    </Label>
+                    <div className="relative">
+                      <Input
+                        type="number" min="0" step="0.01"
+                        value={addExpLength}
+                        onChange={e => setAddExpLength(e.target.value)}
+                        placeholder="0.00"
+                        className={`pr-6 ${addExpWeight === "" && addExpLength === "" ? "border-destructive focus-visible:ring-destructive" : ""}`}
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">m</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("expectedGsm")}</Label>
+                    <div className="relative">
+                      <Input
+                        type="number" min="0" step="0.01"
+                        value={addExpGsm}
+                        onChange={e => setAddExpGsm(e.target.value)}
+                        placeholder="0.00"
+                        className="pr-10"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">gsm</span>
+                    </div>
+                  </div>
+                </div>
+                {addExpWeight === "" && addExpLength === "" && (
+                  <p className="text-xs text-destructive">{t("weightOrLengthRequired")}</p>
+                )}
               </div>
             </div>
 
+            {/* Notes */}
             <div className="space-y-1.5">
-              <Label>Notes</Label>
+              <Label className="text-xs text-muted-foreground uppercase tracking-wide">Notes</Label>
               <Input
                 value={addNotes}
                 onChange={e => setAddNotes(e.target.value)}
                 placeholder="Optional notes…"
               />
             </div>
+
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="px-6 py-4 border-t shrink-0 bg-muted/20">
             <Button variant="outline" onClick={() => setAddOpen(false)}>{t("cancel")}</Button>
             <Button
               onClick={handleAddItem}
-              disabled={addingItem || (addType === "dyed" ? !resolvedCfc : !addMaterialId)}
+              disabled={addingItem || (addType === "dyed" ? !resolvedCfc : !addMaterialId) || (addExpWeight === "" && addExpLength === "")}
             >
               {addingItem && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              <Plus className="h-4 w-4 mr-1.5" />
               {t("addDeliveryItem")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit item dialog */}
+      <Dialog open={editItem !== null} onOpenChange={open => !open && setEditItem(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("editDeliveryItem")}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {editItem?.client_fabric_code_id == null && (
+              <div className="space-y-1.5">
+                <Label>{t("lotReference")}</Label>
+                <Input value={editLotRef} onChange={e => setEditLotRef(e.target.value)} placeholder="e.g. LOT-A1" />
+              </div>
+            )}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>
+                  {t("expectedWeightKg")}
+                  {editExpLength === "" && <span className="text-destructive ml-0.5">*</span>}
+                </Label>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={editExpWeight}
+                  onChange={e => setEditExpWeight(e.target.value)}
+                  placeholder="0.00"
+                  className={editExpWeight === "" && editExpLength === "" ? "border-destructive" : ""}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>
+                  {t("expectedLengthM")}
+                  {editExpWeight === "" && <span className="text-destructive ml-0.5">*</span>}
+                </Label>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={editExpLength}
+                  onChange={e => setEditExpLength(e.target.value)}
+                  placeholder="0.00"
+                  className={editExpWeight === "" && editExpLength === "" ? "border-destructive" : ""}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>{t("expectedGsm")}</Label>
+                <Input
+                  type="number" min="0" step="0.01"
+                  value={editExpGsm}
+                  onChange={e => setEditExpGsm(e.target.value)}
+                  placeholder="0.00"
+                />
+              </div>
+            </div>
+            {editExpWeight === "" && editExpLength === "" && (
+              <p className="text-xs text-destructive">{t("weightOrLengthRequired")}</p>
+            )}
+            <div className="space-y-1.5">
+              <Label>Notes</Label>
+              <Input value={editNotes} onChange={e => setEditNotes(e.target.value)} placeholder="Optional notes…" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItem(null)}>{t("cancel")}</Button>
+            <Button onClick={handleSaveEdit} disabled={savingEdit || (editExpWeight === "" && editExpLength === "")}>
+              {savingEdit && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {t("saveChanges")}
             </Button>
           </DialogFooter>
         </DialogContent>
