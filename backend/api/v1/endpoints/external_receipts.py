@@ -14,6 +14,8 @@ from backend.schemas import (
 
 router = APIRouter()
 
+_NOT_FOUND = "External receipt not found"
+
 
 @router.get("/", response_model=List[ExternalReceipt])
 def get_external_receipts(
@@ -34,7 +36,7 @@ def get_external_receipts(
 def get_external_receipt(receipt_id: int, db: Session = Depends(get_db)):
     receipt = crud.get_external_receipt(db, receipt_id=receipt_id)
     if not receipt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="External receipt not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     return receipt
 
 
@@ -55,7 +57,7 @@ def update_external_receipt(
 ):
     db_receipt = crud.get_external_receipt(db, receipt_id=receipt_id)
     if not db_receipt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="External receipt not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     return crud.update_external_receipt(db, receipt_id=receipt_id, receipt=receipt)
 
 
@@ -67,7 +69,7 @@ def close_external_receipt(
 ):
     receipt = crud.close_external_receipt(db, receipt_id=receipt_id, closed_by=body.closed_by)
     if not receipt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="External receipt not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     return receipt
 
 
@@ -79,7 +81,32 @@ def open_external_receipt(
 ):
     receipt = crud.open_external_receipt(db, receipt_id=receipt_id)
     if not receipt:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="External receipt not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    return receipt
+
+
+@router.post("/{receipt_id}/approve", response_model=ExternalReceipt)
+def approve_external_receipt(
+    receipt_id: int,
+    approved_by: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_superuser),
+):
+    receipt = crud.approve_external_receipt(db, receipt_id=receipt_id, approved_by=approved_by)
+    if not receipt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    return receipt
+
+
+@router.post("/{receipt_id}/unapprove", response_model=ExternalReceipt)
+def unapprove_external_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_superuser),
+):
+    receipt = crud.unapprove_external_receipt(db, receipt_id=receipt_id)
+    if not receipt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     return receipt
 
 
@@ -87,4 +114,4 @@ def open_external_receipt(
 def delete_external_receipt(receipt_id: int, db: Session = Depends(get_db)):
     success = crud.delete_external_receipt(db, receipt_id=receipt_id)
     if not success:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="External receipt not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)

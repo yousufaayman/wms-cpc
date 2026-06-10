@@ -13,6 +13,8 @@ from backend.schemas import (
     ExpectedDeliveryItem,
     ExpectedDeliveryItemCreate,
     ExpectedDeliveryItemUpdate,
+    ReconcileRollRequest,
+    ReconcileRollResult,
 )
 
 
@@ -102,6 +104,33 @@ def update_delivery_item(
 def delete_delivery_item(item_id: int, db: Session = Depends(get_db)):
     if not crud.delete_delivery_item(db, item_id=item_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ITEM_NOT_FOUND)
+
+
+@router.post("/{delivery_id}/reconcile-roll", response_model=ReconcileRollResult)
+def reconcile_roll(delivery_id: int, body: ReconcileRollRequest, db: Session = Depends(get_db)):
+    if not crud.get_expected_delivery(db, delivery_id=delivery_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    try:
+        item, created = crud.reconcile_roll(
+            db,
+            delivery_id=delivery_id,
+            roll_id=body.roll_id,
+            roll_type=body.roll_type,
+            weight_kg=body.weight_kg,
+            length_m=body.length_m,
+            client_fabric_code_id=body.client_fabric_code_id,
+            lot_id=body.lot_id,
+            expected_gsm=body.expected_gsm,
+            expected_weight_kg=body.expected_weight_kg,
+            expected_length_m=body.expected_length_m,
+            material_id=body.material_id,
+            lot_reference=body.lot_reference,
+        )
+    except RollAlreadyLinkedError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return ReconcileRollResult(item=item, created=created)
 
 
 @router.patch("/items/{item_id}/receive", response_model=ExpectedDeliveryItem)

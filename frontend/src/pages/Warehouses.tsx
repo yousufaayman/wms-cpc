@@ -74,7 +74,7 @@ const Warehouses = () => {
   if (loading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+        <div className={`min-h-screen bg-background flex items-center justify-center ltr`}>
           <div className="absolute top-4 right-4">
             <LanguageToggle />
           </div>
@@ -89,7 +89,7 @@ const Warehouses = () => {
   if (error) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+        <div className={`min-h-screen bg-background flex items-center justify-center ltr`}>
           <div className="absolute top-4 right-4">
             <LanguageToggle />
           </div>
@@ -104,7 +104,7 @@ const Warehouses = () => {
 
   return (
     <PageTransition>
-      <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+      <div className={`min-h-screen bg-background flex items-center justify-center ltr`}>
       <div className="absolute top-4 right-4">
         <LanguageToggle />
       </div>

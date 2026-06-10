@@ -18,6 +18,7 @@ from . import lots
 from . import fabric_rolls
 from . import undyed_fabric_rolls
 from . import receipt_items
+from . import material_request_fulfillments
 
 # Export commonly used functions for backward compatibility
 from .users import (

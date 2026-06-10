@@ -2,6 +2,28 @@ from sqlalchemy.orm import Session
 from .. import models, schemas
 
 
+def _sync_roll_status(db: Session, item: models.FabricReceiptItem, status: str) -> None:
+    """Set the dyed or undyed roll linked to this item to the given status."""
+    if item.dyed_roll_id is not None:
+        roll = db.query(models.DyedFabricRoll).filter(models.DyedFabricRoll.id == item.dyed_roll_id).first()
+        if roll:
+            roll.status = status
+    elif item.undyed_roll_id is not None:
+        roll = db.query(models.UndyedFabricRoll).filter(models.UndyedFabricRoll.id == item.undyed_roll_id).first()
+        if roll:
+            roll.status = status
+
+
+def revert_receipt_fabric_rolls(db: Session, receipt_kind: str, receipt_id: int) -> None:
+    """Revert all rolls on a receipt back to 'in'. Called before deleting a receipt."""
+    q = db.query(models.FabricReceiptItem)
+    items = _fabric_filter(q, receipt_kind, receipt_id).all()
+    for item in items:
+        _sync_roll_status(db, item, "in")
+    if items:
+        db.flush()
+
+
 def _fabric_filter(query, receipt_kind: str, receipt_id: int):
     if receipt_kind == "supplier":
         return query.filter(models.FabricReceiptItem.supplier_receipt_id == receipt_id)
@@ -52,6 +74,8 @@ def create_fabric_receipt_item(
     data = _set_receipt_fk(item.model_dump(), receipt_kind, receipt_id)
     db_item = models.FabricReceiptItem(**data)
     db.add(db_item)
+    db.flush()
+    _sync_roll_status(db, db_item, "out")
     db.commit()
     db.refresh(db_item)
     return db_item
@@ -61,6 +85,7 @@ def delete_fabric_receipt_item(db: Session, item_id: int):
     db_item = get_fabric_receipt_item(db, item_id)
     if not db_item:
         return None
+    _sync_roll_status(db, db_item, "in")
     db.delete(db_item)
     db.commit()
     return db_item

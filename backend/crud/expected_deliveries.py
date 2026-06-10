@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.sql import func
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from backend.models import ExpectedDelivery, ExpectedDeliveryItem, DeliveryItemRoll
 from backend.schemas import (
@@ -173,6 +173,155 @@ def receive_delivery_item(
     db_item.received_length_m = (db_item.received_length_m or 0) + length_m
     db.commit()
     return _load_item(db, item_id)
+
+
+def reconcile_roll(
+    db: Session,
+    delivery_id: int,
+    roll_id: int,
+    roll_type: str,
+    weight_kg: float,
+    length_m: float = 0.0,
+    client_fabric_code_id: Optional[int] = None,
+    lot_id: Optional[int] = None,
+    expected_gsm: Optional[float] = None,
+    expected_weight_kg: Optional[float] = None,
+    expected_length_m: Optional[float] = None,
+    material_id: Optional[int] = None,
+    lot_reference: Optional[str] = None,
+) -> Tuple[ExpectedDeliveryItem, bool]:
+    """Find the best-matching delivery item for the roll, or create an unplanned one.
+
+    Priority for dyed:
+      1. client_fabric_code_id + lot_id + gsm (all match)
+      2. client_fabric_code_id + null lot + gsm
+      3. create new item with fabric_code_planned=False
+
+    Priority for undyed:
+      1. material_id + lot_reference + gsm
+      2. material_id + null lot_reference + gsm
+      3. create new item with fabric_code_planned=False
+
+    Returns (item_orm, was_created).
+    """
+
+    def _gsm_ok(item_gsm, roll_gsm) -> bool:
+        if item_gsm is None or roll_gsm is None:
+            return True
+        return abs(float(item_gsm) - float(roll_gsm)) < 0.5
+
+    all_items = (
+        db.query(ExpectedDeliveryItem)
+        .filter(ExpectedDeliveryItem.delivery_id == delivery_id)
+        .all()
+    )
+
+    matched: Optional[ExpectedDeliveryItem] = None
+    was_created = False
+
+    if roll_type == "dyed" and client_fabric_code_id is not None:
+        cfc_items = [i for i in all_items if i.client_fabric_code_id == client_fabric_code_id]
+
+        # Priority 1 — lot + gsm + fabric code
+        if lot_id is not None:
+            for item in cfc_items:
+                if item.lot_id == lot_id and _gsm_ok(item.expected_gsm, expected_gsm):
+                    matched = item
+                    break
+
+        # Priority 2 — fabric code + gsm, no lot
+        if matched is None:
+            for item in cfc_items:
+                if item.lot_id is None and _gsm_ok(item.expected_gsm, expected_gsm):
+                    matched = item
+                    break
+
+        # Priority 3 — auto-create unplanned item
+        if matched is None:
+            matched = ExpectedDeliveryItem(
+                delivery_id=delivery_id,
+                client_fabric_code_id=client_fabric_code_id,
+                lot_id=lot_id,
+                expected_gsm=expected_gsm,
+                expected_weight_kg=expected_weight_kg,
+                expected_length_m=expected_length_m,
+                received_weight_kg=0,
+                received_length_m=0,
+                fabric_code_planned=False,
+            )
+            db.add(matched)
+            db.flush()
+            was_created = True
+
+        # Link roll → delivery item (unique constraint prevents double-counting)
+        existing_link = (
+            db.query(DeliveryItemRoll)
+            .filter(DeliveryItemRoll.roll_id == roll_id)
+            .first()
+        )
+        if existing_link:
+            if existing_link.delivery_item_id != matched.id:
+                raise RollAlreadyLinkedError(
+                    f"Roll {roll_id} is already linked to delivery item {existing_link.delivery_item_id}"
+                )
+            # same roll + same item → idempotent, don't double-count quantities
+            return _load_item(db, matched.id), was_created
+        db.add(DeliveryItemRoll(
+            delivery_item_id=matched.id,
+            roll_id=roll_id,
+            weight_kg=weight_kg,
+            length_m=length_m,
+        ))
+
+    elif roll_type == "undyed" and material_id is not None:
+        mat_items = [i for i in all_items if i.material_id == material_id]
+
+        def _lot_ref_ok(item_ref, roll_ref) -> bool:
+            if not item_ref and not roll_ref:
+                return True
+            if item_ref and roll_ref:
+                return item_ref.strip().lower() == roll_ref.strip().lower()
+            return False
+
+        # Priority 1 — material + lot_reference + gsm
+        if lot_reference:
+            for item in mat_items:
+                if _lot_ref_ok(item.lot_reference, lot_reference) and _gsm_ok(item.expected_gsm, expected_gsm):
+                    matched = item
+                    break
+
+        # Priority 2 — material + null lot + gsm
+        if matched is None:
+            for item in mat_items:
+                if not item.lot_reference and _gsm_ok(item.expected_gsm, expected_gsm):
+                    matched = item
+                    break
+
+        # Priority 3 — auto-create unplanned item
+        if matched is None:
+            matched = ExpectedDeliveryItem(
+                delivery_id=delivery_id,
+                material_id=material_id,
+                lot_reference=lot_reference,
+                expected_gsm=expected_gsm,
+                expected_weight_kg=expected_weight_kg,
+                expected_length_m=expected_length_m,
+                received_weight_kg=0,
+                received_length_m=0,
+                fabric_code_planned=False,
+            )
+            db.add(matched)
+            db.flush()
+            was_created = True
+
+        # Undyed rolls have no FK table — just accumulate quantities
+    else:
+        raise ValueError(f"Invalid roll_type '{roll_type}' or missing required identifier field")
+
+    matched.received_weight_kg = float(matched.received_weight_kg or 0) + weight_kg
+    matched.received_length_m = float(matched.received_length_m or 0) + length_m
+    db.commit()
+    return _load_item(db, matched.id), was_created
 
 
 def reverse_roll_delivery_contributions(db: Session, roll_id: int) -> None:

@@ -1,6 +1,6 @@
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen } from "lucide-react";
+import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen, ClipboardList } from "lucide-react";
 import { useEffect, useState } from "react";
 import { warehouseApi, Warehouse } from "@/lib/api";
 import LanguageToggle from "./LanguageToggle";
@@ -27,6 +27,7 @@ const Sidebar = () => {
   const isUndyedFabricRollsActive = location.pathname === "/undyed-fabric-rolls";
   const isFabricInventoryActive = location.pathname === "/fabric-inventory";
   const isExpectedDeliveriesActive = location.pathname.startsWith("/expected-deliveries");
+  const isMaterialRequestsActive = location.pathname.startsWith("/material-requests");
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -67,6 +68,10 @@ const Sidebar = () => {
 
   const handleExpectedDeliveries = () => {
     navigate(`/expected-deliveries?warehouse=${warehouseId}`);
+  };
+
+  const handleMaterialRequests = () => {
+    navigate(`/material-requests?warehouse=${warehouseId}`);
   };
 
   useEffect(() => {
@@ -145,6 +150,15 @@ const Sidebar = () => {
         >
           <PackageOpen className="h-4 w-4" />
           {!isCollapsed && <span className="ml-2">{t('expectedDeliveries')}</span>}
+        </Button>
+        <Button
+          variant={isMaterialRequestsActive ? "secondary" : "ghost"}
+          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isMaterialRequestsActive ? "bg-primary/10 text-primary" : ""}`}
+          onClick={handleMaterialRequests}
+          title={isCollapsed ? t('materialRequests') : ''}
+        >
+          <ClipboardList className="h-4 w-4" />
+          {!isCollapsed && <span className="ml-2">{t('materialRequests')}</span>}
         </Button>
         {warehouse?.type === 'Fabric' && (
           <>

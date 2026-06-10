@@ -10,16 +10,17 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer } from "lucide-react";
+import { Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer, PackageOpen } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { toast } from "sonner";
 import {
   clientApi, materialApi, logicalLocationApi, warehouseRackApi,
-  undyedFabricRollApi,
+  undyedFabricRollApi, expectedDeliveryApi,
   type Client, type Material, type LogicalLocation, type WarehouseRack,
-  type UndyedFabricRoll, type UndyedFabricRollCreate,
+  type UndyedFabricRoll, type UndyedFabricRollCreate, type ExpectedDelivery,
 } from "@/lib/api";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -102,6 +103,11 @@ const UndyedFabricRolls = () => {
   const [logicalLocations, setLogicalLocations] = useState<LogicalLocation[]>([]);
   const [refLoading, setRefLoading] = useState(true);
 
+  // ── Expected delivery linking ────────────────────────────────────────────────
+  const [deliveries, setDeliveries] = useState<ExpectedDelivery[]>([]);
+  const [deliveriesLoading, setDeliveriesLoading] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState<ExpectedDelivery | null>(null);
+
   // ── Step 1 – initialisation ──────────────────────────────────────────────────
   const [clientId, setClientId] = useState<number | null>(null);
   const [materialId, setMaterialId] = useState<number | null>(null);
@@ -161,6 +167,19 @@ const UndyedFabricRolls = () => {
     load();
   }, []);
 
+  // ── Load open deliveries for this warehouse ──────────────────────────────────
+  useEffect(() => {
+    if (!warehouseId) return;
+    setDeliveriesLoading(true);
+    Promise.all([
+      expectedDeliveryApi.getAll({ warehouse_id: warehouseId, status: 'pending', limit: 200 }),
+      expectedDeliveryApi.getAll({ warehouse_id: warehouseId, status: 'partial', limit: 200 }),
+    ])
+      .then(([p, pa]) => setDeliveries([...p, ...pa]))
+      .catch(() => {})
+      .finally(() => setDeliveriesLoading(false));
+  }, [warehouseId]);
+
   // ── Load printers on mount ───────────────────────────────────────────────────
   useEffect(() => {
     if (typeof BrowserPrint === "undefined") return;
@@ -171,6 +190,22 @@ const UndyedFabricRolls = () => {
       "printer",
     );
   }, []);
+
+  // ── Auto-fill GSM when material + lot match a delivery item ─────────────────
+  useEffect(() => {
+    if (!selectedDelivery || !materialId || locked) return;
+    const lotRef = lotNumberInput.trim().toLowerCase();
+    const match = selectedDelivery.items.find(i =>
+      i.material_id === materialId &&
+      i.client_fabric_code_id == null &&
+      (
+        !i.lot_reference ||
+        !lotRef ||
+        i.lot_reference.toLowerCase() === lotRef
+      )
+    );
+    if (match?.expected_gsm != null) setGsmInput(String(match.expected_gsm));
+  }, [selectedDelivery, materialId, lotNumberInput, locked]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const supplierName = (): string | null => {
@@ -183,6 +218,22 @@ const UndyedFabricRolls = () => {
   };
 
   const canLock = clientId != null && materialId != null && supplierName() != null && !locked;
+
+  // ── Select delivery (fetches full object with items) ────────────────────────
+  const handleSelectDelivery = async (id: number) => {
+    try {
+      const delivery = await expectedDeliveryApi.getById(id);
+      setSelectedDelivery(delivery);
+    } catch {
+      toast.error(t('error'));
+    }
+  };
+
+  const handleClearDelivery = () => {
+    setSelectedDelivery(null);
+    setSupplierClientId(null);
+    setSupplierLocationId(null);
+  };
 
   const handleLockDetails = () => {
     if (!canLock) return;
@@ -261,6 +312,28 @@ const UndyedFabricRolls = () => {
       }
       setWeightInput("");
       setLengthInput("");
+
+      // Reconcile with linked expected delivery
+      if (selectedDelivery) {
+        try {
+          const result = await expectedDeliveryApi.reconcileRoll(selectedDelivery.id, {
+            roll_id: roll.id,
+            roll_type: "undyed",
+            weight_kg: weight,
+            length_m: roll.length ?? 0,
+            material_id: materialId,
+            lot_reference: lockedDetails.lotNumber ?? undefined,
+            expected_gsm: lockedDetails.gsm ? parseFloat(lockedDetails.gsm) : undefined,
+          });
+          if (result.created) {
+            toast.warning(t('rollCreatedUnplanned'));
+          } else {
+            toast.success(t('rollLinkedToDelivery', { id: String(result.item.id) }));
+          }
+        } catch {
+          toast.warning(t('reconcileRollFailed'));
+        }
+      }
     } catch (e) {
       setAddError(e instanceof Error ? e.message : t('error'));
     } finally {
@@ -269,6 +342,7 @@ const UndyedFabricRolls = () => {
   };
 
   const handleReset = () => {
+    setSelectedDelivery(null);
     setClientId(null);
     setMaterialId(null);
     setSupplierClientId(null);
@@ -298,7 +372,7 @@ const UndyedFabricRolls = () => {
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="min-h-screen bg-background flex" dir="ltr">
         <Sidebar />
         <main className="flex-1 p-8 space-y-6 overflow-auto">
           {/* Header */}
@@ -329,6 +403,12 @@ const UndyedFabricRolls = () => {
                       <span className="text-muted-foreground">·</span>
                       <span className="text-muted-foreground">{t('supplier')}:</span>
                       <span className="font-medium">{supplierName() ?? "—"}</span>
+                      {selectedDelivery && (
+                        <Badge variant="outline" className="text-xs gap-1">
+                          <PackageOpen className="h-3 w-3" />
+                          {t('linkedDelivery')}: #{selectedDelivery.id}
+                        </Badge>
+                      )}
                     </div>
                   </CardContent>
                 </Card>
@@ -338,6 +418,36 @@ const UndyedFabricRolls = () => {
                     <CardTitle className="text-base">{t('step1IdentifyFabric')}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
+
+                    {/* ── Expected delivery link (optional) ─── */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1.5">
+                        <PackageOpen className="h-4 w-4 text-primary" />
+                        {t('linkToExpectedDelivery')}
+                        <span className="text-xs text-muted-foreground font-normal">({t('optional')})</span>
+                      </Label>
+                      {selectedDelivery ? (
+                        <div className="flex items-center gap-2 rounded-md bg-primary/5 border border-primary/20 px-3 py-2 text-sm">
+                          <span className="font-semibold text-primary">#{selectedDelivery.id}</span>
+                          <span className="text-muted-foreground">—</span>
+                          <span className="font-medium">{selectedDelivery.supplier}</span>
+                          <Button variant="ghost" size="sm" className="h-6 w-6 p-0 ml-auto" onClick={handleClearDelivery}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <Combobox
+                          items={deliveries.map(d => ({ id: d.id, label: `#${d.id} — ${d.supplier}` }))}
+                          value={null}
+                          onSelect={handleSelectDelivery}
+                          placeholder={deliveriesLoading ? t('loadingDeliveries') : (deliveries.length === 0 ? t('noOpenDeliveries') : t('selectExpectedDelivery'))}
+                          disabled={deliveriesLoading}
+                        />
+                      )}
+                    </div>
+
+                    <Separator />
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1">
                         <Label>{t('client')} *</Label>
@@ -442,7 +552,9 @@ const UndyedFabricRolls = () => {
                         />
                       </div>
                       <div className="space-y-1">
-                        <Label>{t('gsmLabel')}</Label>
+                        <Label>
+                          {t('gsmLabel')}
+                        </Label>
                         <Input
                           type="number"
                           placeholder="e.g. 220"
@@ -563,6 +675,12 @@ const UndyedFabricRolls = () => {
                     <CardTitle className="text-base flex items-center gap-2">
                       <Plus className="h-4 w-4" />
                       {t('step3AddRolls')}
+                      {selectedDelivery && (
+                        <Badge variant="outline" className="text-xs gap-1 ml-auto font-normal">
+                          <PackageOpen className="h-3 w-3" />
+                          {t('linkedDelivery')} #{selectedDelivery.id}
+                        </Badge>
+                      )}
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">

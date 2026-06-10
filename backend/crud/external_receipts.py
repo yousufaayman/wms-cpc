@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from backend.models import ExternalReceipt
 from backend.schemas import ExternalReceiptCreate, ExternalReceiptUpdate
+from backend.crud.receipt_items import revert_receipt_fabric_rolls
 
 
 def get_external_receipt(db: Session, receipt_id: int) -> Optional[ExternalReceipt]:
@@ -66,9 +67,30 @@ def open_external_receipt(db: Session, receipt_id: int) -> Optional[ExternalRece
     return db_receipt
 
 
+def approve_external_receipt(db: Session, receipt_id: int, approved_by: int) -> Optional[ExternalReceipt]:
+    db_receipt = get_external_receipt(db, receipt_id)
+    if db_receipt:
+        db_receipt.approved = True
+        db_receipt.approved_by = approved_by
+        db.commit()
+        db.refresh(db_receipt)
+    return db_receipt
+
+
+def unapprove_external_receipt(db: Session, receipt_id: int) -> Optional[ExternalReceipt]:
+    db_receipt = get_external_receipt(db, receipt_id)
+    if db_receipt:
+        db_receipt.approved = False
+        db_receipt.approved_by = None
+        db.commit()
+        db.refresh(db_receipt)
+    return db_receipt
+
+
 def delete_external_receipt(db: Session, receipt_id: int) -> bool:
     db_receipt = get_external_receipt(db, receipt_id)
     if db_receipt:
+        revert_receipt_fabric_rolls(db, "external", receipt_id)
         db.delete(db_receipt)
         db.commit()
         return True

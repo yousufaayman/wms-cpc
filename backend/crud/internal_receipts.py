@@ -3,6 +3,7 @@ from typing import List, Optional
 
 from backend.models import InternalReceipt
 from backend.schemas import InternalReceiptCreate, InternalReceiptUpdate
+from backend.crud.receipt_items import revert_receipt_fabric_rolls
 
 
 def get_internal_receipt(db: Session, receipt_id: int) -> Optional[InternalReceipt]:
@@ -80,6 +81,7 @@ def open_internal_receipt(db: Session, receipt_id: int) -> Optional[InternalRece
 def delete_internal_receipt(db: Session, receipt_id: int) -> bool:
     db_receipt = get_internal_receipt(db, receipt_id)
     if db_receipt:
+        revert_receipt_fabric_rolls(db, "internal", receipt_id)
         db.delete(db_receipt)
         db.commit()
         return True

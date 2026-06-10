@@ -34,6 +34,14 @@ function ClosedBadge({ closed }: Readonly<{ closed: boolean }>) {
   return <Badge variant={closed ? "destructive" : "default"}>{closed ? "Closed" : "Open"}</Badge>;
 }
 
+function ApprovedBadge({ approved, t }: Readonly<{ approved: boolean; t: (k: string) => string }>) {
+  return (
+    <Badge variant={approved ? "default" : "outline"} className={approved ? "border-green-500 bg-green-50 text-green-700" : "text-muted-foreground"}>
+      {approved ? t("approvedStatus") : t("notApprovedStatus")}
+    </Badge>
+  );
+}
+
 function StatusBadge({ status }: Readonly<{ status: string }>) {
   return <Badge variant={status === "confirmed" ? "default" : "secondary"}>{status}</Badge>;
 }
@@ -138,6 +146,7 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                   <TableHead>{t("sourceWarehouse")}</TableHead>
                   <TableHead>{t("targetLocation")}</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>{t("approvedStatus")}</TableHead>
                   <TableHead>{t("issuedAt")}</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -149,6 +158,7 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                     <TableCell>{warehouses.find(w => w.id === r.source_warehouse_id)?.name ?? `#${r.source_warehouse_id}`}</TableCell>
                     <TableCell>{logicalLocations.find(l => l.id === r.target_logical_location_id)?.name ?? `#${r.target_logical_location_id}`}</TableCell>
                     <TableCell><ClosedBadge closed={r.closed} /></TableCell>
+                    <TableCell><ApprovedBadge approved={r.approved} t={t} /></TableCell>
                     <TableCell><div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" />{formatDate(r.issued_at)}</div></TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" onClick={() => navigate(`/receipts/supplier/${r.id}${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
@@ -391,6 +401,7 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
                   <TableHead>{t("sourceWarehouse")}</TableHead>
                   <TableHead>{t("receiver")}</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>{t("approvedStatus")}</TableHead>
                   <TableHead>{t("issuedAt")}</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -402,6 +413,7 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
                     <TableCell>{warehouses.find(w => w.id === r.source_warehouse_id)?.name ?? `#${r.source_warehouse_id}`}</TableCell>
                     <TableCell>{r.receiver}</TableCell>
                     <TableCell><ClosedBadge closed={r.closed} /></TableCell>
+                    <TableCell><ApprovedBadge approved={r.approved} t={t} /></TableCell>
                     <TableCell><div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" />{formatDate(r.issued_at)}</div></TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" onClick={() => navigate(`/receipts/external/${r.id}${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
@@ -442,7 +454,7 @@ const Receipts = () => {
   if (refLoading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background ${language === "ar" ? "rtl" : "ltr"}`}>
+        <div className={`min-h-screen bg-background ltr`}>
           <div className="absolute top-4 right-4"><LanguageToggle /></div>
           <div className="flex items-center justify-center h-screen">
             <div className="text-center">
@@ -457,7 +469,7 @@ const Receipts = () => {
 
   return (
     <PageTransition>
-      <div className={`min-h-screen bg-background flex ${language === "ar" ? "rtl" : "ltr"}`}>
+      <div className={`min-h-screen bg-background flex ltr`}>
         <Sidebar />
         <main className="flex-1 p-8">
           <div className="space-y-6">

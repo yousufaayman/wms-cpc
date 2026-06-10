@@ -7,7 +7,7 @@ const Index = () => {
   const { language } = useLanguage();
 
   return (
-    <div className={`flex min-h-screen items-center justify-center bg-background ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+    <div className={`flex min-h-screen items-center justify-center bg-background ltr`}>
       <div className="absolute top-4 right-4">
         <LanguageToggle />
       </div>

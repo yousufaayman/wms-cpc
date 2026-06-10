@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from backend.models import SupplierReceipt
 from backend.schemas import SupplierReceiptCreate, SupplierReceiptUpdate
+from backend.crud.receipt_items import revert_receipt_fabric_rolls
 
 
 def get_vendor_receipt(db: Session, receipt_id: int) -> Optional[SupplierReceipt]:
@@ -66,9 +67,30 @@ def open_vendor_receipt(db: Session, receipt_id: int) -> Optional[SupplierReceip
     return db_receipt
 
 
+def approve_vendor_receipt(db: Session, receipt_id: int, approved_by: int) -> Optional[SupplierReceipt]:
+    db_receipt = get_vendor_receipt(db, receipt_id)
+    if db_receipt:
+        db_receipt.approved = True
+        db_receipt.approved_by = approved_by
+        db.commit()
+        db.refresh(db_receipt)
+    return db_receipt
+
+
+def unapprove_vendor_receipt(db: Session, receipt_id: int) -> Optional[SupplierReceipt]:
+    db_receipt = get_vendor_receipt(db, receipt_id)
+    if db_receipt:
+        db_receipt.approved = False
+        db_receipt.approved_by = None
+        db.commit()
+        db.refresh(db_receipt)
+    return db_receipt
+
+
 def delete_vendor_receipt(db: Session, receipt_id: int) -> bool:
     db_receipt = get_vendor_receipt(db, receipt_id)
     if db_receipt:
+        revert_receipt_fabric_rolls(db, "supplier", receipt_id)
         db.delete(db_receipt)
         db.commit()
         return True

@@ -154,6 +154,7 @@ export default function ExpectedDeliveryDetail() {
   const [editExpGsm, setEditExpGsm] = useState("");
   const [editLotRef, setEditLotRef] = useState("");
   const [editNotes, setEditNotes] = useState("");
+  const [editFabricCodePlanned, setEditFabricCodePlanned] = useState<boolean | null>(null);
   const [savingEdit, setSavingEdit] = useState(false);
 
   // Status update state
@@ -180,6 +181,7 @@ export default function ExpectedDeliveryDetail() {
   const [addExpLength, setAddExpLength] = useState("");
   const [addExpGsm, setAddExpGsm] = useState("");
   const [addNotes, setAddNotes] = useState("");
+  const [addFabricCodePlanned, setAddFabricCodePlanned] = useState<boolean | null>(true);
   const [addingItem, setAddingItem] = useState(false);
 
   const statusLabel: Record<ExpectedDeliveryStatus, string> = {
@@ -250,6 +252,7 @@ export default function ExpectedDeliveryDetail() {
     setEditExpGsm(item.expected_gsm != null ? String(item.expected_gsm) : "");
     setEditLotRef(item.lot_reference ?? "");
     setEditNotes(item.notes ?? "");
+    setEditFabricCodePlanned(item.fabric_code_planned ?? null);
   };
 
   const handleSaveEdit = async () => {
@@ -266,6 +269,7 @@ export default function ExpectedDeliveryDetail() {
         expected_length_m: editExpLength !== "" ? Number(editExpLength) : null,
         expected_gsm: editExpGsm !== "" ? Number(editExpGsm) : null,
         notes: editNotes.trim() || null,
+        fabric_code_planned: editItem.client_fabric_code_id != null ? editFabricCodePlanned : undefined,
       });
       toast.success(t("saveChanges"));
       setEditItem(null);
@@ -302,6 +306,7 @@ export default function ExpectedDeliveryDetail() {
     setAddMaterialId("");
     setAddLotMode("none"); setAddLotId(null); setAddNewLotNumber("");
     setCfcLots([]); setAddLotRef(""); setAddExpWeight(""); setAddExpLength(""); setAddExpGsm(""); setAddNotes("");
+    setAddFabricCodePlanned(true);
   };
 
   // Load lots when resolved CFC changes
@@ -338,6 +343,7 @@ export default function ExpectedDeliveryDetail() {
       expected_length_m: addExpLength !== "" ? Number(addExpLength) : null,
       expected_gsm: addExpGsm !== "" ? Number(addExpGsm) : null,
       notes: addNotes.trim() || null,
+      fabric_code_planned: addType === "dyed" ? addFabricCodePlanned : null,
     };
 
     setAddingItem(true);
@@ -491,6 +497,7 @@ export default function ExpectedDeliveryDetail() {
                 const itemCols = (
                   <TableRow>
                     <TableHead className="w-[12%]">{t("fabricCode")}</TableHead>
+                    <TableHead className="w-[8%] text-center">{t("fabricCodePlanned")}</TableHead>
                     <TableHead className="w-[12%]">{t("material")}</TableHead>
                     <TableHead className="w-[12%]">{t("color")}</TableHead>
                     <TableHead>{t("lotReference")}</TableHead>
@@ -504,7 +511,7 @@ export default function ExpectedDeliveryDetail() {
                     {canEdit && <TableHead className="w-16">{t("actions")}</TableHead>}
                   </TableRow>
                 );
-                const renderRow = (item: ExpectedDeliveryItem) => {
+                const renderRow = (item: ExpectedDeliveryItem, idx: number) => {
                   const isDyed = item.client_fabric_code_id != null;
                   const cfc = item.client_fabric_code;
                   const material = isDyed
@@ -512,9 +519,22 @@ export default function ExpectedDeliveryDetail() {
                     : materials.find(m => m.id === item.material_id) ?? item.material;
                   const color = isDyed ? colors.find(c => c.id === cfc?.color_id) : null;
                   return (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className={idx % 2 === 0 ? "bg-background" : "bg-muted/40"}>
                       <TableCell className="font-medium text-sm">
                         {cfc?.fabric_code ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-center text-xs">
+                        {item.client_fabric_code_id != null ? (
+                          item.fabric_code_planned === true ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200 font-medium">{t("fabricCodePlannedYes")}</span>
+                          ) : item.fabric_code_planned === false ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 border border-orange-200 font-medium">{t("fabricCodePlannedNo")}</span>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-sm">
                         {material?.name ?? "—"}
@@ -523,7 +543,7 @@ export default function ExpectedDeliveryDetail() {
                         {color?.name ?? "—"}
                       </TableCell>
                       <TableCell className="text-sm text-muted-foreground">
-                        {item.lot_reference ?? "—"}
+                        {isDyed ? (item.lot?.lot_number ?? "—") : (item.lot_reference ?? "—")}
                       </TableCell>
                       <TableCell className="text-right text-sm font-mono">
                         {fmtNum(item.expected_weight_kg)}
@@ -574,7 +594,7 @@ export default function ExpectedDeliveryDetail() {
                         </div>
                         <Table>
                           <TableHeader>{itemCols}</TableHeader>
-                          <TableBody>{dyedItems.map(renderRow)}</TableBody>
+                          <TableBody>{dyedItems.map((item, idx) => renderRow(item, idx))}</TableBody>
                         </Table>
                       </div>
                     )}
@@ -587,7 +607,7 @@ export default function ExpectedDeliveryDetail() {
                         </div>
                         <Table>
                           <TableHeader>{itemCols}</TableHeader>
-                          <TableBody>{undyedItems.map(renderRow)}</TableBody>
+                          <TableBody>{undyedItems.map((item, idx) => renderRow(item, idx))}</TableBody>
                         </Table>
                       </div>
                     )}
@@ -690,11 +710,36 @@ export default function ExpectedDeliveryDetail() {
                     </div>
                   )}
                   {resolvedCfc && !cfcResolving && (
-                    <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700">
-                      <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
-                      <span>{t("fabricCodeColon")}</span>
-                      <span className="font-semibold">{resolvedCfc.fabric_code ?? `#${resolvedCfc.id}`}</span>
-                    </div>
+                    <>
+                      <div className="flex items-center gap-2 rounded-md bg-green-50 border border-green-200 px-3 py-2 text-xs text-green-700">
+                        <Check className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                        <span>{t("fabricCodeColon")}</span>
+                        <span className="font-semibold">{resolvedCfc.fabric_code ?? `#${resolvedCfc.id}`}</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("fabricCodePlanned")}</Label>
+                        <div className="flex gap-2">
+                          {([true, false, null] as const).map(val => (
+                            <button
+                              key={String(val)}
+                              type="button"
+                              onClick={() => setAddFabricCodePlanned(val)}
+                              className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                                addFabricCodePlanned === val
+                                  ? val === true
+                                    ? "border-green-500 bg-green-50 text-green-700"
+                                    : val === false
+                                    ? "border-orange-500 bg-orange-50 text-orange-700"
+                                    : "border-primary bg-primary/5 text-primary"
+                                  : "border-border bg-card text-muted-foreground hover:border-primary/40"
+                              }`}
+                            >
+                              {val === true ? t("fabricCodePlannedYes") : val === false ? t("fabricCodePlannedNo") : t("fabricCodePlannedUnset")}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
@@ -857,6 +902,12 @@ export default function ExpectedDeliveryDetail() {
             <DialogTitle>{t("editDeliveryItem")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {editItem?.client_fabric_code_id != null && editItem.lot?.lot_number && (
+              <div className="space-y-1.5">
+                <Label>{t("lotReference")}</Label>
+                <Input value={editItem.lot.lot_number} disabled className="bg-muted text-muted-foreground" />
+              </div>
+            )}
             {editItem?.client_fabric_code_id == null && (
               <div className="space-y-1.5">
                 <Label>{t("lotReference")}</Label>
@@ -902,6 +953,31 @@ export default function ExpectedDeliveryDetail() {
             </div>
             {editExpWeight === "" && editExpLength === "" && (
               <p className="text-xs text-destructive">{t("weightOrLengthRequired")}</p>
+            )}
+            {editItem?.client_fabric_code_id != null && (
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground uppercase tracking-wide">{t("fabricCodePlanned")}</Label>
+                <div className="flex gap-2">
+                  {([true, false, null] as const).map(val => (
+                    <button
+                      key={String(val)}
+                      type="button"
+                      onClick={() => setEditFabricCodePlanned(val)}
+                      className={`rounded-md border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        editFabricCodePlanned === val
+                          ? val === true
+                            ? "border-green-500 bg-green-50 text-green-700"
+                            : val === false
+                            ? "border-orange-500 bg-orange-50 text-orange-700"
+                            : "border-primary bg-primary/5 text-primary"
+                          : "border-border bg-card text-muted-foreground hover:border-primary/40"
+                      }`}
+                    >
+                      {val === true ? t("fabricCodePlannedYes") : val === false ? t("fabricCodePlannedNo") : t("fabricCodePlannedUnset")}
+                    </button>
+                  ))}
+                </div>
+              </div>
             )}
             <div className="space-y-1.5">
               <Label>Notes</Label>

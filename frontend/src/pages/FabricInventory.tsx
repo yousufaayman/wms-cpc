@@ -931,7 +931,7 @@ const FabricInventory = () => {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="min-h-screen bg-background flex" dir="ltr">
         <Sidebar />
         <main className="flex-1 p-8 space-y-6 overflow-auto">
 

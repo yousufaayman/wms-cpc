@@ -6,7 +6,10 @@
       "Bash(Select-Object -Property Name, Mode)",
       "Bash(echo \"EXIT:$?\")",
       "Bash(git checkout *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(Get-ChildItem -Path \"s:\\\\CS_Projects\\\\Projects\\\\wms-cpc\" -Directory)",
+      "Bash(Select-Object Name)",
+      "Bash(xargs grep -l \"material.*request\\\\|job.*order\")"
     ]
   }
 }

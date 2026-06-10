@@ -35,7 +35,7 @@ const Login = () => {
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center bg-background px-4 ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+    <div className={`min-h-screen flex items-center justify-center bg-background px-4 ltr`}>
       <div className="absolute top-4 right-4">
         <LanguageToggle />
       </div>

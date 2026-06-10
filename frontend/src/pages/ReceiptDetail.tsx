@@ -3,8 +3,9 @@ import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, FileText, Calendar, User, Loader2, CheckCircle, XCircle, Plus } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, User, Loader2, CheckCircle, XCircle, Plus, ShieldCheck, ShieldOff, Trash2 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -53,6 +54,22 @@ async function openReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
   if (kind === "supplier") { await supplierReceiptApi.open(id); return; }
   if (kind === "internal") { await internalReceiptApi.open(id); return; }
   await externalReceiptApi.open(id);
+}
+
+async function approveReceiptByKind(kind: ReceiptKind, id: number, approvedBy: number): Promise<void> {
+  if (kind === "supplier") { await supplierReceiptApi.approve(id, approvedBy); return; }
+  if (kind === "external") { await externalReceiptApi.approve(id, approvedBy); return; }
+}
+
+async function unapproveReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
+  if (kind === "supplier") { await supplierReceiptApi.unapprove(id); return; }
+  if (kind === "external") { await externalReceiptApi.unapprove(id); return; }
+}
+
+async function deleteReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
+  if (kind === "supplier") { await supplierReceiptApi.delete(id); return; }
+  if (kind === "internal") { await internalReceiptApi.delete(id); return; }
+  await externalReceiptApi.delete(id);
 }
 
 function getKindLabel(kind: ReceiptKind | undefined, t: (key: string) => string): string {
@@ -161,6 +178,10 @@ const ReceiptDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false);
+  const [showUnapproveConfirm, setShowUnapproveConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const [items, setItems] = useState<FabricReceiptItem[]>([]);
   const [rollDetails, setRollDetails] = useState<Map<number, FabricRollDetail>>(new Map());
@@ -236,7 +257,7 @@ const ReceiptDetail = () => {
   if (loading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background ${language === "ar" ? "rtl" : "ltr"}`}>
+        <div className={`min-h-screen bg-background ltr`}>
           <div className="absolute top-4 right-4"><LanguageToggle /></div>
           <div className="flex items-center justify-center h-screen">
             <div className="text-center">
@@ -273,10 +294,11 @@ const ReceiptDetail = () => {
   const internalReceipt = kind === "internal" ? (receipt as InternalReceipt) : null;
   const supplierReceipt = kind === "supplier" ? (receipt as SupplierReceipt) : null;
   const externalReceipt = kind === "external" ? (receipt as ExternalReceipt) : null;
+  const approvableReceipt = supplierReceipt ?? externalReceipt;
 
   return (
     <PageTransition>
-      <div className={`min-h-screen bg-background flex ${language === "ar" ? "rtl" : "ltr"}`}>
+      <div className={`min-h-screen bg-background flex ltr`}>
         <Sidebar />
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           <div className="space-y-4">
@@ -301,6 +323,19 @@ const ReceiptDetail = () => {
                     <span className="text-muted-foreground text-sm">{t("status")}</span>
                     <ClosedBadge closed={receipt.closed} t={t} />
                   </div>
+                  {approvableReceipt && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">{t("approvedStatus")}</span>
+                      <Badge
+                        variant="outline"
+                        className={approvableReceipt.approved
+                          ? "border-green-500 bg-green-50 text-green-700"
+                          : "text-muted-foreground"}
+                      >
+                        {approvableReceipt.approved ? t("approvedStatus") : t("notApprovedStatus")}
+                      </Badge>
+                    </div>
+                  )}
                   {internalReceipt && (
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground text-sm">{t("workflow")}</span>
@@ -367,6 +402,13 @@ const ReceiptDetail = () => {
                       <span className="text-sm font-medium">User #{receipt.closed_by}</span>
                     </div>
                   )}
+                  {approvableReceipt?.approved_by != null && (
+                    <div className="flex items-center gap-1.5">
+                      <User className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-sm text-muted-foreground">{t("approvedBy")}</span>
+                      <span className="text-sm font-medium">User #{approvableReceipt.approved_by}</span>
+                    </div>
+                  )}
                   {(supplierReceipt?.closed_at || externalReceipt?.closed_at) && (
                     <div className="flex items-center gap-1.5">
                       <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
@@ -381,11 +423,23 @@ const ReceiptDetail = () => {
             </Card>
 
             {/* Actions — no header, one row */}
-            <div className="flex flex-wrap items-center gap-2 px-1">
+            <div className="flex flex-wrap items-center gap-2 px-1 justify-between">
               {internalReceipt && internalReceipt.status === "issued" && (
                 <Button onClick={() => handleAction(() => internalReceiptApi.confirm(receipt.id, CURRENT_USER_ID))} disabled={actionLoading}>
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                   {t("confirmReceipt")}
+                </Button>
+              )}
+              {approvableReceipt && isAdmin && !approvableReceipt.approved && (
+                <Button variant="default" className="bg-green-600 hover:bg-green-700" onClick={() => setShowApproveConfirm(true)} disabled={actionLoading}>
+                  <ShieldCheck className="h-4 w-4 mr-2" />
+                  {t("approveReceipt")}
+                </Button>
+              )}
+              {approvableReceipt && isAdmin && approvableReceipt.approved && (
+                <Button variant="outline" onClick={() => setShowUnapproveConfirm(true)} disabled={actionLoading}>
+                  <ShieldOff className="h-4 w-4 mr-2" />
+                  {t("unapproveReceipt")}
                 </Button>
               )}
               {receipt.closed && isAdmin && (
@@ -395,9 +449,14 @@ const ReceiptDetail = () => {
                 </Button>
               )}
               {!receipt.closed && (
-                <Button variant="destructive" onClick={() => handleAction(() => closeReceiptByKind(kind, receipt.id))} disabled={actionLoading}>
-                  {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
+                <Button variant="destructive" onClick={() => setShowCloseConfirm(true)} disabled={actionLoading}>
+                  <XCircle className="h-4 w-4 mr-2" />
                   {t("closeReceipt")}
+                </Button>
+              )}
+              {isAdmin && (
+                <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive hover:bg-destructive/10 ml-auto" onClick={() => setShowDeleteConfirm(true)} disabled={actionLoading}>
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               )}
             </div>
@@ -434,6 +493,104 @@ const ReceiptDetail = () => {
           </div>{/* end space-y-4 */}
         </main>
       </div>
+
+      <Dialog open={showApproveConfirm} onOpenChange={setShowApproveConfirm}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("confirmApproveReceiptTitle")}</DialogTitle>
+            <DialogDescription>{t("confirmApproveReceiptDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowApproveConfirm(false)}>{t("cancel")}</Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700"
+              disabled={actionLoading}
+              onClick={() => {
+                setShowApproveConfirm(false);
+                handleAction(() => approveReceiptByKind(kind!, receipt.id, CURRENT_USER_ID));
+              }}
+            >
+              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShieldCheck className="h-4 w-4 mr-2" />}
+              {t("approveReceipt")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showUnapproveConfirm} onOpenChange={setShowUnapproveConfirm}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("confirmUnapproveReceiptTitle")}</DialogTitle>
+            <DialogDescription>{t("confirmUnapproveReceiptDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowUnapproveConfirm(false)}>{t("cancel")}</Button>
+            <Button
+              variant="outline"
+              disabled={actionLoading}
+              onClick={() => {
+                setShowUnapproveConfirm(false);
+                handleAction(() => unapproveReceiptByKind(kind!, receipt.id));
+              }}
+            >
+              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ShieldOff className="h-4 w-4 mr-2" />}
+              {t("unapproveReceipt")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showCloseConfirm} onOpenChange={setShowCloseConfirm}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("confirmCloseReceiptTitle")}</DialogTitle>
+            <DialogDescription>{t("confirmCloseReceiptDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowCloseConfirm(false)}>{t("cancel")}</Button>
+            <Button
+              variant="destructive"
+              disabled={actionLoading}
+              onClick={() => {
+                setShowCloseConfirm(false);
+                handleAction(() => closeReceiptByKind(kind, receipt.id));
+              }}
+            >
+              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+              {t("closeReceipt")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("confirmDeleteReceiptTitle")}</DialogTitle>
+            <DialogDescription>{t("confirmDeleteReceiptDesc")}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteConfirm(false)}>{t("cancel")}</Button>
+            <Button
+              variant="destructive"
+              disabled={actionLoading}
+              onClick={async () => {
+                setShowDeleteConfirm(false);
+                setActionLoading(true);
+                try {
+                  await deleteReceiptByKind(kind!, receipt.id);
+                  navigate(`/receipts${warehouseQuery}`);
+                } finally {
+                  setActionLoading(false);
+                }
+              }}
+            >
+              {actionLoading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Trash2 className="h-4 w-4 mr-2" />}
+              {t("delete")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </PageTransition>
   );
 };

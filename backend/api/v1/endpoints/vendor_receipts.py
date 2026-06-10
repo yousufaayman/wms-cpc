@@ -80,6 +80,31 @@ def open_vendor_receipt(
     return receipt
 
 
+@router.post("/{receipt_id}/approve", response_model=SupplierReceipt)
+def approve_vendor_receipt(
+    receipt_id: int,
+    approved_by: int = Query(...),
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_superuser),
+):
+    receipt = crud.approve_vendor_receipt(db, receipt_id=receipt_id, approved_by=approved_by)
+    if not receipt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    return receipt
+
+
+@router.post("/{receipt_id}/unapprove", response_model=SupplierReceipt)
+def unapprove_vendor_receipt(
+    receipt_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_active_superuser),
+):
+    receipt = crud.unapprove_vendor_receipt(db, receipt_id=receipt_id)
+    if not receipt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    return receipt
+
+
 @router.delete("/{receipt_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_vendor_receipt(receipt_id: int, db: Session = Depends(get_db)):
     success = crud.delete_vendor_receipt(db, receipt_id=receipt_id)

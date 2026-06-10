@@ -174,6 +174,56 @@ class JobOrderItem(Base):
         return f"<JobOrderItem {self.item_id} for job order {self.job_order_id}>"
 
 
+class JobOrderMaterialRequest(Base):
+    __tablename__ = "job_order_material_requests"
+    __table_args__ = {'schema': 'core'}
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_order_id = Column(Integer, ForeignKey("core.job_orders.job_order_id"), nullable=False)
+    panel_type = Column(String(100), nullable=False)
+    consumption = Column(NUMERIC(10, 4), nullable=False)
+    quantity = Column(NUMERIC(10, 4), nullable=True)
+    measurement_scale = Column(String(50), nullable=False)
+    fabric_code_id = Column(Integer, ForeignKey("core.client_fabric_codes.id"), nullable=False)
+    fulfilled = Column(Boolean, nullable=False, default=False, server_default='false')
+
+    job_order = relationship("JobOrder", foreign_keys=[job_order_id])
+    fabric_code = relationship("ClientFabricCode", foreign_keys=[fabric_code_id])
+    fulfillments = relationship("MaterialRequestFulfillment", back_populates="material_request", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<JobOrderMaterialRequest {self.id} job_order={self.job_order_id}>"
+
+
+class MaterialRequestFulfillment(Base):
+    __tablename__ = "material_request_fulfillments"
+    __table_args__ = {'schema': 'core'}
+
+    id = Column(Integer, primary_key=True, index=True)
+    material_request_id = Column(
+        Integer,
+        ForeignKey("core.job_order_material_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    internal_receipt_id = Column(
+        Integer,
+        ForeignKey("wms.internal_receipts.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+    )
+    quantity_issued = Column(NUMERIC(10, 4), nullable=True)
+    measurement_scale = Column(String(50), nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(TIMESTAMP, nullable=False, default=func.current_timestamp())
+
+    material_request = relationship("JobOrderMaterialRequest", back_populates="fulfillments")
+    internal_receipt = relationship("InternalReceipt", foreign_keys=[internal_receipt_id])
+
+    def __repr__(self):
+        return f"<MaterialRequestFulfillment {self.id} req={self.material_request_id} receipt={self.internal_receipt_id}>"
+
+
 class Material(Base):
     __tablename__ = "materials"
     __table_args__ = {"schema": "core"}
@@ -426,14 +476,17 @@ class SupplierReceipt(Base):
     status = Column(String(20), nullable=False, default='issued')
     issued_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
     closed_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
+    approved_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
     issued_at = Column(TIMESTAMP, default=func.current_timestamp())
     closed_at = Column(TIMESTAMP, nullable=True)
+    approved = Column(Boolean, nullable=False, default=False)
     remarks = Column(Text, nullable=True)
 
     source_warehouse = relationship("Warehouse", foreign_keys=[source_warehouse_id])
     target_logical_location = relationship("LogicalLocation", foreign_keys=[target_logical_location_id])
     issuer = relationship("User", foreign_keys=[issued_by])
     closer = relationship("User", foreign_keys=[closed_by])
+    approver = relationship("User", foreign_keys=[approved_by])
     def __repr__(self):
         return f"<SupplierReceipt {self.id}>"
 
@@ -477,12 +530,15 @@ class ExternalReceipt(Base):
     status = Column(String(20), nullable=False, default='issued')
     issued_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
     closed_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
+    approved_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
     issued_at = Column(TIMESTAMP, default=func.current_timestamp())
     closed_at = Column(TIMESTAMP, nullable=True)
+    approved = Column(Boolean, nullable=False, default=False)
 
     source_warehouse = relationship("Warehouse", foreign_keys=[source_warehouse_id])
     issuer = relationship("User", foreign_keys=[issued_by])
     closer = relationship("User", foreign_keys=[closed_by])
+    approver = relationship("User", foreign_keys=[approved_by])
     def __repr__(self):
         return f"<ExternalReceipt {self.id}>"
 
@@ -645,6 +701,8 @@ class ExpectedDeliveryItem(Base):
     received_weight_kg = Column(NUMERIC(10, 2), nullable=False, default=0)
     received_length_m = Column(NUMERIC(10, 2), nullable=False, default=0)
     notes = Column(Text, nullable=True)
+    # True = fabric code existed before this delivery (planned); False = created ad-hoc during processing
+    fabric_code_planned = Column(Boolean, nullable=True, default=True, server_default='true')
 
     delivery = relationship("ExpectedDelivery", back_populates="items")
     client_fabric_code = relationship("ClientFabricCode", foreign_keys=[client_fabric_code_id])

@@ -305,6 +305,116 @@ class BoxContentWithDetails(BoxContent):
     color: Optional[Color] = None
     size: Optional[Size] = None
 
+# Job Order Material Request schemas
+class _MRNestedClient(BaseModel):
+    id: int
+    name: str
+    class Config:
+        from_attributes = True
+
+class _MRNestedMaterial(BaseModel):
+    id: int
+    name: str
+    class Config:
+        from_attributes = True
+
+class _MRNestedColor(BaseModel):
+    id: int
+    name: str
+    class Config:
+        from_attributes = True
+
+class _MRFabricCode(BaseModel):
+    id: int
+    fabric_code: Optional[str] = None
+    material_id: int
+    color_id: int
+    client_id: int
+    material: Optional[_MRNestedMaterial] = None
+    color: Optional[_MRNestedColor] = None
+    client: Optional[_MRNestedClient] = None
+    class Config:
+        from_attributes = True
+
+class _MRJobOrder(BaseModel):
+    id: int
+    job_order_number: str
+    client_id: int
+    client: Optional[_MRNestedClient] = None
+    notes: Optional[str] = None
+    date_created: Optional[datetime] = None
+    class Config:
+        from_attributes = True
+
+class JobOrderMaterialRequestBase(BaseModel):
+    job_order_id: int
+    panel_type: str
+    consumption: float
+    quantity: Optional[float] = None
+    measurement_scale: str
+    fabric_code_id: int
+
+class JobOrderMaterialRequestCreate(JobOrderMaterialRequestBase):
+    pass
+
+class JobOrderMaterialRequest(JobOrderMaterialRequestBase):
+    id: int
+    fulfilled: bool  # computed from ledger via @property on ORM model
+    fabric_code: Optional[_MRFabricCode] = None
+    job_order: Optional[_MRJobOrder] = None
+
+    class Config:
+        from_attributes = True
+
+# ── Material Request Metrics schemas ────────────────────────────────────────
+
+class RequestBulkMetrics(BaseModel):
+    id: int
+    total_issued: float
+    remaining: Optional[float]
+
+class MaterialRequestMetrics(BaseModel):
+    measurement_scale: str
+    requested_quantity: Optional[float]
+    issued_from_rolls: float
+    issued_manually: float
+    total_issued: float
+    remaining: Optional[float]
+
+# ── Material Request Fulfillment schemas ─────────────────────────────────────
+
+class _MRFNestedReceipt(BaseModel):
+    id: int
+    source_warehouse_id: int
+    target_logical_location_id: int
+    status: str
+    issued_at: datetime
+    class Config:
+        from_attributes = True
+
+class MaterialRequestFulfillmentBase(BaseModel):
+    material_request_id: int
+    internal_receipt_id: Optional[int] = None
+    quantity_issued: Optional[float] = None
+    measurement_scale: Optional[str] = None
+    notes: Optional[str] = None
+
+class MaterialRequestFulfillmentCreate(MaterialRequestFulfillmentBase):
+    pass
+
+class MaterialRequestFulfillmentUpdate(BaseModel):
+    quantity_issued: Optional[float] = None
+    measurement_scale: Optional[str] = None
+    notes: Optional[str] = None
+
+class MaterialRequestFulfillment(MaterialRequestFulfillmentBase):
+    id: int
+    created_at: datetime
+    internal_receipt: Optional[_MRFNestedReceipt] = None
+
+    class Config:
+        from_attributes = True
+
 # Job Order Item schemas
 class JobOrderItemBase(BaseModel):
     job_order_id: int
@@ -388,8 +498,10 @@ class SupplierReceiptInDB(SupplierReceiptBase):
     status: str
     issued_by: Optional[int] = None
     closed_by: Optional[int] = None
+    approved_by: Optional[int] = None
     issued_at: datetime
     closed_at: Optional[datetime] = None
+    approved: bool = False
 
     class Config:
         from_attributes = True
@@ -453,8 +565,10 @@ class ExternalReceiptInDB(ExternalReceiptBase):
     status: str
     issued_by: Optional[int] = None
     closed_by: Optional[int] = None
+    approved_by: Optional[int] = None
     issued_at: datetime
     closed_at: Optional[datetime] = None
+    approved: bool = False
 
     class Config:
         from_attributes = True
@@ -863,6 +977,8 @@ class ExpectedDeliveryItemBase(BaseModel):
     expected_length_m: Optional[float] = Field(None, ge=0)
     expected_gsm: Optional[float] = Field(None, ge=0)
     notes: Optional[str] = None
+    # True = fabric code pre-existed (planned); False = created ad-hoc during processing; None = unset
+    fabric_code_planned: Optional[bool] = True
 
     @model_validator(mode="after")
     def validate_exactly_one_type(self) -> "ExpectedDeliveryItemBase":
@@ -888,6 +1004,7 @@ class ExpectedDeliveryItemUpdate(BaseModel):
     received_weight_kg: Optional[float] = Field(None, ge=0)
     received_length_m: Optional[float] = Field(None, ge=0)
     notes: Optional[str] = None
+    fabric_code_planned: Optional[bool] = None
 
 
 class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
@@ -895,6 +1012,7 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     delivery_id: int
     received_weight_kg: float
     received_length_m: float
+    fabric_code_planned: Optional[bool] = None
     client_fabric_code: Optional[ClientFabricCode] = None
     material: Optional[Material] = None
     lot: Optional[Lot] = None
@@ -947,3 +1065,24 @@ class ExpectedDeliveryInDB(ExpectedDeliveryBase):
 
 class ExpectedDelivery(ExpectedDeliveryInDB):
     pass
+
+
+class ReconcileRollRequest(BaseModel):
+    roll_id: int
+    roll_type: str = Field(..., pattern="^(dyed|undyed)$")
+    weight_kg: float = Field(..., ge=0)
+    length_m: float = Field(default=0, ge=0)
+    # dyed path
+    client_fabric_code_id: Optional[int] = None
+    lot_id: Optional[int] = None
+    expected_gsm: Optional[float] = Field(None, ge=0)
+    expected_weight_kg: Optional[float] = Field(None, ge=0)
+    expected_length_m: Optional[float] = Field(None, ge=0)
+    # undyed path
+    material_id: Optional[int] = None
+    lot_reference: Optional[str] = Field(None, max_length=100)
+
+
+class ReconcileRollResult(BaseModel):
+    item: ExpectedDeliveryItem
+    created: bool

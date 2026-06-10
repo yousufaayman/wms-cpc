@@ -8,7 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { PackageOpen, Plus, Eye, Trash2, Loader2 } from "lucide-react";
+import { PackageOpen, Plus, Eye, Trash2, Loader2, ChevronsUpDown, Check } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from "@/components/ui/command";
+import { cn } from "@/lib/utils";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -48,7 +51,10 @@ export default function ExpectedDeliveries() {
   const [deliveries, setDeliveries] = useState<ExpectedDelivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
-  const [supplierSearch, setSupplierSearch] = useState("");
+  const [supplierFilter, setSupplierFilter] = useState("all");
+  const [supplierOpen, setSupplierOpen] = useState(false);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -77,9 +83,17 @@ export default function ExpectedDeliveries() {
 
   useEffect(load, [warehouseId]);
 
+  const uniqueSuppliers = Array.from(new Set(deliveries.map(d => d.supplier))).sort();
+
   const filtered = deliveries.filter(d => {
     if (statusFilter !== "all" && d.status !== statusFilter) return false;
-    if (supplierSearch && !d.supplier.toLowerCase().includes(supplierSearch.toLowerCase())) return false;
+    if (supplierFilter !== "all" && d.supplier !== supplierFilter) return false;
+    if (dateFrom || dateTo) {
+      const date = d.expected_date ? d.expected_date.slice(0, 10) : null;
+      if (!date) return false;
+      if (dateFrom && date < dateFrom) return false;
+      if (dateTo && date > dateTo) return false;
+    }
     return true;
   });
 
@@ -143,13 +157,36 @@ export default function ExpectedDeliveries() {
           </div>
 
           {/* Filters */}
-          <div className="flex gap-3 flex-wrap">
-            <Input
-              placeholder={`${t("supplierName")}…`}
-              value={supplierSearch}
-              onChange={e => setSupplierSearch(e.target.value)}
-              className="w-56"
-            />
+          <div className="flex gap-3 flex-wrap items-end">
+            {/* Supplier searchable dropdown */}
+            <Popover open={supplierOpen} onOpenChange={setSupplierOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" aria-expanded={supplierOpen} className="w-56 justify-between font-normal">
+                  {supplierFilter === "all" ? t("allSuppliers") : supplierFilter}
+                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-56 p-0" align="start">
+                <Command>
+                  <CommandInput placeholder={`${t("supplierName")}…`} />
+                  <CommandEmpty>No supplier found.</CommandEmpty>
+                  <CommandGroup>
+                    <CommandItem value="all" onSelect={() => { setSupplierFilter("all"); setSupplierOpen(false); }}>
+                      <Check className={cn("mr-2 h-4 w-4", supplierFilter === "all" ? "opacity-100" : "opacity-0")} />
+                      {t("allSuppliers")}
+                    </CommandItem>
+                    {uniqueSuppliers.map(s => (
+                      <CommandItem key={s} value={s} onSelect={() => { setSupplierFilter(s); setSupplierOpen(false); }}>
+                        <Check className={cn("mr-2 h-4 w-4", supplierFilter === s ? "opacity-100" : "opacity-0")} />
+                        {s}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </Command>
+              </PopoverContent>
+            </Popover>
+
+            {/* Status filter */}
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-44">
                 <SelectValue placeholder={t("filterByStatus")} />
@@ -162,6 +199,18 @@ export default function ExpectedDeliveries() {
                 <SelectItem value="cancelled">{t("statusCancelled")}</SelectItem>
               </SelectContent>
             </Select>
+
+            {/* Expected date range */}
+            <div className="flex items-end gap-2">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">{t("dateFrom")}</p>
+                <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground mb-1">{t("dateTo")}</p>
+                <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" />
+              </div>
+            </div>
           </div>
 
           {/* Table */}
@@ -191,10 +240,10 @@ export default function ExpectedDeliveries() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filtered.map(d => (
+                    {filtered.map((d, idx) => (
                       <TableRow
                         key={d.id}
-                        className="cursor-pointer"
+                        className={`cursor-pointer ${idx % 2 === 0 ? "bg-background" : "bg-muted/40"}`}
                         onClick={() => navigate(`/expected-deliveries/${d.id}?warehouse=${warehouseId}`)}
                       >
                         <TableCell className="font-mono text-sm font-medium">#{d.id}</TableCell>
