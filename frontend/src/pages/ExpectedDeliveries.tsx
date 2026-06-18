@@ -53,6 +53,7 @@ export default function ExpectedDeliveries() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [supplierFilter, setSupplierFilter] = useState("all");
   const [supplierOpen, setSupplierOpen] = useState(false);
+  const [plannedFilter, setPlannedFilter] = useState("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -88,6 +89,10 @@ export default function ExpectedDeliveries() {
   const filtered = deliveries.filter(d => {
     if (statusFilter !== "all" && d.status !== statusFilter) return false;
     if (supplierFilter !== "all" && d.supplier !== supplierFilter) return false;
+    if (plannedFilter !== "all") {
+      const target = plannedFilter === "planned";
+      if (!d.items.some(i => i.fabric_code_planned === target)) return false;
+    }
     if (dateFrom || dateTo) {
       const date = d.expected_date ? d.expected_date.slice(0, 10) : null;
       if (!date) return false;
@@ -197,6 +202,18 @@ export default function ExpectedDeliveries() {
                 <SelectItem value="partial">{t("statusPartial")}</SelectItem>
                 <SelectItem value="received">{t("statusReceived")}</SelectItem>
                 <SelectItem value="cancelled">{t("statusCancelled")}</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* Planned / unplanned filter */}
+            <Select value={plannedFilter} onValueChange={setPlannedFilter}>
+              <SelectTrigger className="w-52">
+                <SelectValue placeholder={t("fabricCodePlanned")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("fabricCodePlannedAll")}</SelectItem>
+                <SelectItem value="planned">{t("fabricCodePlannedYes")}</SelectItem>
+                <SelectItem value="unplanned">{t("fabricCodePlannedNo")}</SelectItem>
               </SelectContent>
             </Select>
 

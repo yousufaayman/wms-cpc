@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
@@ -497,7 +496,7 @@ export default function ExpectedDeliveryDetail() {
                 const itemCols = (
                   <TableRow>
                     <TableHead className="w-[12%]">{t("fabricCode")}</TableHead>
-                    <TableHead className="w-[8%] text-center">{t("fabricCodePlanned")}</TableHead>
+                    <TableHead className="w-[14%] text-center">{t("fabricCodePlanned")}</TableHead>
                     <TableHead className="w-[12%]">{t("material")}</TableHead>
                     <TableHead className="w-[12%]">{t("color")}</TableHead>
                     <TableHead>{t("lotReference")}</TableHead>
