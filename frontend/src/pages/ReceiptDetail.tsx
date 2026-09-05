@@ -4,11 +4,11 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, FileText, Calendar, User, Loader2, CheckCircle, XCircle, Plus } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ArrowLeft, FileText, Calendar, User, Loader2, CheckCircle, XCircle, Plus, Trash2 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import LanguageToggle from "@/components/LanguageToggle";
 import {
@@ -19,6 +19,7 @@ import {
   logicalLocationApi, type LogicalLocation,
   fabricReceiptItemApi, type FabricReceiptItem, type ReceiptKind,
   fabricRollApi, type FabricRollDetail,
+  undyedFabricRollApi, type UndyedFabricRollDetail,
 } from "@/lib/api";
 import { buildMaterialGroups, fmt, type RollSummary, type MaterialGroup } from "@/lib/receiptAggregation";
 
@@ -55,6 +56,12 @@ async function openReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
   await externalReceiptApi.open(id);
 }
 
+async function deleteReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
+  if (kind === "supplier") { await supplierReceiptApi.delete(id); return; }
+  if (kind === "internal") { await internalReceiptApi.delete(id); return; }
+  await externalReceiptApi.delete(id);
+}
+
 function getKindLabel(kind: ReceiptKind | undefined, t: (key: string) => string): string {
   if (kind === "internal") return t("internalReceipts");
   if (kind === "external") return t("externalReceipts");
@@ -68,18 +75,33 @@ interface RollDetail extends RollSummary {
 async function fetchItemsWithDetails(
   kind: ReceiptKind,
   receiptId: number,
-): Promise<{ items: FabricReceiptItem[]; rollDetails: Map<number, FabricRollDetail> }> {
+): Promise<{
+  items: FabricReceiptItem[];
+  rollDetails: Map<number, FabricRollDetail>;
+  undyedRollDetails: Map<number, UndyedFabricRollDetail>;
+}> {
   const items = await fabricReceiptItemApi.list(kind, receiptId);
   const dyedRollIds = items
     .filter((i): i is FabricReceiptItem & { dyed_roll_id: number } =>
       i.item_type === "FabricRoll" && i.dyed_roll_id != null)
     .map(i => i.dyed_roll_id);
-  const results = await Promise.allSettled(dyedRollIds.map(rid => fabricRollApi.getDetail(rid)));
+  const undyedRollIds = items
+    .filter((i): i is FabricReceiptItem & { undyed_roll_id: number } =>
+      i.item_type === "UndyedFabricRoll" && i.undyed_roll_id != null)
+    .map(i => i.undyed_roll_id);
+  const [dyedResults, undyedResults] = await Promise.all([
+    Promise.allSettled(dyedRollIds.map(rid => fabricRollApi.getDetail(rid))),
+    Promise.allSettled(undyedRollIds.map(rid => undyedFabricRollApi.getDetail(rid))),
+  ]);
   const rollDetails = new Map<number, FabricRollDetail>();
-  results.forEach((res, idx) => {
+  dyedResults.forEach((res, idx) => {
     if (res.status === "fulfilled") rollDetails.set(dyedRollIds[idx], res.value);
   });
-  return { items, rollDetails };
+  const undyedRollDetails = new Map<number, UndyedFabricRollDetail>();
+  undyedResults.forEach((res, idx) => {
+    if (res.status === "fulfilled") undyedRollDetails.set(undyedRollIds[idx], res.value);
+  });
+  return { items, rollDetails, undyedRollDetails };
 }
 
 function ItemsContent({
@@ -149,8 +171,7 @@ const ReceiptDetail = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { t } = useTranslation();
-  const { language } = useLanguage();
-  const { isAdmin } = useCurrentUser();
+  const { isAdmin, can } = useCurrentUser();
 
   const warehouseParam = searchParams.get("warehouse");
   const warehouseQuery = warehouseParam ? `?warehouse=${warehouseParam}` : "";
@@ -164,6 +185,7 @@ const ReceiptDetail = () => {
 
   const [items, setItems] = useState<FabricReceiptItem[]>([]);
   const [rollDetails, setRollDetails] = useState<Map<number, FabricRollDetail>>(new Map());
+  const [undyedRollDetails, setUndyedRollDetails] = useState<Map<number, UndyedFabricRollDetail>>(new Map());
   const [itemsLoading, setItemsLoading] = useState(false);
 
   async function loadItems(receiptId: number) {
@@ -173,6 +195,7 @@ const ReceiptDetail = () => {
       const result = await fetchItemsWithDetails(kind, receiptId);
       setItems(result.items);
       setRollDetails(result.rollDetails);
+      setUndyedRollDetails(result.undyedRollDetails);
     } finally {
       setItemsLoading(false);
     }
@@ -209,18 +232,21 @@ const ReceiptDetail = () => {
   }
 
   const fabricSummaries = useMemo<RollDetail[]>(() => {
-    const dyedItems = items.filter(
-      (i): i is FabricReceiptItem & { dyed_roll_id: number } =>
-        i.item_type === "FabricRoll" && i.dyed_roll_id != null,
-    );
-    return dyedItems.reduce<RollDetail[]>((acc, i) => {
-      const d = rollDetails.get(i.dyed_roll_id);
-      if (d) {
-        acc.push({ roll_id: i.dyed_roll_id, material_name: d.material_name, color_name: d.color_name, weight: d.weight, length: d.length ?? null });
+    return items.reduce<RollDetail[]>((acc, i) => {
+      if (i.item_type === "FabricRoll" && i.dyed_roll_id != null) {
+        const d = rollDetails.get(i.dyed_roll_id);
+        if (d) {
+          acc.push({ roll_id: i.dyed_roll_id, material_name: d.material_name, color_name: d.color_name, weight: d.weight, length: d.length ?? null });
+        }
+      } else if (i.item_type === "UndyedFabricRoll" && i.undyed_roll_id != null) {
+        const d = undyedRollDetails.get(i.undyed_roll_id);
+        if (d) {
+          acc.push({ roll_id: i.undyed_roll_id, material_name: d.material_name, color_name: t("undyedLabel"), weight: d.weight, length: d.length ?? null });
+        }
       }
       return acc;
     }, []);
-  }, [items, rollDetails]);
+  }, [items, rollDetails, undyedRollDetails, t]);
 
   const fabricGroups = useMemo<MaterialGroup[]>(
     () => buildMaterialGroups(fabricSummaries),
@@ -236,7 +262,7 @@ const ReceiptDetail = () => {
   if (loading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background ${language === "ar" ? "rtl" : "ltr"}`}>
+        <div className="min-h-screen bg-background">
           <div className="absolute top-4 right-4"><LanguageToggle /></div>
           <div className="flex items-center justify-center h-screen">
             <div className="text-center">
@@ -276,7 +302,7 @@ const ReceiptDetail = () => {
 
   return (
     <PageTransition>
-      <div className={`min-h-screen bg-background flex ${language === "ar" ? "rtl" : "ltr"}`}>
+      <div className="min-h-screen bg-background flex">
         <Sidebar />
         <main className="flex-1 min-w-0 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           <div className="space-y-4">
@@ -382,7 +408,7 @@ const ReceiptDetail = () => {
 
             {/* Actions — no header, one row */}
             <div className="flex flex-wrap items-center gap-2 px-1">
-              {internalReceipt && internalReceipt.status === "issued" && (
+              {internalReceipt && internalReceipt.status === "issued" && can('confirm_receipts') && (
                 <Button onClick={() => handleAction(() => internalReceiptApi.confirm(receipt.id, CURRENT_USER_ID))} disabled={actionLoading}>
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                   {t("confirmReceipt")}
@@ -394,11 +420,43 @@ const ReceiptDetail = () => {
                   {t("reopenReceipt")}
                 </Button>
               )}
-              {!receipt.closed && (
+              {!receipt.closed && can('create_receipts') && (
                 <Button variant="destructive" onClick={() => handleAction(() => closeReceiptByKind(kind, receipt.id))} disabled={actionLoading}>
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
                   {t("closeReceipt")}
                 </Button>
+              )}
+              {can('delete_receipts') && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="outline" disabled={actionLoading}>
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      {t("deleteReceipt")}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t("confirmDeleteReceiptTitle")}</AlertDialogTitle>
+                      <AlertDialogDescription>{t("confirmDeleteReceiptDesc")}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={async () => {
+                          setActionLoading(true);
+                          try {
+                            await deleteReceiptByKind(kind, receipt.id);
+                            navigate(`/receipts${warehouseQuery}`);
+                          } finally {
+                            setActionLoading(false);
+                          }
+                        }}
+                      >
+                        {t("delete")}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
               )}
             </div>
 
@@ -407,7 +465,7 @@ const ReceiptDetail = () => {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>{t("receiptItems")}</CardTitle>
-                  {!receipt.closed && (
+                  {!receipt.closed && can('create_receipts') && (
                     <Button
                       size="sm"
                       onClick={() =>

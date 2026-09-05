@@ -10,3 +10,7 @@ backend/__pycache__/
 backend/**/__pycache__/
 backend/**/*.pyc
 backend/.pytest_cache/
+backend/.env
+backend/.env.*
+.env
+.env.*

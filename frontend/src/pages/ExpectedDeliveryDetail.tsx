@@ -5,24 +5,28 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { badgeVariants } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import {
   ArrowLeft, PackageOpen, Loader2, Plus, Trash2, Check,
   TrendingUp, TrendingDown, Minus,
 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
+import { Combobox } from "@/components/Combobox";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   expectedDeliveryApi,
-  materialApi, colorApi, clientFabricCodeApi,
+  clientApi, materialApi, colorApi, clientFabricCodeApi,
   type ExpectedDelivery, type ExpectedDeliveryItem, type ExpectedDeliveryStatus,
   type ExpectedDeliveryItemCreate,
-  type Material, type Color, type ClientFabricCode,
+  type Client, type Material, type Color, type ClientFabricCode,
 } from "@/lib/api";
 import { toast } from "sonner";
 
@@ -85,19 +89,60 @@ function VarianceCell({ expected, received, t }: Readonly<{
 
 // ─── Item label helpers ───────────────────────────────────────────────────────
 
-function itemLabel(item: ExpectedDeliveryItem, materials: Material[], colors: Color[]) {
+interface ItemDetails {
+  badge: string;
+  client?: string | null;
+  material?: string | null;
+  color?: string | null;
+}
+
+function itemDetails(
+  item: ExpectedDeliveryItem,
+  clients: Client[],
+  materials: Material[],
+  colors: Color[],
+): ItemDetails {
   if (item.client_fabric_code_id && item.client_fabric_code) {
     const cfc = item.client_fabric_code;
-    const material = materials.find(m => m.id === cfc.material_id);
-    const color = colors.find(c => c.id === cfc.color_id);
-    const parts = [cfc.fabric_code, material?.name, color?.name].filter(Boolean);
-    return parts.join(" / ") || `CFC #${item.client_fabric_code_id}`;
+    return {
+      badge: cfc.fabric_code ?? `#${cfc.id}`,
+      client: clients.find(c => c.id === cfc.client_id)?.name,
+      material: materials.find(m => m.id === cfc.material_id)?.name,
+      color: colors.find(c => c.id === cfc.color_id)?.name,
+    };
   }
   if (item.material_id) {
-    const mat = materials.find(m => m.id === item.material_id) ?? item.material;
-    return mat?.name ?? `Material #${item.material_id}`;
+    const material = materials.find(m => m.id === item.material_id)?.name ?? item.material?.name;
+    return {
+      badge: material ?? `#${item.material_id}`,
+      client: item.client?.name ?? clients.find(c => c.id === item.client_id)?.name,
+      material,
+      color: null,
+    };
   }
-  return "—";
+  return { badge: "—" };
+}
+
+function ItemCodeCell({ details, t }: Readonly<{
+  details: ItemDetails;
+  t: (k: string) => string;
+}>) {
+  // Badge doesn't forward refs, so the trigger itself carries the badge
+  // styling (Radix needs a ref on the trigger to anchor the tooltip).
+  return (
+    <Tooltip delayDuration={150}>
+      <TooltipTrigger className={cn(badgeVariants({ variant: "secondary" }), "cursor-default font-mono")}>
+        {details.badge}
+      </TooltipTrigger>
+      <TooltipContent>
+        <div className="space-y-0.5 text-xs">
+          <div><span className="opacity-70">{t("client")}:</span> {details.client ?? "—"}</div>
+          <div><span className="opacity-70">{t("material")}:</span> {details.material ?? "—"}</div>
+          <div><span className="opacity-70">{t("color")}:</span> {details.color ?? "—"}</div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 // ─── Main component ──────────────────────────────────────────────────────────
@@ -109,11 +154,12 @@ export default function ExpectedDeliveryDetail() {
   const warehouseId = searchParams.get("warehouse");
   const { t } = useTranslation();
   useLanguage();
+  const { isAdmin, can } = useCurrentUser();
 
   const [delivery, setDelivery] = useState<ExpectedDelivery | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
   const [materials, setMaterials] = useState<Material[]>([]);
   const [colors, setColors] = useState<Color[]>([]);
-  const [cfcs, setCfcs] = useState<ClientFabricCode[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Delete item state
@@ -123,12 +169,14 @@ export default function ExpectedDeliveryDetail() {
   // Status update state
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  // Add item form state
+  // Add item form state — same Client → Material → Color flow as roll ingestion
   const [addOpen, setAddOpen] = useState(false);
   const [addType, setAddType] = useState<"dyed" | "undyed">("dyed");
-  const [addCfcId, setAddCfcId] = useState("");
-  const [addMaterialId, setAddMaterialId] = useState("");
-  const [addLotRef, setAddLotRef] = useState("");
+  const [addClientId, setAddClientId] = useState<number | null>(null);
+  const [addMaterialId, setAddMaterialId] = useState<number | null>(null);
+  const [addColorId, setAddColorId] = useState<number | null>(null);
+  const [addCfc, setAddCfc] = useState<ClientFabricCode | null>(null);
+  const [addCfcLoading, setAddCfcLoading] = useState(false);
   const [addExpWeight, setAddExpWeight] = useState("");
   const [addExpLength, setAddExpLength] = useState("");
   const [addNotes, setAddNotes] = useState("");
@@ -153,15 +201,32 @@ export default function ExpectedDeliveryDetail() {
   useEffect(() => {
     loadDelivery();
     Promise.all([
+      clientApi.getAll(),
       materialApi.getAll(),
       colorApi.getAll(),
-      clientFabricCodeApi.getAll(),
-    ]).then(([mats, cols, cfcList]) => {
+    ]).then(([cls, mats, cols]) => {
+      setClients(cls);
       setMaterials(mats);
       setColors(cols);
-      setCfcs(cfcList);
     });
   }, [loadDelivery]);
+
+  // Resolve / create the ClientFabricCode as soon as client + material + color
+  // are all chosen (dyed path) — same get-or-create flow as roll ingestion.
+  useEffect(() => {
+    if (addType !== "dyed" || !addClientId || !addMaterialId || !addColorId) {
+      setAddCfc(null);
+      return;
+    }
+    let cancelled = false;
+    setAddCfcLoading(true);
+    clientFabricCodeApi
+      .getOrCreate({ client_id: addClientId, material_id: addMaterialId, color_id: addColorId })
+      .then(cfc => { if (!cancelled) setAddCfc(cfc); })
+      .catch(e => { if (!cancelled) { setAddCfc(null); console.error("Failed to resolve fabric code", e); } })
+      .finally(() => { if (!cancelled) setAddCfcLoading(false); });
+    return () => { cancelled = true; };
+  }, [addType, addClientId, addMaterialId, addColorId]);
 
   // ── Status change ──────────────────────────────────────────────────────────
 
@@ -199,23 +264,32 @@ export default function ExpectedDeliveryDetail() {
   // ── Add item ───────────────────────────────────────────────────────────────
 
   const resetAddForm = () => {
-    setAddType("dyed"); setAddCfcId(""); setAddMaterialId("");
-    setAddLotRef(""); setAddExpWeight(""); setAddExpLength(""); setAddNotes("");
+    setAddType("dyed"); setAddClientId(null); setAddMaterialId(null); setAddColorId(null);
+    setAddCfc(null); setAddExpWeight(""); setAddExpLength(""); setAddNotes("");
   };
 
-  const handleAddItem = async () => {
-    if (!delivery) return;
-    if (addType === "dyed" && !addCfcId) return;
-    if (addType === "undyed" && !addMaterialId) return;
+  // Dyed items need the resolved fabric code; undyed items need client + material.
+  const addItemReady = addType === "dyed"
+    ? addCfc != null && !addCfcLoading
+    : addClientId != null && addMaterialId != null;
 
-    const payload: ExpectedDeliveryItemCreate = {
-      client_fabric_code_id: addType === "dyed" ? Number(addCfcId) : null,
-      material_id: addType === "undyed" ? Number(addMaterialId) : null,
-      lot_reference: addLotRef.trim() || null,
-      expected_weight_kg: addExpWeight !== "" ? Number(addExpWeight) : null,
-      expected_length_m: addExpLength !== "" ? Number(addExpLength) : null,
-      notes: addNotes.trim() || null,
-    };
+  const handleAddItem = async () => {
+    if (!delivery || !addItemReady) return;
+
+    const payload: ExpectedDeliveryItemCreate = addType === "dyed"
+      ? {
+          client_fabric_code_id: addCfc!.id,
+          expected_weight_kg: addExpWeight !== "" ? Number(addExpWeight) : null,
+          expected_length_m: addExpLength !== "" ? Number(addExpLength) : null,
+          notes: addNotes.trim() || null,
+        }
+      : {
+          client_id: addClientId,
+          material_id: addMaterialId,
+          expected_weight_kg: addExpWeight !== "" ? Number(addExpWeight) : null,
+          expected_length_m: addExpLength !== "" ? Number(addExpLength) : null,
+          notes: addNotes.trim() || null,
+        };
 
     setAddingItem(true);
     try {
@@ -255,13 +329,15 @@ export default function ExpectedDeliveryDetail() {
     );
   }
 
-  const canEdit = delivery.status !== "cancelled" && delivery.status !== "received";
+  const canEdit = can('manage_expected_deliveries') && delivery.status !== "cancelled" && delivery.status !== "received";
 
   return (
     <PageTransition>
       <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <main className="flex-1 p-6 space-y-6">
+        {/* min-w-0 lets the items table scroll inside its own overflow wrapper
+            instead of stretching the page past the viewport */}
+        <main className="flex-1 min-w-0 p-6 space-y-6">
 
           {/* Back + title */}
           <div className="flex items-center gap-3">
@@ -283,12 +359,12 @@ export default function ExpectedDeliveryDetail() {
                   <div className="flex items-center gap-3">
                     <PackageOpen className="h-5 w-5 text-primary" />
                     <CardTitle className="text-xl">
-                      {t("deliveryId")}{delivery.id} — {delivery.supplier}
+                      {t("deliveryId")}{delivery.id} — {delivery.supplier_name ?? "—"}
                     </CardTitle>
                   </div>
                   <div className="flex items-center gap-4 text-sm text-muted-foreground pt-1">
                     <span>{t("expectedDate")}: <span className="text-foreground">{fmtDate(delivery.expected_date)}</span></span>
-                    <span>Created: <span className="text-foreground">{fmtDate(delivery.created_at)}</span></span>
+                    <span>{t("created")}: <span className="text-foreground">{fmtDate(delivery.created_at)}</span></span>
                   </div>
                   {delivery.notes && (
                     <p className="text-sm text-muted-foreground pt-1">{delivery.notes}</p>
@@ -297,7 +373,7 @@ export default function ExpectedDeliveryDetail() {
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <StatusBadge status={delivery.status} label={statusLabel[delivery.status]} />
                   {/* Status action buttons */}
-                  {delivery.status !== "cancelled" && delivery.status !== "received" && (
+                  {can('manage_expected_deliveries') && delivery.status !== "cancelled" && delivery.status !== "received" && (
                     <div className="flex gap-2 flex-wrap justify-end">
                       <Button
                         size="sm"
@@ -328,7 +404,8 @@ export default function ExpectedDeliveryDetail() {
                       </Button>
                     </div>
                   )}
-                  {(delivery.status === "received" || delivery.status === "cancelled") && (
+                  {/* Reopening is admin-only — mirrors the backend gate on PUT */}
+                  {(delivery.status === "received" || delivery.status === "cancelled") && isAdmin && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -369,8 +446,8 @@ export default function ExpectedDeliveryDetail() {
                     <TableHeader>
                       <TableRow>
                         <TableHead>{t("fabricType")}</TableHead>
-                        <TableHead>Material / Fabric Code</TableHead>
-                        <TableHead>{t("lotReference")}</TableHead>
+                        <TableHead>{t("materialOrFabricCode")}</TableHead>
+                        <TableHead>{t("color")}</TableHead>
                         <TableHead className="text-right">{t("expectedWeightKg")}</TableHead>
                         <TableHead className="text-right">{t("expectedLengthM")}</TableHead>
                         <TableHead className="text-right">{t("receivedWeightKg")}</TableHead>
@@ -383,6 +460,7 @@ export default function ExpectedDeliveryDetail() {
                     <TableBody>
                       {delivery.items.map(item => {
                         const isDyed = item.client_fabric_code_id != null;
+                        const details = itemDetails(item, clients, materials, colors);
                         return (
                           <TableRow key={item.id}>
                             <TableCell>
@@ -391,10 +469,10 @@ export default function ExpectedDeliveryDetail() {
                               </Badge>
                             </TableCell>
                             <TableCell className="font-medium text-sm">
-                              {itemLabel(item, materials, colors)}
+                              <ItemCodeCell details={details} t={t} />
                             </TableCell>
-                            <TableCell className="text-sm text-muted-foreground">
-                              {item.lot_reference ?? "—"}
+                            <TableCell className="text-sm">
+                              {details.color ?? "—"}
                             </TableCell>
                             <TableCell className="text-right text-sm font-mono">
                               {fmtNum(item.expected_weight_kg)}
@@ -462,7 +540,7 @@ export default function ExpectedDeliveryDetail() {
                   type="button"
                   size="sm"
                   variant={addType === "dyed" ? "default" : "outline"}
-                  onClick={() => { setAddType("dyed"); setAddMaterialId(""); }}
+                  onClick={() => { setAddType("dyed"); }}
                 >
                   {t("dyedFabric")}
                 </Button>
@@ -470,60 +548,60 @@ export default function ExpectedDeliveryDetail() {
                   type="button"
                   size="sm"
                   variant={addType === "undyed" ? "default" : "outline"}
-                  onClick={() => { setAddType("undyed"); setAddCfcId(""); }}
+                  onClick={() => { setAddType("undyed"); setAddColorId(null); setAddCfc(null); }}
                 >
                   {t("undyedFabric")}
                 </Button>
               </div>
             </div>
 
-            {/* Dyed: fabric code select */}
-            {addType === "dyed" && (
+            {/* Client → Material → Color (color only for dyed) */}
+            <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label>{t("selectFabricCode")} *</Label>
-                <Select value={addCfcId} onValueChange={setAddCfcId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("selectFabricCode")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {cfcs.map(cfc => {
-                      const mat = materials.find(m => m.id === cfc.material_id);
-                      const col = colors.find(c => c.id === cfc.color_id);
-                      const label = [cfc.fabric_code, mat?.name, col?.name].filter(Boolean).join(" / ") || `CFC #${cfc.id}`;
-                      return <SelectItem key={cfc.id} value={String(cfc.id)}>{label}</SelectItem>;
-                    })}
-                  </SelectContent>
-                </Select>
+                <Label>{t("client")} *</Label>
+                <Combobox
+                  items={clients.map(c => ({ id: c.id, label: c.name }))}
+                  value={addClientId}
+                  onSelect={setAddClientId}
+                  placeholder={t("selectClient")}
+                />
               </div>
-            )}
-
-            {/* Undyed: material select */}
-            {addType === "undyed" && (
               <div className="space-y-1.5">
-                <Label>{t("selectMaterial")} *</Label>
-                <Select value={addMaterialId} onValueChange={setAddMaterialId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t("selectMaterial")} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {materials.map(m => (
-                      <SelectItem key={m.id} value={String(m.id)}>{m.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>{t("material")} *</Label>
+                <Combobox
+                  items={materials.map(m => ({ id: m.id, label: m.name }))}
+                  value={addMaterialId}
+                  onSelect={setAddMaterialId}
+                  placeholder={t("selectMaterial")}
+                />
               </div>
-            )}
+              {addType === "dyed" && (
+                <div className="space-y-1.5">
+                  <Label>{t("color")} *</Label>
+                  <Combobox
+                    items={colors.map(c => ({ id: c.id, label: c.name }))}
+                    value={addColorId}
+                    onSelect={setAddColorId}
+                    placeholder={t("selectColor")}
+                  />
+                </div>
+              )}
+              {addType === "dyed" && addCfcLoading && (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-3 w-3 animate-spin" /> {t("resolvingFabricCode")}
+                </div>
+              )}
+              {addType === "dyed" && addCfc && !addCfcLoading && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">{t("fabricCodeColon")}</span>
+                  <Badge variant="secondary">
+                    {addCfc.fabric_code ?? `#${addCfc.id} ${t("noCodeAssigned")}`}
+                  </Badge>
+                </div>
+              )}
+            </div>
 
             <Separator />
-
-            <div className="space-y-1.5">
-              <Label>{t("lotReference")}</Label>
-              <Input
-                value={addLotRef}
-                onChange={e => setAddLotRef(e.target.value)}
-                placeholder="e.g. LOT-A1"
-              />
-            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -551,11 +629,11 @@ export default function ExpectedDeliveryDetail() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Notes</Label>
+              <Label>{t("notes")}</Label>
               <Input
                 value={addNotes}
                 onChange={e => setAddNotes(e.target.value)}
-                placeholder="Optional notes…"
+                placeholder={t("notesPlaceholder")}
               />
             </div>
           </div>
@@ -563,7 +641,7 @@ export default function ExpectedDeliveryDetail() {
             <Button variant="outline" onClick={() => setAddOpen(false)}>{t("cancel")}</Button>
             <Button
               onClick={handleAddItem}
-              disabled={addingItem || (addType === "dyed" ? !addCfcId : !addMaterialId)}
+              disabled={addingItem || !addItemReady}
             >
               {addingItem && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {t("addDeliveryItem")}

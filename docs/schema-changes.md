@@ -128,6 +128,27 @@ Use `NOT VALID` then `VALIDATE CONSTRAINT` on large tables if needed.
 
 ---
 
+## 6. `wms.dyed_fabric_rolls` / `wms.undyed_fabric_rolls` — ingestor + roll lineage
+
+```sql
+ALTER TABLE wms.dyed_fabric_rolls
+  ADD COLUMN IF NOT EXISTS ingested_by INTEGER REFERENCES core.users(id),
+  ADD COLUMN IF NOT EXISTS original_roll_id BIGINT REFERENCES wms.dyed_fabric_rolls(id);
+
+ALTER TABLE wms.undyed_fabric_rolls
+  ADD COLUMN IF NOT EXISTS ingested_by INTEGER REFERENCES core.users(id);
+```
+
+`ingested_by` is set server-side from the authenticated user on `POST /dyed-fabric-rolls` and `POST /undyed-fabric-rolls` — never client-supplied. `original_roll_id` (dyed rolls only) self-references another dyed roll for lineage (e.g. a roll split/re-ingested from an existing one); the column and API support it, but no ingestion UI sets it yet.
+
+**Rollback:**
+```sql
+ALTER TABLE wms.dyed_fabric_rolls DROP COLUMN IF EXISTS ingested_by, DROP COLUMN IF EXISTS original_roll_id;
+ALTER TABLE wms.undyed_fabric_rolls DROP COLUMN IF EXISTS ingested_by;
+```
+
+---
+
 ## Verification queries
 
 ```sql

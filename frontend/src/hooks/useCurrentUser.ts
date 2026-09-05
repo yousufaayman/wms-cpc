@@ -1,9 +1,13 @@
 import { useEffect, useState } from "react";
 import { getCurrentUser, type CurrentUser } from "@/lib/auth";
+import { WMS_SYSTEM_ID, type WmsRole } from "@/lib/api";
+import { hasPermission, type Permission } from "@/lib/permissions";
 
 interface UseCurrentUserResult {
   user: CurrentUser | null;
+  role: WmsRole | null;
   isAdmin: boolean;
+  can: (permission: Permission) => boolean;
   loading: boolean;
 }
 
@@ -18,7 +22,11 @@ export function useCurrentUser(): UseCurrentUserResult {
       .finally(() => setLoading(false));
   }, []);
 
-  const isAdmin = user?.user_roles.some(r => r.role === "admin") ?? false;
+  // core.users/core.user_roles are shared across systems (WMS, OPS, PLAN);
+  // a role in another system must not count here.
+  const role = (user?.user_roles.find(r => r.system_id === WMS_SYSTEM_ID)?.role as WmsRole | undefined) ?? null;
+  const isAdmin = role === "admin";
+  const can = (permission: Permission) => hasPermission(role, permission);
 
-  return { user, isAdmin, loading };
+  return { user, role, isAdmin, can, loading };
 }

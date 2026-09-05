@@ -14,11 +14,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Printer, AlertCircle, CheckCircle } from "lucide-react";
 import { zebraPrinterService } from "@/lib/zpl/zebraPrinterService";
 import { RackLabelData } from "@/lib/zpl/labelTemplates";
-
-interface PrinterInfo {
-  name: string;
-  description?: string;
-}
+import { useTranslation } from "@/hooks/useTranslation";
 
 interface PrintDialogProps {
   isOpen: boolean;
@@ -28,8 +24,9 @@ interface PrintDialogProps {
 }
 
 export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }: PrintDialogProps) {
-  const [printers, setPrinters] = useState<PrinterInfo[]>([]);
-  const [selectedPrinter, setSelectedPrinter] = useState<string>("");
+  const { t } = useTranslation();
+  const [printers, setPrinters] = useState<BrowserPrint.Device[]>([]);
+  const [selectedPrinterUid, setSelectedPrinterUid] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [isPrinting, setIsPrinting] = useState(false);
   const [printStatus, setPrintStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -45,27 +42,25 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
     setIsLoading(true);
     setPrintStatus('idle');
     setErrorMessage("");
-    
+
     try {
-      // Check if Zebra Browser Print is available
-      const isAvailable = await zebraPrinterService.isAvailable();
-      if (!isAvailable) {
-        setErrorMessage("Zebra Browser Print is not available. Please install the application.");
+      if (!zebraPrinterService.isAvailable()) {
+        setErrorMessage(t("zebraBrowserPrintUnavailable"));
         setPrintStatus('error');
         return;
       }
 
       const availablePrinters = await zebraPrinterService.getAvailablePrinters();
       setPrinters(availablePrinters);
-      
+
       if (availablePrinters.length > 0) {
-        setSelectedPrinter(availablePrinters[0].name);
+        setSelectedPrinterUid(availablePrinters[0].uid);
       } else {
-        setErrorMessage("No Zebra printers found. Please ensure your printer is connected and Zebra Browser Print is running.");
+        setErrorMessage(t("noZebraPrintersFound"));
         setPrintStatus('error');
       }
     } catch (error) {
-      setErrorMessage("Failed to load printers. Please ensure Zebra Browser Print is installed and running.");
+      setErrorMessage(t("failedToLoadPrinters"));
       setPrintStatus('error');
     } finally {
       setIsLoading(false);
@@ -73,8 +68,9 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
   };
 
   const handlePrint = async () => {
-    if (!selectedPrinter || racks.length === 0) {
-      setErrorMessage("Please select a printer and ensure there are racks to print.");
+    const device = printers.find((p) => p.uid === selectedPrinterUid);
+    if (!device || racks.length === 0) {
+      setErrorMessage(t("selectPrinterAndEnsureRacks"));
       setPrintStatus('error');
       return;
     }
@@ -84,8 +80,8 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
     setErrorMessage("");
 
     try {
-      const success = await zebraPrinterService.printMultipleRackLabels(racks, selectedPrinter);
-      
+      const success = await zebraPrinterService.printMultipleRackLabels(racks, device);
+
       if (success) {
         setPrintStatus('success');
         onPrintComplete?.(true);
@@ -95,12 +91,12 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
         }, 2000);
       } else {
         setPrintStatus('error');
-        setErrorMessage("Failed to print labels. Please check printer connection.");
+        setErrorMessage(t("printJobFailedCheckConnection"));
         onPrintComplete?.(false);
       }
     } catch (error) {
       setPrintStatus('error');
-      setErrorMessage("Print error: " + (error instanceof Error ? error.message : "Unknown error"));
+      setErrorMessage(t("printErrorPrefix") + (error instanceof Error ? error.message : t("error")));
       onPrintComplete?.(false);
     } finally {
       setIsPrinting(false);
@@ -110,7 +106,7 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
   const handleClose = () => {
     setPrintStatus('idle');
     setErrorMessage("");
-    setSelectedPrinter("");
+    setSelectedPrinterUid("");
     onClose();
   };
 
@@ -120,16 +116,16 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Printer className="h-5 w-5" />
-            Print Rack Labels
+            {t("printRackLabelsTitle")}
           </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
           {/* Print Summary */}
           <div className="space-y-2">
-            <Label>Labels to Print</Label>
+            <Label>{t("labelsToPrint")}</Label>
             <div className="flex items-center gap-2">
-              <Badge variant="secondary">{racks.length} labels</Badge>
+              <Badge variant="secondary">{t("labelsCount", { count: racks.length })}</Badge>
               <span className="text-sm text-muted-foreground">
                 {racks.length > 0 && `(${racks[0].rackCode} - ${racks[racks.length - 1].rackCode})`}
               </span>
@@ -138,18 +134,18 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
 
           {/* Printer Selection */}
           <div className="space-y-2">
-            <Label htmlFor="printer-select">Select Printer</Label>
-            <Select 
-              value={selectedPrinter} 
-              onValueChange={setSelectedPrinter}
+            <Label htmlFor="printer-select">{t("selectPrinter")}</Label>
+            <Select
+              value={selectedPrinterUid}
+              onValueChange={setSelectedPrinterUid}
               disabled={isLoading || isPrinting}
             >
               <SelectTrigger>
-                <SelectValue placeholder={isLoading ? "Loading printers..." : "Select a printer"} />
+                <SelectValue placeholder={isLoading ? t("loadingPrinters") : t("selectPrinter")} />
               </SelectTrigger>
               <SelectContent>
                 {printers.map((printer) => (
-                  <SelectItem key={printer.name} value={printer.name}>
+                  <SelectItem key={printer.uid} value={printer.uid}>
                     {printer.name}
                   </SelectItem>
                 ))}
@@ -157,7 +153,7 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
             </Select>
             {printers.length === 0 && !isLoading && (
               <p className="text-sm text-muted-foreground">
-                No printers found. Please install Zebra Browser Print.
+                {t("installZebraBrowserPrintHint")}
               </p>
             )}
           </div>
@@ -174,17 +170,17 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
             <Alert>
               <CheckCircle className="h-4 w-4" />
               <AlertDescription>
-                Labels printed successfully!
+                {t("rackLabelsPrintedSuccessfully")}
               </AlertDescription>
             </Alert>
           )}
 
           {/* Zebra Browser Print Info */}
           <div className="text-xs text-muted-foreground bg-muted p-2 rounded">
-            <strong>Note:</strong> This feature requires the Zebra Browser Print application to be installed on your system.
+            <strong>{t("note")}:</strong> {t("zebraBrowserPrintNote")}
             <br />
-            Download from: <a href="https://www.zebra.com/us/en/products/software/barcode-printers/zebra-browser-print.html" 
-              target="_blank" 
+            {t("downloadFrom")}: <a href="https://www.zebra.com/us/en/products/software/barcode-printers/zebra-browser-print.html"
+              target="_blank"
               rel="noopener noreferrer"
               className="underline"
             >
@@ -194,20 +190,20 @@ export default function PrintDialog({ isOpen, onClose, racks, onPrintComplete }:
         </div>
 
         <DialogFooter>
-          <Button 
-            variant="outline" 
+          <Button
+            variant="outline"
             onClick={handleClose}
             disabled={isPrinting}
           >
-            Cancel
+            {t("cancel")}
           </Button>
-          <Button 
+          <Button
             onClick={handlePrint}
-            disabled={!selectedPrinter || racks.length === 0 || isPrinting}
+            disabled={!selectedPrinterUid || racks.length === 0 || isPrinting}
             className="flex items-center gap-2"
           >
             <Printer className="h-4 w-4" />
-            {isPrinting ? "Printing..." : `Print ${racks.length} Labels`}
+            {isPrinting ? t("printing") : t("printNLabels", { count: racks.length })}
           </Button>
         </DialogFooter>
       </DialogContent>

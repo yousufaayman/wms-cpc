@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -14,13 +14,13 @@ import { Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBar
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import {
   clientApi, materialApi, logicalLocationApi, warehouseRackApi,
   undyedFabricRollApi,
   type Client, type Material, type LogicalLocation, type WarehouseRack,
   type UndyedFabricRoll, type UndyedFabricRollCreate,
 } from "@/lib/api";
+import { generateUndyedRollLabel, sendZplToDevice } from "@/lib/zpl";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,7 +94,6 @@ const UndyedFabricRolls = () => {
   const warehouseIdParam = searchParams.get("warehouse");
   const warehouseId = warehouseIdParam ? parseInt(warehouseIdParam) : undefined;
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   // ── Reference data ──────────────────────────────────────────────────────────
   const [clients, setClients] = useState<Client[]>([]);
@@ -115,6 +114,8 @@ const UndyedFabricRolls = () => {
   const [printers, setPrinters] = useState<BrowserPrint.Device[]>([]);
   const [printersLoading, setPrintersLoading] = useState(false);
   const [selectedPrinter, setSelectedPrinter] = useState<BrowserPrint.Device | null>(null);
+  const [labelCopies, setLabelCopies] = useState("2");
+  const [printError, setPrintError] = useState<string | null>(null);
 
   // ── Step 2 – lock details ────────────────────────────────────────────────────
   const [lotNumberInput, setLotNumberInput] = useState("");
@@ -125,13 +126,18 @@ const UndyedFabricRolls = () => {
   const [lockedDetails, setLockedDetails] = useState<LockedDetails | null>(null);
   const [lockError, setLockError] = useState<string | null>(null);
 
-  // ── Step 3 – roll entry ──────────────────────────────────────────────────────
+  // ── Step 3 – roll entry (keyboard stepper: weight → length → lot → POST) ────
   const [weightInput, setWeightInput] = useState("");
   const [lengthInput, setLengthInput] = useState("");
+  const [rollLotInput, setRollLotInput] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [addErrorField, setAddErrorField] = useState<"weight" | "lot" | null>(null);
   const [sessionRolls, setSessionRolls] = useState<UndyedFabricRoll[]>([]);
   const [rollRackNames, setRollRackNames] = useState<Record<number, string>>({});
+  const weightRef = useRef<HTMLInputElement>(null);
+  const lengthRef = useRef<HTMLInputElement>(null);
+  const lotRef = useRef<HTMLInputElement>(null);
 
   // Rack entry
   const [rackInput, setRackInput] = useState("");
@@ -171,6 +177,14 @@ const UndyedFabricRolls = () => {
       "printer",
     );
   }, []);
+
+  // ── Prime the stepper whenever details lock: per-roll lot ← session lot ─────
+  useEffect(() => {
+    if (locked && lockedDetails) {
+      setRollLotInput(lockedDetails.lotNumber ?? "");
+      weightRef.current?.focus();
+    }
+  }, [locked, lockedDetails]);
 
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const supplierName = (): string | null => {
@@ -228,20 +242,77 @@ const UndyedFabricRolls = () => {
     }
   };
 
-  const handleAddRoll = async () => {
-    if (!clientId || !materialId || !lockedDetails) return;
+  const parseWeight = (): number | null => {
     const weight = parseFloat(weightInput);
-    if (isNaN(weight) || weight <= 0) {
+    return isNaN(weight) || weight <= 0 ? null : weight;
+  };
+
+  const handleWeightEnter = () => {
+    if (parseWeight() == null) {
       setAddError(t('error'));
+      setAddErrorField("weight");
+      weightRef.current?.focus();
+      return;
+    }
+    setAddError(null);
+    setAddErrorField(null);
+    lengthRef.current?.focus();
+  };
+
+  const handleLengthEnter = () => {
+    // Length is optional — always advance. Re-prime the lot with the locked
+    // session value so any earlier per-roll override is discarded.
+    setRollLotInput(lockedDetails?.lotNumber ?? "");
+    lotRef.current?.focus();
+    lotRef.current?.select();
+  };
+
+  // Fire-and-forget label print: never blocks the entry loop; a failure only
+  // surfaces as a warning since the roll itself is already persisted.
+  const printRollLabel = (roll: UndyedFabricRoll, lotNumber: string) => {
+    if (!selectedPrinter || !lockedDetails) return;
+    const copies = Math.max(1, parseInt(labelCopies, 10) || 2);
+    const zpl = generateUndyedRollLabel(
+      {
+        rollId: roll.id,
+        client: clients.find((c) => c.id === clientId)?.name ?? "-",
+        material: materials.find((m) => m.id === materialId)?.name ?? "-",
+        lot: lotNumber,
+        weightKg: roll.weight,
+        lengthM: roll.length,
+        widthCm: lockedDetails.fabricWidth,
+        gsm: lockedDetails.gsm,
+        supplier: supplierName(),
+      },
+      copies,
+    );
+    sendZplToDevice(selectedPrinter, zpl).catch((err) => {
+      console.error("Roll label print failed", err);
+      setPrintError(t('printRollLabelFailed'));
+    });
+  };
+
+  const handleAddRoll = async () => {
+    if (!clientId || !materialId || !lockedDetails || addLoading) return;
+    const weight = parseWeight();
+    if (weight == null) {
+      setAddError(t('error'));
+      setAddErrorField("weight");
+      weightRef.current?.focus();
       return;
     }
     setAddLoading(true);
     setAddError(null);
+    setAddErrorField(null);
+    setPrintError(null);
     try {
+      // Per-roll lot: whatever is in the lot field right now (free text on
+      // undyed rolls); the locked session lot is kept for the next roll.
+      const lotText = rollLotInput.trim();
       const payload: UndyedFabricRollCreate = {
         client_id: clientId,
         material_id: materialId,
-        lot_number: lockedDetails.lotNumber ?? undefined,
+        lot_number: lotText || undefined,
         gsm: lockedDetails.gsm ? parseFloat(lockedDetails.gsm) : undefined,
         fabric_width: lockedDetails.fabricWidth ? parseFloat(lockedDetails.fabricWidth) : undefined,
         weight,
@@ -259,10 +330,15 @@ const UndyedFabricRolls = () => {
       if (resolvedRack) {
         setRollRackNames((prev) => ({ ...prev, [roll.id]: resolvedRack.rack_code }));
       }
+      printRollLabel(roll, lotText);
       setWeightInput("");
       setLengthInput("");
+      setRollLotInput(lockedDetails.lotNumber ?? "");
+      weightRef.current?.focus();
     } catch (e) {
       setAddError(e instanceof Error ? e.message : t('error'));
+      setAddErrorField("lot");
+      lotRef.current?.focus();
     } finally {
       setAddLoading(false);
     }
@@ -281,14 +357,18 @@ const UndyedFabricRolls = () => {
     setLockedDetails(null);
     setWeightInput("");
     setLengthInput("");
+    setRollLotInput("");
     setSessionRolls([]);
     setLockError(null);
     setAddError(null);
+    setAddErrorField(null);
     setRackInput("");
     setResolvedRack(null);
     setRackError(null);
     setRollRackNames({});
     setSelectedPrinter(null);
+    setLabelCopies("2");
+    setPrintError(null);
   };
 
   const clientItems = clients.map((c) => ({ id: c.id, label: c.name }));
@@ -298,7 +378,7 @@ const UndyedFabricRolls = () => {
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="min-h-screen bg-background flex">
         <Sidebar />
         <main className="flex-1 p-8 space-y-6 overflow-auto">
           {/* Header */}
@@ -391,9 +471,14 @@ const UndyedFabricRolls = () => {
                       <Badge variant="outline" className="text-xs">{t('lengthUnitLabel')}: {lockedDetails.lengthUnit === "yd" ? t('yardsShort') : t('metersShort')}</Badge>
                       <Badge variant="outline" className="text-xs">{t('supplierBadge', { supplier: supplierName() ?? '' })}</Badge>
                       {selectedPrinter && (
-                        <Badge variant="outline" className="text-xs gap-1">
-                          <Printer className="h-3 w-3" />{selectedPrinter.name}
-                        </Badge>
+                        <>
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Printer className="h-3 w-3" />{selectedPrinter.name}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {t('labelsPerRollBadge', { count: String(Math.max(1, parseInt(labelCopies, 10) || 2)) })}
+                          </Badge>
+                        </>
                       )}
                       {resolvedRack && (
                         <Badge variant="outline" className="text-xs gap-1">
@@ -541,6 +626,16 @@ const UndyedFabricRolls = () => {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="space-y-1">
+                          <Label className="text-sm">{t('labelsPerRoll')}</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={labelCopies}
+                            onChange={(e) => setLabelCopies(e.target.value)}
+                            className="w-24"
+                          />
+                        </div>
                         <Button
                           onClick={handleLockDetails}
                           disabled={!canLock}
@@ -566,16 +661,20 @@ const UndyedFabricRolls = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                       <div className="space-y-1">
                         <Label>{t('weightKgRequired')}</Label>
                         <Input
+                          ref={weightRef}
                           type="number"
                           placeholder="e.g. 24.500"
                           value={weightInput}
                           onChange={(e) => setWeightInput(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleAddRoll()}
+                          onKeyDown={(e) => e.key === "Enter" && handleWeightEnter()}
                         />
+                        {addError && addErrorField === "weight" && (
+                          <p className="text-sm text-destructive">{addError}</p>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <Label>
@@ -585,17 +684,38 @@ const UndyedFabricRolls = () => {
                           )}
                         </Label>
                         <Input
+                          ref={lengthRef}
                           type="number"
                           placeholder="e.g. 80.00"
                           value={lengthInput}
                           onChange={(e) => setLengthInput(e.target.value)}
+                          onKeyDown={(e) => e.key === "Enter" && handleLengthEnter()}
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>{t('rollLotLabel')}</Label>
+                        <Input
+                          ref={lotRef}
+                          placeholder={t('enterLotNumber')}
+                          value={rollLotInput}
+                          onChange={(e) => setRollLotInput(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && handleAddRoll()}
                         />
+                        <p className="text-xs text-muted-foreground">{t('rollLotHint')}</p>
+                        {addError && addErrorField === "lot" && (
+                          <p className="text-sm text-destructive">{addError}</p>
+                        )}
                       </div>
                     </div>
 
-                    {addError && (
-                      <p className="text-sm text-destructive">{addError}</p>
+                    {!selectedPrinter && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Printer className="h-3.5 w-3.5" />
+                        {t('noPrinterSelectedHint')}
+                      </p>
+                    )}
+                    {printError && (
+                      <p className="text-sm text-amber-600">{printError}</p>
                     )}
 
                     <Button
@@ -621,6 +741,7 @@ const UndyedFabricRolls = () => {
                               <TableHead>{t('length')} (m)</TableHead>
                               <TableHead>{t('rack')}</TableHead>
                               <TableHead>{t('status')}</TableHead>
+                              <TableHead>{t('linkedDelivery')}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -638,6 +759,14 @@ const UndyedFabricRolls = () => {
                                 </TableCell>
                                 <TableCell>
                                   <Badge variant="secondary">{roll.status}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {roll.matched_delivery_id != null ? (
+                                    <Badge variant="outline" className="gap-1 text-green-700 border-green-400">
+                                      <Check className="h-3 w-3" />
+                                      {t('matchedToDelivery', { id: String(roll.matched_delivery_id) })}
+                                    </Badge>
+                                  ) : "—"}
                                 </TableCell>
                               </TableRow>
                             ))}

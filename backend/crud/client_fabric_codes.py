@@ -1,6 +1,7 @@
+from sqlalchemy import func
 from sqlalchemy.orm import Session
-from typing import List, Optional
-from backend.models import ClientFabricCode
+from typing import Any, Dict, List, Optional
+from backend.models import ClientFabricCode, Client, Material, Color, DyedFabricRoll
 from backend.schemas import ClientFabricCodeCreate
 
 
@@ -64,3 +65,55 @@ def create_client_fabric_code(db: Session, cfc: ClientFabricCodeCreate) -> Clien
     db.commit()
     db.refresh(db_obj)
     return db_obj
+
+
+def search_client_fabric_codes(db: Session, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    """Fabric codes matching the query (case-insensitive substring), enriched
+    with client/material/color names and current in-stock totals."""
+    rows = (
+        db.query(ClientFabricCode, Client, Material, Color)
+        .join(Client, ClientFabricCode.client_id == Client.client_id)
+        .join(Material, ClientFabricCode.material_id == Material.material_id)
+        .join(Color, ClientFabricCode.color_id == Color.color_id)
+        .filter(ClientFabricCode.fabric_code.ilike(f"%{query}%"))
+        .order_by(ClientFabricCode.fabric_code)
+        .limit(limit)
+        .all()
+    )
+    if not rows:
+        return []
+
+    cfc_ids = [cfc.id for cfc, _, _, _ in rows]
+    stock_rows = (
+        db.query(
+            DyedFabricRoll.client_fabric_code_id,
+            func.sum(DyedFabricRoll.weight),
+            func.sum(DyedFabricRoll.length),
+            func.count(DyedFabricRoll.id),
+        )
+        .filter(DyedFabricRoll.client_fabric_code_id.in_(cfc_ids), DyedFabricRoll.status == "in")
+        .group_by(DyedFabricRoll.client_fabric_code_id)
+        .all()
+    )
+    stock_by_cfc = {
+        cfc_id: {"weight": float(w or 0), "length": float(l) if l is not None else None, "rolls": c}
+        for cfc_id, w, l, c in stock_rows
+    }
+
+    results = []
+    for cfc, client, material, color in rows:
+        stock = stock_by_cfc.get(cfc.id, {"weight": 0.0, "length": None, "rolls": 0})
+        results.append({
+            "client_fabric_code_id": cfc.id,
+            "fabric_code": cfc.fabric_code,
+            "client_id": client.client_id,
+            "client_name": client.client_name,
+            "material_id": material.material_id,
+            "material_name": material.material_name,
+            "color_id": color.color_id,
+            "color_name": color.color_name,
+            "in_stock_weight": stock["weight"],
+            "in_stock_length": stock["length"],
+            "in_stock_rolls": stock["rolls"],
+        })
+    return results

@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from typing import List
-from backend import schemas
-from backend.core.deps import get_db
+from backend import schemas, models
+from backend.core.deps import get_db, get_current_active_superuser
 from backend.domains.warehouse import service as warehouse_service
 
 router = APIRouter()
@@ -12,6 +12,7 @@ def create_warehouse(
     *,
     db: Session = Depends(get_db),
     warehouse_in: schemas.WarehouseCreate,
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> schemas.Warehouse:
     """
     Create a new warehouse.
@@ -46,6 +47,7 @@ def update_warehouse(
     db: Session = Depends(get_db),
     warehouse_id: int,
     warehouse_in: schemas.WarehouseUpdate,
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> schemas.Warehouse:
     """
     Update a warehouse.
@@ -57,6 +59,7 @@ def delete_warehouse(
     *,
     db: Session = Depends(get_db),
     warehouse_id: int,
+    current_user: models.User = Depends(get_current_active_superuser),
 ) -> schemas.Warehouse:
     """
     Delete a warehouse.

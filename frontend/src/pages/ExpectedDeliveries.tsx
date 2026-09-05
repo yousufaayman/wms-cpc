@@ -11,10 +11,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { PackageOpen, Plus, Eye, Trash2, Loader2 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
+import { Combobox } from "@/components/Combobox";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
-import { expectedDeliveryApi, type ExpectedDelivery, type ExpectedDeliveryStatus } from "@/lib/api";
+import {
+  clientApi, logicalLocationApi, expectedDeliveryApi,
+  type Client, type LogicalLocation,
+  type ExpectedDelivery, type ExpectedDeliveryStatus, type SupplierType,
+} from "@/lib/api";
 import { toast } from "sonner";
 
 const STATUS_STYLE: Record<ExpectedDeliveryStatus, string> = {
@@ -43,16 +48,21 @@ export default function ExpectedDeliveries() {
   const warehouseId = searchParams.get("warehouse");
   const { t } = useTranslation();
   useLanguage();
-  const { user } = useCurrentUser();
+  const { user, can } = useCurrentUser();
 
   const [deliveries, setDeliveries] = useState<ExpectedDelivery[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState("all");
   const [supplierSearch, setSupplierSearch] = useState("");
 
+  const [clients, setClients] = useState<Client[]>([]);
+  const [logicalLocations, setLogicalLocations] = useState<LogicalLocation[]>([]);
+
   const [createOpen, setCreateOpen] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [newSupplier, setNewSupplier] = useState("");
+  const [supplierType, setSupplierType] = useState<SupplierType>("client");
+  const [supplierClientId, setSupplierClientId] = useState<number | null>(null);
+  const [supplierLocationId, setSupplierLocationId] = useState<number | null>(null);
   const [newDate, setNewDate] = useState("");
   const [newNotes, setNewNotes] = useState("");
 
@@ -77,19 +87,37 @@ export default function ExpectedDeliveries() {
 
   useEffect(load, [warehouseId]);
 
+  useEffect(() => {
+    Promise.all([clientApi.getAll(), logicalLocationApi.getAll({ limit: 500 })])
+      .then(([c, ll]) => { setClients(c); setLogicalLocations(ll); })
+      .catch((e) => console.error("Failed to load reference data", e));
+  }, []);
+
   const filtered = deliveries.filter(d => {
     if (statusFilter !== "all" && d.status !== statusFilter) return false;
-    if (supplierSearch && !d.supplier.toLowerCase().includes(supplierSearch.toLowerCase())) return false;
+    // Substring filter on the display name resolved by the API
+    if (supplierSearch && !(d.supplier_name ?? "").toLowerCase().includes(supplierSearch.toLowerCase())) return false;
     return true;
   });
 
+  const selectedSupplierId = supplierType === "client" ? supplierClientId : supplierLocationId;
+
+  const resetCreateForm = () => {
+    setSupplierType("client");
+    setSupplierClientId(null);
+    setSupplierLocationId(null);
+    setNewDate("");
+    setNewNotes("");
+  };
+
   const handleCreate = async () => {
-    if (!newSupplier.trim()) return;
+    if (selectedSupplierId == null) return;
     setCreating(true);
     try {
       const created = await expectedDeliveryApi.create(
         {
-          supplier: newSupplier.trim(),
+          client_supplier_id: selectedSupplierId,
+          supplier_type: supplierType,
           warehouse_id: warehouseId ? Number(warehouseId) : null,
           expected_date: newDate || null,
           notes: newNotes.trim() || null,
@@ -98,7 +126,7 @@ export default function ExpectedDeliveries() {
       );
       toast.success("Expected delivery created");
       setCreateOpen(false);
-      setNewSupplier(""); setNewDate(""); setNewNotes("");
+      resetCreateForm();
       navigate(`/expected-deliveries/${created.id}?warehouse=${warehouseId}`);
     } catch {
       toast.error("Failed to create expected delivery");
@@ -136,16 +164,18 @@ export default function ExpectedDeliveries() {
               </h1>
               <p className="text-muted-foreground text-sm mt-1">{t("expectedDeliveriesDesc")}</p>
             </div>
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              {t("newExpectedDelivery")}
-            </Button>
+            {can('manage_expected_deliveries') && (
+              <Button onClick={() => setCreateOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                {t("newExpectedDelivery")}
+              </Button>
+            )}
           </div>
 
           {/* Filters */}
           <div className="flex gap-3 flex-wrap">
             <Input
-              placeholder={`${t("supplierName")}…`}
+              placeholder={t("searchSupplier")}
               value={supplierSearch}
               onChange={e => setSupplierSearch(e.target.value)}
               className="w-56"
@@ -186,7 +216,7 @@ export default function ExpectedDeliveries() {
                       <TableHead>{t("deliveryStatus")}</TableHead>
                       <TableHead>{t("expectedDate")}</TableHead>
                       <TableHead className="text-center w-20">{t("itemCount")}</TableHead>
-                      <TableHead>Created</TableHead>
+                      <TableHead>{t("created")}</TableHead>
                       <TableHead className="w-24">{t("actions")}</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -198,7 +228,7 @@ export default function ExpectedDeliveries() {
                         onClick={() => navigate(`/expected-deliveries/${d.id}?warehouse=${warehouseId}`)}
                       >
                         <TableCell className="font-mono text-sm font-medium">#{d.id}</TableCell>
-                        <TableCell className="font-medium">{d.supplier}</TableCell>
+                        <TableCell className="font-medium">{d.supplier_name ?? "—"}</TableCell>
                         <TableCell>
                           <StatusBadge status={d.status} label={statusLabel[d.status]} />
                         </TableCell>
@@ -214,15 +244,17 @@ export default function ExpectedDeliveries() {
                             >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:text-destructive"
-                              title={t("deleteDelivery")}
-                              onClick={() => setDeleteId(d.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            {can('manage_expected_deliveries') && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                title={t("deleteDelivery")}
+                                onClick={() => setDeleteId(d.id)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -236,7 +268,7 @@ export default function ExpectedDeliveries() {
       </div>
 
       {/* Create dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog open={createOpen} onOpenChange={open => { setCreateOpen(open); if (!open) resetCreateForm(); }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{t("createExpectedDelivery")}</DialogTitle>
@@ -244,30 +276,57 @@ export default function ExpectedDeliveries() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>{t("supplierName")} *</Label>
-              <Input
-                value={newSupplier}
-                onChange={e => setNewSupplier(e.target.value)}
-                placeholder="e.g. Textile Mills Ltd."
-                onKeyDown={e => e.key === "Enter" && handleCreate()}
-              />
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={supplierType === "client" ? "default" : "outline"}
+                  onClick={() => { setSupplierType("client"); setSupplierLocationId(null); }}
+                >
+                  {t("client")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={supplierType === "logical_location" ? "default" : "outline"}
+                  onClick={() => { setSupplierType("logical_location"); setSupplierClientId(null); }}
+                >
+                  {t("logicalLocation")}
+                </Button>
+              </div>
+              {supplierType === "client" ? (
+                <Combobox
+                  items={clients.map(c => ({ id: c.id, label: c.name }))}
+                  value={supplierClientId}
+                  onSelect={setSupplierClientId}
+                  placeholder={t("selectSupplierClient")}
+                />
+              ) : (
+                <Combobox
+                  items={logicalLocations.map(l => ({ id: l.id, label: l.name }))}
+                  value={supplierLocationId}
+                  onSelect={setSupplierLocationId}
+                  placeholder={t("selectLogicalLocation")}
+                />
+              )}
             </div>
             <div className="space-y-1.5">
               <Label>{t("expectedDate")}</Label>
               <Input type="date" value={newDate} onChange={e => setNewDate(e.target.value)} />
             </div>
             <div className="space-y-1.5">
-              <Label>Notes</Label>
+              <Label>{t("notes")}</Label>
               <Textarea
                 value={newNotes}
                 onChange={e => setNewNotes(e.target.value)}
                 rows={2}
-                placeholder="Optional notes…"
+                placeholder={t("notesPlaceholder")}
               />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("cancel")}</Button>
-            <Button onClick={handleCreate} disabled={!newSupplier.trim() || creating}>
+            <Button onClick={handleCreate} disabled={selectedSupplierId == null || creating}>
               {creating && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {t("createExpectedDelivery")}
             </Button>

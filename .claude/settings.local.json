@@ -3,7 +3,10 @@
     "allow": [
       "Bash(npx tsc *)",
       "Bash(Get-ChildItem -Path \"s:\\\\CS_Projects\\\\Projects\\\\wms-cpc\" -Force)",
-      "Bash(Select-Object -Property Name, Mode)"
+      "Bash(Select-Object -Property Name, Mode)",
+      "Bash(python -m py_compile backend/models.py backend/schemas.py backend/crud/expected_deliveries.py backend/crud/fabric_rolls.py backend/crud/undyed_fabric_rolls.py backend/api/v1/endpoints/expected_deliveries.py)",
+      "Bash(python -c \"import backend.models, backend.schemas; import backend.crud.expected_deliveries, backend.crud.fabric_rolls, backend.crud.undyed_fabric_rolls; import backend.api.v1.endpoints.expected_deliveries; print\\('IMPORT-OK'\\)\")",
+      "Bash(npx eslint *)"
     ]
   }
 }

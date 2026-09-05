@@ -1,13 +1,11 @@
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import LanguageToggle from "@/components/LanguageToggle";
 
 const Index = () => {
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   return (
-    <div className={`flex min-h-screen items-center justify-center bg-background ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+    <div className="flex min-h-screen items-center justify-center bg-background">
       <div className="absolute top-4 right-4">
         <LanguageToggle />
       </div>

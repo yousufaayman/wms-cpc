@@ -2,13 +2,13 @@ import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowRight, Loader2, Package, Shirt, Zap } from "lucide-react";
+import { ArrowRight, Loader2, Package, Shirt, Zap, Users } from "lucide-react";
 import { useEffect, useState } from "react";
 import { warehouseApi, Warehouse, WarehouseType } from "@/lib/api";
 import PageTransition from "@/components/PageTransition";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import LanguageToggle from "@/components/LanguageToggle";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 
 const Warehouses = () => {
   const navigate = useNavigate();
@@ -17,7 +17,7 @@ const Warehouses = () => {
   const [error, setError] = useState<string | null>(null);
   const [navigating, setNavigating] = useState<number | null>(null);
   const { t } = useTranslation();
-  const { language } = useLanguage();
+  const { isAdmin, role } = useCurrentUser();
 
   // Helper function to get warehouse type icon
   const getWarehouseTypeIcon = (type: WarehouseType) => {
@@ -65,16 +65,18 @@ const Warehouses = () => {
 
   const handleSelectWarehouse = (warehouseId: number) => {
     setNavigating(warehouseId);
+    // Viewer has no dashboard access — land on Receipts instead.
+    const homePath = role === "Viewer" ? "/receipts" : "/dashboard";
     // Add a small delay to show the loading state before navigation
     setTimeout(() => {
-      navigate(`/dashboard?warehouse=${warehouseId}`);
+      navigate(`${homePath}?warehouse=${warehouseId}`);
     }, 300);
   };
 
   if (loading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+        <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="absolute top-4 right-4">
             <LanguageToggle />
           </div>
@@ -89,7 +91,7 @@ const Warehouses = () => {
   if (error) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+        <div className="min-h-screen bg-background flex items-center justify-center">
           <div className="absolute top-4 right-4">
             <LanguageToggle />
           </div>
@@ -104,7 +106,7 @@ const Warehouses = () => {
 
   return (
     <PageTransition>
-      <div className={`min-h-screen bg-background flex items-center justify-center ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+      <div className="min-h-screen bg-background flex items-center justify-center">
       <div className="absolute top-4 right-4">
         <LanguageToggle />
       </div>
@@ -115,13 +117,26 @@ const Warehouses = () => {
       }`}>
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-primary mb-4">{t('selectWarehouse')}</h1>
-          <Button 
-            variant="outline" 
-            size="lg"
-            className="mt-4 hover:bg-primary hover:text-primary-foreground transition-all duration-300"
-          >
-            {t('warehouseManagement')}
-          </Button>
+          <div className="flex items-center justify-center gap-3 mt-4">
+            <Button
+              variant="outline"
+              size="lg"
+              className="hover:bg-primary hover:text-primary-foreground transition-all duration-300"
+            >
+              {t('warehouseManagement')}
+            </Button>
+            {isAdmin && (
+              <Button
+                variant="outline"
+                size="lg"
+                className="hover:bg-primary hover:text-primary-foreground transition-all duration-300"
+                onClick={() => navigate('/user-management')}
+              >
+                <Users className="mr-2 h-4 w-4" />
+                {t('userManagement')}
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="flex justify-center">

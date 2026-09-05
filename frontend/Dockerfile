@@ -14,10 +14,26 @@ CMD ["npm", "run", "dev", "--", "--host"]
 # ── Build stage ────────────────────────────────────────────────────────────────
 FROM base AS build
 COPY . .
+
+ARG VITE_API_BASE_URL=/api/v1
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
 RUN npm run build
 
-# ── Production (nginx) ─────────────────────────────────────────────────────────
+# ── Production (nginx) ───────────────────────────────────────────────────────
 FROM nginx:alpine AS prod
-COPY --from=build /app/dist /usr/share/nginx/html
+
+RUN apk add --no-cache curl && \
+    rm -f /etc/nginx/conf.d/default.conf
+
 COPY nginx.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
+COPY --from=build /app/dist /usr/share/nginx/html
+
+RUN chown -R 1000:1000 /var/cache/nginx /usr/share/nginx/html /etc/nginx/conf.d && \
+    touch /var/run/nginx.pid && \
+    chown 1000:1000 /var/run/nginx.pid
+
+USER 1000:1000
+
+EXPOSE 3000
+CMD ["nginx", "-g", "daemon off;"]

@@ -20,6 +20,7 @@ import {
   Layers,
   Loader2,
   Package,
+  Recycle,
   Tag,
   Boxes,
   User,
@@ -28,7 +29,6 @@ import {
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import {
   fabricRollApi,
   undyedFabricRollApi,
@@ -37,6 +37,7 @@ import {
   type FabricCodeInventory,
   type InventoryLotGroup,
   type InventoryRollDetail,
+  type FabricRoll,
   type UndyedClientInventoryGroup,
   type UndyedMaterialInventory,
   type UndyedInventoryLotGroup,
@@ -179,6 +180,21 @@ function RollDetailDialog({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const [originalRoll, setOriginalRoll] = useState<FabricRoll | null>(null);
+  const [originalRollLoading, setOriginalRollLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || roll.original_roll_id == null) {
+      setOriginalRoll(null);
+      return;
+    }
+    setOriginalRollLoading(true);
+    fabricRollApi.getById(roll.original_roll_id)
+      .then(setOriginalRoll)
+      .catch(() => setOriginalRoll(null))
+      .finally(() => setOriginalRollLoading(false));
+  }, [open, roll.original_roll_id]);
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
@@ -319,6 +335,40 @@ function RollDetailDialog({
               </section>
             </>
           )}
+
+          {roll.original_roll_id != null && (
+            <>
+              <Separator />
+              <section className="space-y-2 rounded-md border border-orange-500/50 bg-orange-50 dark:bg-orange-950/30 p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-wider text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                  <Recycle className="h-3 w-3" />
+                  {t('remnantOfRoll', { id: String(roll.original_roll_id) })}
+                </p>
+                {originalRollLoading ? (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('loading')}
+                  </div>
+                ) : originalRoll ? (
+                  <div className="grid grid-cols-2 gap-x-8 gap-y-1.5 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('weight')}</span>
+                      <span className="font-medium">{fmt(originalRoll.weight, 3)} kg</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">{t('length')}</span>
+                      <span className="font-medium">{originalRoll.length != null ? `${fmt(originalRoll.length)} m` : "—"}</span>
+                    </div>
+                    <div className="flex justify-between col-span-2">
+                      <span className="text-muted-foreground">{t('supplier')}</span>
+                      <span className="font-medium">{originalRoll.supplier ?? "—"}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">—</p>
+                )}
+              </section>
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>
@@ -353,7 +403,13 @@ function RollTable({ rolls, ctx }: { rolls: InventoryRollDetail[]; ctx: RollCont
             {rolls.map((roll) => (
               <TableRow key={roll.id}>
                 <TableCell>
-                  <Badge variant="outline" className="font-mono text-xs">#{roll.id}</Badge>
+                  <Badge
+                    variant="outline"
+                    className={`font-mono text-xs ${roll.original_roll_id != null ? "border-orange-500/60 text-orange-600 dark:text-orange-400" : ""}`}
+                    title={roll.original_roll_id != null ? t('remnantOfRoll', { id: String(roll.original_roll_id) }) : undefined}
+                  >
+                    #{roll.id}
+                  </Badge>
                 </TableCell>
                 <TableCell className="font-medium">{fmt(roll.weight, 3)}</TableCell>
                 <TableCell>{fmt(roll.length)}</TableCell>
@@ -833,7 +889,6 @@ const EMPTY_UNDYED: UndyedFilters = { clientId: null, materialId: null, lot: "",
 
 const FabricInventory = () => {
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   // ── Dyed state ──────────────────────────────────────────────────────────────
   const [dyedInventory, setDyedInventory] = useState<ClientInventoryGroup[]>([]);
@@ -931,7 +986,7 @@ const FabricInventory = () => {
 
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="min-h-screen bg-background flex">
         <Sidebar />
         <main className="flex-1 p-8 space-y-6 overflow-auto">
 

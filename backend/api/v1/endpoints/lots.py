@@ -1,11 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from backend.core.deps import get_db
+from backend import models
+from backend.core.deps import get_db, require_permission
+from backend.core.authz import PERM_INGEST_FABRIC
 from backend.crud import lots as crud_lots
 from backend.schemas import Lot, LotCreate
 
 router = APIRouter()
+# Lots are created while scanning/ingesting fabric rolls.
+_REQUIRE_INGEST = Depends(require_permission(PERM_INGEST_FABRIC))
 
 
 @router.get("/", response_model=List[Lot])
@@ -20,7 +24,7 @@ def get_lots(
 
 
 @router.post("/", response_model=Lot, status_code=status.HTTP_201_CREATED)
-def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
+def create_lot(lot: LotCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_INGEST):
     """Create a new lot. Returns 409 if lot_number already exists for that fabric code."""
     try:
         return crud_lots.create_lot(db, lot)
@@ -29,6 +33,6 @@ def create_lot(lot: LotCreate, db: Session = Depends(get_db)):
 
 
 @router.post("/get-or-create", response_model=Lot)
-def get_or_create_lot(lot: LotCreate, db: Session = Depends(get_db)):
+def get_or_create_lot(lot: LotCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_INGEST):
     """Return existing lot or create it."""
     return crud_lots.get_or_create_lot(db, lot.client_fabric_code_id, lot.lot_number)

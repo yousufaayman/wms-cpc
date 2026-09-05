@@ -10,8 +10,14 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     proxy: {
       "/api": {
-        target: process.env.API_PROXY_TARGET ?? "http://localhost:8000",
-        changeOrigin: true,
+        target: process.env.API_PROXY_TARGET ?? "http://localhost:8001",
+        // changeOrigin rewrites the Host header the backend sees, which makes
+        // FastAPI's trailing-slash redirect build an absolute Location back at
+        // the backend's own port. The browser then treats that redirect as
+        // cross-origin and drops the Authorization header, turning every
+        // trailing-slash request into a 401. Both sides are on localhost, so
+        // there's no virtual-host reason to rewrite it.
+        changeOrigin: false,
       },
     },
   },

@@ -10,8 +10,19 @@ def get_external_receipt(db: Session, receipt_id: int) -> Optional[ExternalRecei
     return db.query(ExternalReceipt).filter(ExternalReceipt.id == receipt_id).first()
 
 
-def get_external_receipts(db: Session, skip: int = 0, limit: int = 100) -> List[ExternalReceipt]:
-    return db.query(ExternalReceipt).order_by(ExternalReceipt.id.asc()).offset(skip).limit(limit).all()
+def get_external_receipts(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    warehouse_id: int = None,
+    closed: bool = None,
+) -> List[ExternalReceipt]:
+    q = db.query(ExternalReceipt)
+    if warehouse_id is not None:
+        q = q.filter(ExternalReceipt.source_warehouse_id == warehouse_id)
+    if closed is not None:
+        q = q.filter(ExternalReceipt.closed == closed)
+    return q.order_by(ExternalReceipt.id.asc()).offset(skip).limit(limit).all()
 
 
 def get_external_receipts_by_warehouse(db: Session, warehouse_id: int, skip: int = 0, limit: int = 100) -> List[ExternalReceipt]:

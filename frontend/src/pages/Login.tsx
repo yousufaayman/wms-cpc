@@ -8,7 +8,6 @@ import { Package } from "lucide-react";
 import { toast } from "sonner";
 import { login, saveToken } from "@/lib/auth";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import LanguageToggle from "@/components/LanguageToggle";
 
 const Login = () => {
@@ -17,7 +16,6 @@ const Login = () => {
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,7 +33,7 @@ const Login = () => {
   };
 
   return (
-    <div className={`min-h-screen flex items-center justify-center bg-background px-4 ${language === 'ar' ? 'rtl' : 'ltr'}`}>
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="absolute top-4 right-4">
         <LanguageToggle />
       </div>

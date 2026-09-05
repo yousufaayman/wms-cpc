@@ -9,11 +9,13 @@ import Warehouses from "./pages/Warehouses";
 import NotFound from "./pages/NotFound";
 import LoadingSpinner from "./components/LoadingSpinner";
 import ProtectedRoute from "./components/ProtectedRoute";
+import RequirePermission from "./components/RequirePermission";
 import { LanguageProvider } from "./contexts/LanguageContext";
 
 // Lazy load Dashboard component
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ManageWarehouseRacks = lazy(() => import("./pages/ManageWarehouseRacks"));
+const ManageLogicalLocations = lazy(() => import("./pages/ManageLogicalLocations"));
 const Receipts = lazy(() => import("./pages/Receipts"));
 const ReceiptDetail = lazy(() => import("./pages/ReceiptDetail"));
 const CreateReceipt = lazy(() => import("./pages/CreateReceipt"));
@@ -22,6 +24,9 @@ const FabricInventory = lazy(() => import("./pages/FabricInventory"));
 const UndyedFabricRolls = lazy(() => import("./pages/UndyedFabricRolls"));
 const ExpectedDeliveries = lazy(() => import("./pages/ExpectedDeliveries"));
 const ExpectedDeliveryDetail = lazy(() => import("./pages/ExpectedDeliveryDetail"));
+const MaterialRequests = lazy(() => import("./pages/MaterialRequests"));
+const Analytics = lazy(() => import("./pages/Analytics"));
+const UserManagement = lazy(() => import("./pages/UserManagement"));
 
 const queryClient = new QueryClient();
 
@@ -39,43 +44,61 @@ const App = () => (
                 <Warehouses />
               </ProtectedRoute>
             } />
-            <Route 
-              path="/dashboard" 
+            <Route
+              path="/dashboard"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Dashboard..." />}>
-                    <Dashboard />
-                  </Suspense>
+                  <RequirePermission permission="operations">
+                    <Suspense fallback={<LoadingSpinner message="Loading Dashboard..." />}>
+                      <Dashboard />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
-              } 
+              }
             />
-            <Route 
-              path="/manage-racks" 
+            <Route
+              path="/manage-racks"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
-                    <ManageWarehouseRacks />
-                  </Suspense>
+                  <RequirePermission permission="warehouse_racks">
+                    <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
+                      <ManageWarehouseRacks />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
-              } 
+              }
             />
-            <Route 
-              path="/receipts" 
+            <Route
+              path="/manage-logical-locations"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission permission="logical_locations">
+                    <Suspense fallback={<LoadingSpinner message="Loading Logical Locations..." />}>
+                      <ManageLogicalLocations />
+                    </Suspense>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/receipts"
               element={
                 <ProtectedRoute>
                   <Suspense fallback={<LoadingSpinner message="Loading Receipts..." />}>
                     <Receipts />
                   </Suspense>
                 </ProtectedRoute>
-              } 
+              }
             />
             <Route
               path="/receipts/create/:kind"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading..." />}>
-                    <CreateReceipt />
-                  </Suspense>
+                  <RequirePermission permission="create_receipts">
+                    <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                      <CreateReceipt />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />
@@ -93,9 +116,11 @@ const App = () => (
               path="/fabric-rolls"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Fabric Rolls..." />}>
-                    <FabricRolls />
-                  </Suspense>
+                  <RequirePermission permission="ingest_fabric">
+                    <Suspense fallback={<LoadingSpinner message="Loading Fabric Rolls..." />}>
+                      <FabricRolls />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />
@@ -113,9 +138,11 @@ const App = () => (
               path="/undyed-fabric-rolls"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Undyed Fabric Rolls..." />}>
-                    <UndyedFabricRolls />
-                  </Suspense>
+                  <RequirePermission permission="ingest_fabric">
+                    <Suspense fallback={<LoadingSpinner message="Loading Undyed Fabric Rolls..." />}>
+                      <UndyedFabricRolls />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />
@@ -123,9 +150,11 @@ const App = () => (
               path="/expected-deliveries"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Expected Deliveries..." />}>
-                    <ExpectedDeliveries />
-                  </Suspense>
+                  <RequirePermission permission="operations">
+                    <Suspense fallback={<LoadingSpinner message="Loading Expected Deliveries..." />}>
+                      <ExpectedDeliveries />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />
@@ -133,8 +162,44 @@ const App = () => (
               path="/expected-deliveries/:id"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Delivery..." />}>
-                    <ExpectedDeliveryDetail />
+                  <RequirePermission permission="operations">
+                    <Suspense fallback={<LoadingSpinner message="Loading Delivery..." />}>
+                      <ExpectedDeliveryDetail />
+                    </Suspense>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/material-requests"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission permission="operations">
+                    <Suspense fallback={<LoadingSpinner message="Loading Material Requests..." />}>
+                      <MaterialRequests />
+                    </Suspense>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission permission="analytics">
+                    <Suspense fallback={<LoadingSpinner message="Loading Analytics..." />}>
+                      <Analytics />
+                    </Suspense>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/user-management"
+              element={
+                <ProtectedRoute>
+                  <Suspense fallback={<LoadingSpinner message="Loading User Management..." />}>
+                    <UserManagement />
                   </Suspense>
                 </ProtectedRoute>
               }

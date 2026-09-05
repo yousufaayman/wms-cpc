@@ -11,7 +11,7 @@ import { FileText, Search, Loader2, Eye, Calendar, Plus, Package } from "lucide-
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import LanguageToggle from "@/components/LanguageToggle";
 import {
   supplierReceiptApi, type SupplierReceipt,
@@ -47,6 +47,7 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
 }>) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { can } = useCurrentUser();
   const [receipts, setReceipts] = useState<SupplierReceipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -116,9 +117,11 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                 <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" />
               </div>
             </div>
-            <Button onClick={() => navigate(`/receipts/create/supplier${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
-              <Plus className="h-4 w-4 mr-2" />{t("newSupplierReceipt")}
-            </Button>
+            {can('create_receipts') && (
+              <Button onClick={() => navigate(`/receipts/create/supplier${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
+                <Plus className="h-4 w-4 mr-2" />{t("newSupplierReceipt")}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -175,6 +178,7 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
 }>) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { can } = useCurrentUser();
   const [receipts, setReceipts] = useState<InternalReceipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -253,9 +257,11 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                 <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" />
               </div>
             </div>
-            <Button onClick={() => navigate(`/receipts/create/internal${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
-              <Plus className="h-4 w-4 mr-2" />{t("newInternalReceipt")}
-            </Button>
+            {can('create_receipts') && (
+              <Button onClick={() => navigate(`/receipts/create/internal${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
+                <Plus className="h-4 w-4 mr-2" />{t("newInternalReceipt")}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -313,6 +319,7 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
 }>) {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { can } = useCurrentUser();
   const [receipts, setReceipts] = useState<ExternalReceipt[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -369,9 +376,11 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
                 <Input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-36" />
               </div>
             </div>
-            <Button onClick={() => navigate(`/receipts/create/external${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
-              <Plus className="h-4 w-4 mr-2" />{t("newExternalReceipt")}
-            </Button>
+            {can('create_receipts') && (
+              <Button onClick={() => navigate(`/receipts/create/external${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
+                <Plus className="h-4 w-4 mr-2" />{t("newExternalReceipt")}
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -431,7 +440,6 @@ const Receipts = () => {
   const [refLoading, setRefLoading] = useState(true);
 
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   useEffect(() => {
     Promise.all([warehouseApi.getAll(), logicalLocationApi.getAll({ limit: 500 })]).then(
@@ -442,7 +450,7 @@ const Receipts = () => {
   if (refLoading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background ${language === "ar" ? "rtl" : "ltr"}`}>
+        <div className="min-h-screen bg-background">
           <div className="absolute top-4 right-4"><LanguageToggle /></div>
           <div className="flex items-center justify-center h-screen">
             <div className="text-center">
@@ -457,7 +465,7 @@ const Receipts = () => {
 
   return (
     <PageTransition>
-      <div className={`min-h-screen bg-background flex ${language === "ar" ? "rtl" : "ltr"}`}>
+      <div className="min-h-screen bg-background flex">
         <Sidebar />
         <main className="flex-1 p-8">
           <div className="space-y-6">
@@ -472,7 +480,7 @@ const Receipts = () => {
               )}
             </div>
 
-            <Tabs defaultValue="supplier">
+            <Tabs defaultValue="internal">
               <TabsList className="grid grid-cols-3 w-full max-w-md">
                 <TabsTrigger value="supplier">{t("supplierReceipts")}</TabsTrigger>
                 <TabsTrigger value="internal">{t("internalReceipts")}</TabsTrigger>

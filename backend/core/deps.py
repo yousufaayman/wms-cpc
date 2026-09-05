@@ -8,7 +8,7 @@ from .. import models, schemas
 from . import security
 from .config import settings
 from ..database import get_db
-from .authz import ensure_superuser
+from .authz import ensure_superuser, ensure_wt_or_admin, ensure_permission
 
 reusable_oauth2 = OAuth2PasswordBearer(
     tokenUrl=f"{settings.API_V1_STR}/auth/login"
@@ -43,3 +43,19 @@ def get_current_active_superuser(
     current_user: models.User = Depends(get_current_user),
 ) -> models.User:
     return ensure_superuser(db, current_user)
+
+def get_current_wt_or_admin(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+) -> models.User:
+    return ensure_wt_or_admin(db, current_user)
+
+def require_permission(permission: str):
+    """Dependency factory: 403s unless the current user holds `permission`
+    (admin always does — see authz.has_permission)."""
+    def _dependency(
+        db: Session = Depends(get_db),
+        current_user: models.User = Depends(get_current_user),
+    ) -> models.User:
+        return ensure_permission(db, current_user, permission)
+    return _dependency

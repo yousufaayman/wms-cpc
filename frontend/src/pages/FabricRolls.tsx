@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,17 +10,18 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer, Recycle } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import {
   clientApi, colorApi, materialApi, logicalLocationApi,
   clientFabricCodeApi, lotApi, fabricRollApi, warehouseRackApi,
   type Client, type Color, type Material, type LogicalLocation,
   type ClientFabricCode, type Lot, type FabricRoll, type WarehouseRack,
 } from "@/lib/api";
+import { generateDyedRollLabel, sendZplToDevice } from "@/lib/zpl";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,6 +33,8 @@ interface LockedDetails {
   fabricWidth: string;
   gsm: string;
   lengthUnit: "m" | "yd";
+  /** Dyed roll this batch's rolls are a remnant/re-ingestion of, if any. */
+  originalRollId: number | null;
 }
 
 // ─── Combobox helper ──────────────────────────────────────────────────────────
@@ -95,7 +98,6 @@ const FabricRolls = () => {
   const warehouseIdParam = searchParams.get("warehouse");
   const warehouseId = warehouseIdParam ? parseInt(warehouseIdParam) : undefined;
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   // ── Reference data ──────────────────────────────────────────────────────────
   const [clients, setClients] = useState<Client[]>([]);
@@ -116,6 +118,15 @@ const FabricRolls = () => {
   const [supplierClientId, setSupplierClientId] = useState<number | null>(null);
   const [supplierLocationId, setSupplierLocationId] = useState<number | null>(null);
 
+  // Remnant roll: pre-fills fabric identity/lot/width/gsm from an existing
+  // dyed roll; supplier is entered fresh (see remnant lookup dialog below).
+  const [originalRollId, setOriginalRollId] = useState<number | null>(null);
+  const [pendingRemnantLotId, setPendingRemnantLotId] = useState<number | null>(null);
+  const [remnantDialogOpen, setRemnantDialogOpen] = useState(false);
+  const [remnantInput, setRemnantInput] = useState("");
+  const [remnantLoading, setRemnantLoading] = useState(false);
+  const [remnantError, setRemnantError] = useState<string | null>(null);
+
   // ── Step 2 – lock details ────────────────────────────────────────────────────
   const [lots, setLots] = useState<Lot[]>([]);
   const [lotsLoading, setLotsLoading] = useState(false);
@@ -134,14 +145,21 @@ const FabricRolls = () => {
   const [printers, setPrinters] = useState<BrowserPrint.Device[]>([]);
   const [printersLoading, setPrintersLoading] = useState(false);
   const [selectedPrinter, setSelectedPrinter] = useState<BrowserPrint.Device | null>(null);
+  const [labelCopies, setLabelCopies] = useState("2");
+  const [printError, setPrintError] = useState<string | null>(null);
 
-  // ── Step 3 – roll entry ──────────────────────────────────────────────────────
+  // ── Step 3 – roll entry (keyboard stepper: weight → length → lot → POST) ────
   const [weightInput, setWeightInput] = useState("");
   const [lengthInput, setLengthInput] = useState("");
+  const [rollLotInput, setRollLotInput] = useState("");
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [addErrorField, setAddErrorField] = useState<"weight" | "lot" | null>(null);
   const [sessionRolls, setSessionRolls] = useState<FabricRoll[]>([]);
   const [rollRackNames, setRollRackNames] = useState<Record<number, string>>({});
+  const weightRef = useRef<HTMLInputElement>(null);
+  const lengthRef = useRef<HTMLInputElement>(null);
+  const lotRef = useRef<HTMLInputElement>(null);
 
   // Rack entry
   const [rackInput, setRackInput] = useState("");
@@ -229,6 +247,25 @@ const FabricRolls = () => {
     load();
   }, [fabricCode]);
 
+  // ── Remnant roll: once lots finish loading, select the inherited lot ────────
+  useEffect(() => {
+    if (pendingRemnantLotId == null) return;
+    const match = lots.find((l) => l.id === pendingRemnantLotId);
+    if (match) {
+      setSelectedLotId(match.id);
+      setLotMode("existing");
+      setPendingRemnantLotId(null);
+    }
+  }, [lots, pendingRemnantLotId]);
+
+  // ── Prime the stepper whenever details lock: per-roll lot ← session lot ─────
+  useEffect(() => {
+    if (locked && lockedDetails) {
+      setRollLotInput(lockedDetails.lotNumber ?? "");
+      weightRef.current?.focus();
+    }
+  }, [locked, lockedDetails]);
+
   // ── Helpers ──────────────────────────────────────────────────────────────────
   const supplierName = (): string | null => {
     if (supplierSource === "client") {
@@ -273,6 +310,7 @@ const FabricRolls = () => {
         fabricWidth: fabricWidthInput,
         gsm: gsmInput,
         lengthUnit,
+        originalRollId,
       });
       setLocked(true);
     } catch (e) {
@@ -314,19 +352,150 @@ const FabricRolls = () => {
     }
   };
 
-  const handleAddRoll = async () => {
-    if (!fabricCode || !lockedDetails) return;
+  // ── Remnant roll lookup ──────────────────────────────────────────────────────
+  const handleRemnantLookup = async (rollIdRaw: string) => {
+    const rollId = parseInt(rollIdRaw, 10);
+    if (isNaN(rollId)) return;
+    setRemnantLoading(true);
+    setRemnantError(null);
+    try {
+      const roll = await fabricRollApi.getById(rollId);
+      if (roll.status !== "out") {
+        setRemnantError(t('remnantSourceMustBeOut'));
+        return;
+      }
+      const cfc = await clientFabricCodeApi.getById(roll.client_fabric_code_id);
+      setSupplierClientId(null);
+      setSupplierLocationId(null);
+      setClientId(cfc.client_id);
+      setMaterialId(cfc.material_id);
+      setColorId(cfc.color_id);
+      setFabricWidthInput(roll.fabric_width != null ? String(roll.fabric_width) : "");
+      setGsmInput(roll.gsm != null ? String(roll.gsm) : "");
+      setPendingRemnantLotId(roll.lot_id ?? null);
+      setOriginalRollId(roll.id);
+      setRemnantDialogOpen(false);
+      setRemnantInput("");
+    } catch (e) {
+      setRemnantError(e instanceof Error ? e.message : t('rollNotFound'));
+    } finally {
+      setRemnantLoading(false);
+    }
+  };
+
+  const handleRemnantChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setRemnantError(null);
+    if (val.endsWith("*F")) {
+      handleRemnantLookup(val.slice(0, -2));
+      return;
+    }
+    if (val.endsWith("*K")) {
+      setRemnantError(t('invalidDyedRollBarcode'));
+      setRemnantInput("");
+      return;
+    }
+    setRemnantInput(val);
+  };
+
+  const handleRemnantKey = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Manual entry (bare id + Enter) has no suffix.
+    if (e.key === "Enter") handleRemnantLookup(remnantInput);
+  };
+
+  const handleClearRemnant = () => {
+    setOriginalRollId(null);
+    setPendingRemnantLotId(null);
+    setSelectedLotId(null);
+    setLotMode("none");
+  };
+
+  const parseWeight = (): number | null => {
     const weight = parseFloat(weightInput);
-    if (isNaN(weight) || weight <= 0) {
+    return isNaN(weight) || weight <= 0 ? null : weight;
+  };
+
+  const handleWeightEnter = () => {
+    if (parseWeight() == null) {
       setAddError(t('error'));
+      setAddErrorField("weight");
+      weightRef.current?.focus();
+      return;
+    }
+    setAddError(null);
+    setAddErrorField(null);
+    lengthRef.current?.focus();
+  };
+
+  const handleLengthEnter = () => {
+    // Length is optional — always advance. Re-prime the lot with the locked
+    // session value so any earlier per-roll override is discarded.
+    setRollLotInput(lockedDetails?.lotNumber ?? "");
+    lotRef.current?.focus();
+    lotRef.current?.select();
+  };
+
+  // Fire-and-forget label print: never blocks the entry loop; a failure only
+  // surfaces as a warning since the roll itself is already persisted.
+  const printRollLabel = (roll: FabricRoll, lotNumber: string) => {
+    if (!selectedPrinter || !lockedDetails) return;
+    const copies = Math.max(1, parseInt(labelCopies, 10) || 2);
+    const zpl = generateDyedRollLabel(
+      {
+        rollId: roll.id,
+        fabricCode: fabricCode?.fabric_code ?? `#${fabricCode?.id ?? ""}`,
+        client: clients.find((c) => c.id === clientId)?.name ?? "-",
+        material: materials.find((m) => m.id === materialId)?.name ?? "-",
+        color: colors.find((c) => c.id === colorId)?.name ?? "-",
+        lot: lotNumber,
+        weightKg: roll.weight,
+        lengthM: roll.length,
+        widthCm: lockedDetails.fabricWidth,
+        gsm: lockedDetails.gsm,
+        supplier: supplierName(),
+      },
+      copies,
+    );
+    sendZplToDevice(selectedPrinter, zpl).catch((err) => {
+      console.error("Roll label print failed", err);
+      setPrintError(t('printRollLabelFailed'));
+    });
+  };
+
+  const handleAddRoll = async () => {
+    if (!fabricCode || !lockedDetails || addLoading) return;
+    const weight = parseWeight();
+    if (weight == null) {
+      setAddError(t('error'));
+      setAddErrorField("weight");
+      weightRef.current?.focus();
       return;
     }
     setAddLoading(true);
     setAddError(null);
+    setAddErrorField(null);
+    setPrintError(null);
     try {
+      // Per-roll lot: whatever is in the lot field right now. Same text as the
+      // locked lot reuses its id; anything else is resolved via get-or-create
+      // for this fabric code (this roll only — the locked session lot is kept).
+      const lotText = rollLotInput.trim();
+      let lotId: number | undefined;
+      if (lotText) {
+        if (lotText === lockedDetails.lotNumber) {
+          lotId = lockedDetails.lotId ?? undefined;
+        } else {
+          const lot = await lotApi.getOrCreate({
+            client_fabric_code_id: fabricCode.id,
+            lot_number: lotText,
+          });
+          lotId = lot.id;
+          setLots((prev) => (prev.some((l) => l.id === lot.id) ? prev : [...prev, lot]));
+        }
+      }
       const roll = await fabricRollApi.create({
         client_fabric_code_id: fabricCode.id,
-        lot_id: lockedDetails.lotId ?? undefined,
+        lot_id: lotId,
         gsm: lockedDetails.gsm ? parseFloat(lockedDetails.gsm) : undefined,
         fabric_width: lockedDetails.fabricWidth ? parseFloat(lockedDetails.fabricWidth) : undefined,
         weight,
@@ -338,15 +507,21 @@ const FabricRolls = () => {
         supplier: supplierName() ?? undefined,
         received_date: new Date().toISOString(),
         rack_id: resolvedRack?.id ?? undefined,
+        original_roll_id: lockedDetails.originalRollId ?? undefined,
       });
       setSessionRolls((prev) => [roll, ...prev]);
       if (resolvedRack) {
         setRollRackNames((prev) => ({ ...prev, [roll.id]: resolvedRack.rack_code }));
       }
+      printRollLabel(roll, lotText);
       setWeightInput("");
       setLengthInput("");
+      setRollLotInput(lockedDetails.lotNumber ?? "");
+      weightRef.current?.focus();
     } catch (e) {
       setAddError(e instanceof Error ? e.message : t('error'));
+      setAddErrorField("lot");
+      lotRef.current?.focus();
     } finally {
       setAddLoading(false);
     }
@@ -367,16 +542,24 @@ const FabricRolls = () => {
     setLengthUnit("m");
     setLocked(false);
     setLockedDetails(null);
+    setOriginalRollId(null);
+    setPendingRemnantLotId(null);
+    setRemnantInput("");
+    setRemnantError(null);
     setWeightInput("");
     setLengthInput("");
+    setRollLotInput("");
     setSessionRolls([]);
     setLockError(null);
     setAddError(null);
+    setAddErrorField(null);
     setRackInput("");
     setResolvedRack(null);
     setRackError(null);
     setRollRackNames({});
     setSelectedPrinter(null);
+    setLabelCopies("2");
+    setPrintError(null);
   };
 
   // ── Derived combobox items ────────────────────────────────────────────────────
@@ -389,7 +572,7 @@ const FabricRolls = () => {
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <PageTransition>
-      <div className="min-h-screen bg-background flex" dir={language === 'ar' ? 'rtl' : 'ltr'}>
+      <div className="min-h-screen bg-background flex">
         <Sidebar />
         <main className="flex-1 p-8 space-y-6 overflow-auto">
           {/* Header */}
@@ -430,10 +613,55 @@ const FabricRolls = () => {
                 </Card>
               ) : (
                 <Card>
-                  <CardHeader>
+                  <CardHeader className="flex flex-row items-center justify-between space-y-0">
                     <CardTitle className="text-base">{t('step1IdentifyFabric')}</CardTitle>
+                    <Dialog open={remnantDialogOpen} onOpenChange={(open) => { setRemnantDialogOpen(open); if (!open) { setRemnantInput(""); setRemnantError(null); } }}>
+                      <DialogTrigger asChild>
+                        <Button variant="outline" size="sm" className="flex items-center gap-1.5">
+                          <Recycle className="h-3.5 w-3.5" />
+                          {t('remnantRoll')}
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-md">
+                        <DialogHeader>
+                          <DialogTitle>{t('remnantRollDialogTitle')}</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-3">
+                          <p className="text-sm text-muted-foreground">{t('remnantRollDialogHint')}</p>
+                          <div className="relative">
+                            <ScanBarcode className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              autoFocus
+                              className="pl-9"
+                              placeholder={t('scanRollId')}
+                              value={remnantInput}
+                              onChange={handleRemnantChange}
+                              onKeyDown={handleRemnantKey}
+                              disabled={remnantLoading}
+                            />
+                          </div>
+                          {remnantLoading && (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" /> {t('loading')}
+                            </div>
+                          )}
+                          {remnantError && <p className="text-sm text-destructive">{remnantError}</p>}
+                        </div>
+                      </DialogContent>
+                    </Dialog>
                   </CardHeader>
                   <CardContent className="space-y-4">
+                    {originalRollId != null && (
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary" className="flex items-center gap-1.5">
+                          <Recycle className="h-3 w-3" />
+                          {t('remnantOfRoll', { id: String(originalRollId) })}
+                        </Badge>
+                        <Button variant="ghost" size="sm" onClick={handleClearRemnant} className="h-6 px-2 text-xs">
+                          {t('clearRemnantLink')}
+                        </Button>
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="space-y-1">
                         <Label>{t('client')} *</Label>
@@ -504,10 +732,21 @@ const FabricRolls = () => {
                       {lockedDetails.gsm && <Badge variant="outline" className="text-xs">{t('gsmBadge', { gsm: lockedDetails.gsm })}</Badge>}
                       <Badge variant="outline" className="text-xs">{t('lengthUnitLabel')}: {lockedDetails.lengthUnit === "yd" ? t('yardsShort') : t('metersShort')}</Badge>
                       <Badge variant="outline" className="text-xs">{t('supplierBadge', { supplier: supplierName() ?? '' })}</Badge>
-                      {selectedPrinter && (
+                      {lockedDetails.originalRollId != null && (
                         <Badge variant="outline" className="text-xs gap-1">
-                          <Printer className="h-3 w-3" />{selectedPrinter.name}
+                          <Recycle className="h-3 w-3" />
+                          {t('remnantOfRoll', { id: String(lockedDetails.originalRollId) })}
                         </Badge>
+                      )}
+                      {selectedPrinter && (
+                        <>
+                          <Badge variant="outline" className="text-xs gap-1">
+                            <Printer className="h-3 w-3" />{selectedPrinter.name}
+                          </Badge>
+                          <Badge variant="outline" className="text-xs">
+                            {t('labelsPerRollBadge', { count: String(Math.max(1, parseInt(labelCopies, 10) || 2)) })}
+                          </Badge>
+                        </>
                       )}
                       {resolvedRack && (
                         <Badge variant="outline" className="text-xs gap-1">
@@ -535,56 +774,66 @@ const FabricRolls = () => {
                     {/* Lot */}
                     <div className="space-y-2">
                       <Label>{t('lotNumberOptional')}</Label>
-                      <div className="flex gap-2 flex-wrap">
-                        <Button
-                          size="sm"
-                          variant={lotMode === "none" ? "default" : "outline"}
-                          onClick={() => setLotMode("none")}
-                          disabled={locked}
-                        >
-                          {t('noLot')}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={lotMode === "existing" ? "default" : "outline"}
-                          onClick={() => setLotMode("existing")}
-                          disabled={locked || lots.length === 0}
-                        >
-                          {t('existingLots')} {lots.length > 0 && `(${lots.length})`}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={lotMode === "new" ? "default" : "outline"}
-                          onClick={() => setLotMode("new")}
-                          disabled={locked}
-                        >
-                          {t('newLot')}
-                        </Button>
-                      </div>
-
-                      {lotMode === "existing" && (
-                        lotsLoading ? (
-                          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                            <Loader2 className="h-3 w-3 animate-spin" /> {t('loadingLots')}
+                      {originalRollId != null ? (
+                        <p className="text-sm text-muted-foreground">
+                          {lotMode === "existing" && selectedLotId != null
+                            ? t('lotBadge', { lotNumber: lotItems.find(l => l.id === selectedLotId)?.label ?? '' })
+                            : t('remnantLotInherited')}
+                        </p>
+                      ) : (
+                        <>
+                          <div className="flex gap-2 flex-wrap">
+                            <Button
+                              size="sm"
+                              variant={lotMode === "none" ? "default" : "outline"}
+                              onClick={() => setLotMode("none")}
+                              disabled={locked}
+                            >
+                              {t('noLot')}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={lotMode === "existing" ? "default" : "outline"}
+                              onClick={() => setLotMode("existing")}
+                              disabled={locked || lots.length === 0}
+                            >
+                              {t('existingLots')} {lots.length > 0 && `(${lots.length})`}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant={lotMode === "new" ? "default" : "outline"}
+                              onClick={() => setLotMode("new")}
+                              disabled={locked}
+                            >
+                              {t('newLot')}
+                            </Button>
                           </div>
-                        ) : (
-                          <Combobox
-                            items={lotItems}
-                            value={selectedLotId}
-                            onSelect={setSelectedLotId}
-                            placeholder={t('selectLot')}
-                            disabled={locked}
-                          />
-                        )
-                      )}
 
-                      {lotMode === "new" && (
-                        <Input
-                          placeholder={t('enterNewLotNumber')}
-                          value={newLotNumber}
-                          onChange={(e) => setNewLotNumber(e.target.value)}
-                          disabled={locked}
-                        />
+                          {lotMode === "existing" && (
+                            lotsLoading ? (
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Loader2 className="h-3 w-3 animate-spin" /> {t('loadingLots')}
+                              </div>
+                            ) : (
+                              <Combobox
+                                items={lotItems}
+                                value={selectedLotId}
+                                onSelect={setSelectedLotId}
+                                placeholder={t('selectLot')}
+                                disabled={locked}
+                              />
+                            )
+                          )}
+
+                          {lotMode === "new" && (
+                            <Input
+                              placeholder={t('enterNewLotNumber')}
+                              value={newLotNumber}
+                              onChange={(e) => setNewLotNumber(e.target.value)}
+                              disabled={locked}
+                            />
+                          )}
+                        </>
                       )}
                     </div>
 
@@ -700,6 +949,16 @@ const FabricRolls = () => {
                             </SelectContent>
                           </Select>
                         </div>
+                        <div className="space-y-1">
+                          <Label className="text-sm">{t('labelsPerRoll')}</Label>
+                          <Input
+                            type="number"
+                            min={1}
+                            value={labelCopies}
+                            onChange={(e) => setLabelCopies(e.target.value)}
+                            className="w-24"
+                          />
+                        </div>
                         <Button
                           onClick={handleLockDetails}
                           disabled={!canLock || lockLoading}
@@ -725,16 +984,20 @@ const FabricRolls = () => {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-end">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
                       <div className="space-y-1">
                         <Label>{t('weightKgRequired')}</Label>
                         <Input
+                          ref={weightRef}
                           type="number"
                           placeholder="e.g. 24.500"
                           value={weightInput}
                           onChange={(e) => setWeightInput(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleAddRoll()}
+                          onKeyDown={(e) => e.key === "Enter" && handleWeightEnter()}
                         />
+                        {addError && addErrorField === "weight" && (
+                          <p className="text-sm text-destructive">{addError}</p>
+                        )}
                       </div>
                       <div className="space-y-1">
                         <Label>
@@ -744,17 +1007,53 @@ const FabricRolls = () => {
                           )}
                         </Label>
                         <Input
+                          ref={lengthRef}
                           type="number"
                           placeholder="e.g. 80.00"
                           value={lengthInput}
                           onChange={(e) => setLengthInput(e.target.value)}
-                          onKeyDown={(e) => e.key === "Enter" && handleAddRoll()}
+                          onKeyDown={(e) => e.key === "Enter" && handleLengthEnter()}
                         />
+                      </div>
+                      <div className="space-y-1">
+                        <Label>{t('rollLotLabel')}</Label>
+                        {lockedDetails.originalRollId != null ? (
+                          <>
+                            <Input
+                              ref={lotRef}
+                              readOnly
+                              value={lockedDetails.lotNumber ?? t('remnantLotInherited')}
+                              className="text-muted-foreground"
+                              onKeyDown={(e) => e.key === "Enter" && handleAddRoll()}
+                            />
+                            <p className="text-xs text-muted-foreground">{t('remnantLotInherited')}</p>
+                          </>
+                        ) : (
+                          <>
+                            <Input
+                              ref={lotRef}
+                              placeholder={t('enterLotNumber')}
+                              value={rollLotInput}
+                              onChange={(e) => setRollLotInput(e.target.value)}
+                              onKeyDown={(e) => e.key === "Enter" && handleAddRoll()}
+                            />
+                            <p className="text-xs text-muted-foreground">{t('rollLotHint')}</p>
+                          </>
+                        )}
+                        {addError && addErrorField === "lot" && (
+                          <p className="text-sm text-destructive">{addError}</p>
+                        )}
                       </div>
                     </div>
 
-                    {addError && (
-                      <p className="text-sm text-destructive">{addError}</p>
+                    {!selectedPrinter && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1">
+                        <Printer className="h-3.5 w-3.5" />
+                        {t('noPrinterSelectedHint')}
+                      </p>
+                    )}
+                    {printError && (
+                      <p className="text-sm text-amber-600">{printError}</p>
                     )}
 
                     <Button
@@ -780,6 +1079,7 @@ const FabricRolls = () => {
                               <TableHead>{t('length')} (m)</TableHead>
                               <TableHead>{t('rack')}</TableHead>
                               <TableHead>{t('status')}</TableHead>
+                              <TableHead>{t('linkedDelivery')}</TableHead>
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -797,6 +1097,14 @@ const FabricRolls = () => {
                                 </TableCell>
                                 <TableCell>
                                   <Badge variant="secondary">{roll.status}</Badge>
+                                </TableCell>
+                                <TableCell>
+                                  {roll.matched_delivery_id != null ? (
+                                    <Badge variant="outline" className="gap-1 text-green-700 border-green-400">
+                                      <Check className="h-3 w-3" />
+                                      {t('matchedToDelivery', { id: String(roll.matched_delivery_id) })}
+                                    </Badge>
+                                  ) : "—"}
                                 </TableCell>
                               </TableRow>
                             ))}

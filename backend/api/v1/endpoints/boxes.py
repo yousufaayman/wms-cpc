@@ -1,17 +1,21 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from backend import schemas
+from backend import schemas, models
 from backend.crud import boxes
-from backend.core.deps import get_db
+from backend.core.deps import get_db, require_permission
+from backend.core.authz import PERM_CREATE_RECEIPTS
 
 router = APIRouter()
+# Boxes back the box-type receipt item flow, so they're gated the same way.
+_REQUIRE_CREATE_RECEIPTS = Depends(require_permission(PERM_CREATE_RECEIPTS))
 
 @router.post("/", response_model=schemas.Box, status_code=status.HTTP_201_CREATED)
 def create_box(
     *,
     db: Session = Depends(get_db),
     box_in: schemas.BoxCreate,
+    current_user: models.User = _REQUIRE_CREATE_RECEIPTS,
 ) -> schemas.Box:
     """
     Create a new box.
@@ -124,6 +128,7 @@ def update_box(
     db: Session = Depends(get_db),
     box_id: int,
     box_in: schemas.BoxUpdate,
+    current_user: models.User = _REQUIRE_CREATE_RECEIPTS,
 ) -> schemas.Box:
     """
     Update a box.
@@ -152,6 +157,7 @@ def delete_box(
     *,
     db: Session = Depends(get_db),
     box_id: int,
+    current_user: models.User = _REQUIRE_CREATE_RECEIPTS,
 ) -> schemas.Box:
     """
     Delete a box.

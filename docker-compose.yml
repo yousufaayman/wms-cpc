@@ -1,18 +1,51 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  nginx:
+    build:
+      context: .
+      dockerfile: nginx/Dockerfile
     restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    ports:
+      - "0.0.0.0:82:80"   # host port per deployment registry — wms-cpc
+    networks:
+      - app_net
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DATABASE:-CPC_INTEGRATED_SYSTEM}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - TZ=Africa/Cairo
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 5s
+      test: ["CMD-SHELL", "curl -fsS http://localhost:80/ || exit 1"]
+      interval: 30s
       timeout: 5s
       retries: 5
+      start_period: 10s
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: prod
+      args:
+        - VITE_API_BASE_URL=/api/v1   # always relative — Rule 5
+    restart: unless-stopped
+    environment:
+      - TZ=Africa/Cairo
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
   backend:
     build:
@@ -20,25 +53,26 @@ services:
       dockerfile: backend/Dockerfile
       target: prod
     restart: unless-stopped
-    env_file: backend/.env
+    env_file:
+      - .env
     environment:
-      POSTGRES_HOST: postgres
-    ports:
-      - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+      POSTGRES_HOST: host.docker.internal   # host-run Postgres — Rule 8
+      BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
+      TZ: Africa/Cairo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - app_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - /etc/timezone:/etc/timezone:ro
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      target: prod
-    restart: unless-stopped
-    ports:
-      - "80:80"
-    depends_on:
-      - backend
-
-volumes:
-  postgres_data:
+networks:
+  app_net:
+    driver: bridge

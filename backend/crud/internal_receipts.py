@@ -9,8 +9,22 @@ def get_internal_receipt(db: Session, receipt_id: int) -> Optional[InternalRecei
     return db.query(InternalReceipt).filter(InternalReceipt.id == receipt_id).first()
 
 
-def get_internal_receipts(db: Session, skip: int = 0, limit: int = 100) -> List[InternalReceipt]:
-    return db.query(InternalReceipt).order_by(InternalReceipt.id.asc()).offset(skip).limit(limit).all()
+def get_internal_receipts(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    warehouse_id: int = None,
+    status: str = None,
+    closed: bool = None,
+) -> List[InternalReceipt]:
+    q = db.query(InternalReceipt)
+    if warehouse_id is not None:
+        q = q.filter(InternalReceipt.source_warehouse_id == warehouse_id)
+    if status is not None:
+        q = q.filter(InternalReceipt.status == status)
+    if closed is not None:
+        q = q.filter(InternalReceipt.closed == closed)
+    return q.order_by(InternalReceipt.id.asc()).offset(skip).limit(limit).all()
 
 
 def get_internal_receipts_by_warehouse(db: Session, warehouse_id: int, skip: int = 0, limit: int = 100) -> List[InternalReceipt]:

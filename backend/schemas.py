@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
 from enum import Enum
 
@@ -606,6 +606,21 @@ class ClientFabricCodeInDB(ClientFabricCodeBase):
 class ClientFabricCode(ClientFabricCodeInDB):
     pass
 
+
+class FabricCodeLookupResult(BaseModel):
+    client_fabric_code_id: int
+    fabric_code: Optional[str] = None
+    client_id: int
+    client_name: str
+    material_id: int
+    material_name: str
+    color_id: int
+    color_name: str
+    # Currently in-stock dyed rolls for this fabric code (status 'in')
+    in_stock_weight: float
+    in_stock_length: Optional[float] = None
+    in_stock_rolls: int
+
 # ── Lot schemas ─────────────────────────────────────────────────────────────
 
 class LotBase(BaseModel):
@@ -650,6 +665,9 @@ class DyedFabricRollBase(BaseModel):
     issued_date: Optional[datetime] = None
     supplier: Optional[str] = Field(None, max_length=100)
     remarks: Optional[str] = None
+    # Roll lineage: this roll was split/re-ingested from another dyed roll.
+    # Optional — not yet surfaced in the ingestion UI.
+    original_roll_id: Optional[int] = None
 
 class DyedFabricRollCreate(DyedFabricRollBase):
     pass
@@ -669,15 +687,21 @@ class DyedFabricRollUpdate(BaseModel):
     issued_date: Optional[datetime] = None
     supplier: Optional[str] = Field(None, max_length=100)
     remarks: Optional[str] = None
+    original_roll_id: Optional[int] = None
 
 class DyedFabricRollInDB(DyedFabricRollBase):
     id: int
+    expected_delivery_item_id: Optional[int] = None
+    # Set server-side from the authenticated user at creation — never client-supplied.
+    ingested_by: Optional[int] = None
 
     class Config:
         from_attributes = True
 
 class DyedFabricRoll(DyedFabricRollInDB):
-    pass
+    # Set transiently by CRUD when the roll was auto-matched to an expected
+    # delivery on creation; never stored on the roll itself.
+    matched_delivery_id: Optional[int] = None
 
 class DyedFabricRollWithDetails(DyedFabricRoll):
     client_fabric_code: Optional[ClientFabricCode] = None
@@ -692,6 +716,13 @@ class FabricRollDetail(BaseModel):
     color_name: str
     lot_number: Optional[str] = None
     client_fabric_code_id: int
+    fabric_code: Optional[str] = None
+    client_name: Optional[str] = None
+    gsm: Optional[float] = None
+    fabric_width: Optional[float] = None
+    rack_code: Optional[str] = None
+    supplier: Optional[str] = None
+    received_date: Optional[datetime] = None
 
 # ── Undyed Fabric Roll schemas ──────────────────────────────────────────────
 
@@ -734,16 +765,75 @@ class UndyedFabricRollUpdate(BaseModel):
 
 class UndyedFabricRollInDB(UndyedFabricRollBase):
     id: int
+    expected_delivery_item_id: Optional[int] = None
+    # Set server-side from the authenticated user at creation — never client-supplied.
+    ingested_by: Optional[int] = None
 
     class Config:
         from_attributes = True
 
 class UndyedFabricRoll(UndyedFabricRollInDB):
-    pass
+    # Set transiently by CRUD when the roll was auto-matched to an expected
+    # delivery on creation; never stored on the roll itself.
+    matched_delivery_id: Optional[int] = None
 
 class UndyedFabricRollWithDetails(UndyedFabricRoll):
     client: Optional[Client] = None
     material: Optional[Material] = None
+
+class UndyedFabricRollDetail(BaseModel):
+    """Scan-lookup projection mirroring FabricRollDetail (no color/fabric code)."""
+    id: int
+    weight: float
+    length: Optional[float] = None
+    status: str
+    material_name: str
+    lot_number: Optional[str] = None
+    client_id: int
+    material_id: int
+    client_name: Optional[str] = None
+    gsm: Optional[float] = None
+    fabric_width: Optional[float] = None
+    rack_code: Optional[str] = None
+    supplier: Optional[str] = None
+    received_date: Optional[datetime] = None
+
+
+# ── Rack contents (scan quick-view) schemas ─────────────────────────────────
+
+class RackDyedGroup(BaseModel):
+    """Dyed rolls in a rack, grouped by fabric code + lot."""
+    client_fabric_code_id: int
+    fabric_code: Optional[str] = None
+    client_name: str
+    material_name: str
+    color_name: str
+    lot_number: Optional[str] = None
+    roll_count: int
+    total_weight: float
+    total_length: Optional[float] = None
+
+
+class RackUndyedGroup(BaseModel):
+    """Undyed rolls in a rack, grouped by client + material + lot."""
+    client_id: int
+    client_name: str
+    material_id: int
+    material_name: str
+    lot_number: Optional[str] = None
+    roll_count: int
+    total_weight: float
+    total_length: Optional[float] = None
+
+
+class RackContents(BaseModel):
+    rack_id: int
+    rack_code: str
+    warehouse_id: int
+    roll_count: int
+    total_weight: float
+    dyed_groups: List[RackDyedGroup]
+    undyed_groups: List[RackUndyedGroup]
 
 # ── Inventory view schemas ──────────────────────────────────────────────────
 
@@ -761,6 +851,7 @@ class InventoryRollDetail(BaseModel):
     quality_grade: Optional[str] = None
     defect_points: Optional[int] = None
     remarks: Optional[str] = None
+    original_roll_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -851,13 +942,75 @@ class UndyedClientInventoryGroup(BaseModel):
     materials: List[UndyedMaterialInventory]
 
 
+# ── Roll flow analytics schemas (per day, direction, counterparty, identity) ──
+
+class RollFlowEntryBase(BaseModel):
+    # ISO day (YYYY-MM-DD); null when the roll is missing the relevant date
+    date: Optional[str] = None
+    direction: str  # 'ingested' | 'digested'
+    # Ingested: the roll's supplier (a client or an actual supplier);
+    # digested: who received the roll. Null when unknown.
+    counterparty: Optional[str] = None
+    client_id: int
+    client_name: str
+    material_id: int
+    material_name: str
+    total_weight: float
+    total_length: float
+    roll_count: int
+
+
+class DyedRollFlowEntry(RollFlowEntryBase):
+    client_fabric_code_id: int
+    fabric_code: Optional[str] = None
+    color_id: int
+    color_name: str
+
+
+class UndyedRollFlowEntry(RollFlowEntryBase):
+    pass
+
+
+# ── Account flow analytics schemas (per logical location) ────────────────────
+
+class FlowAccount(BaseModel):
+    # Null for 'external' accounts — external receivers are identified by name
+    id: Optional[int] = None
+    name: str
+    account_type: str  # 'location' | 'client' | 'external'
+
+
+class AccountFlowRoll(BaseModel):
+    roll_id: int
+    roll_type: str  # 'dyed' | 'undyed'
+    # ISO day (YYYY-MM-DD); null when the source timestamp is missing
+    date: Optional[str] = None
+    receipt_kind: Optional[str] = None  # 'supplier' | 'internal' (digested only)
+    receipt_id: Optional[int] = None
+    fabric_code: Optional[str] = None
+    client_fabric_code_id: Optional[int] = None
+    client_name: str
+    material_name: str
+    color_name: Optional[str] = None
+    weight: float
+    length: Optional[float] = None
+
+
+class AccountFlow(BaseModel):
+    account_id: Optional[int] = None  # null for 'external' accounts
+    account_name: str
+    account_type: str  # 'location' | 'client' | 'external'
+    ingested: List[AccountFlowRoll]
+    digested: List[AccountFlowRoll]
+
+
 # ── Expected Delivery schemas ────────────────────────────────────────────────
 
 class ExpectedDeliveryItemBase(BaseModel):
     # Exactly one of these must be set (enforced by DB check constraint)
     client_fabric_code_id: Optional[int] = None  # dyed fabric path
-    material_id: Optional[int] = None             # undyed fabric path
-    lot_reference: Optional[str] = Field(None, max_length=100)
+    client_id: Optional[int] = None              # undyed fabric path (with material_id)
+    material_id: Optional[int] = None            # undyed fabric path
     expected_weight_kg: Optional[float] = Field(None, ge=0)
     expected_length_m: Optional[float] = Field(None, ge=0)
     notes: Optional[str] = None
@@ -868,6 +1021,10 @@ class ExpectedDeliveryItemBase(BaseModel):
         has_mat = self.material_id is not None
         if has_cfc == has_mat:
             raise ValueError("Exactly one of client_fabric_code_id (dyed) or material_id (undyed) must be set")
+        if has_mat and self.client_id is None:
+            raise ValueError("client_id is required for undyed items (material_id set)")
+        if has_cfc and self.client_id is not None:
+            raise ValueError("client_id must not be set for dyed items (the fabric code already carries the client)")
         return self
 
 
@@ -876,13 +1033,14 @@ class ExpectedDeliveryItemCreate(ExpectedDeliveryItemBase):
 
 
 class ExpectedDeliveryItemUpdate(BaseModel):
+    # received_weight_kg / received_length_m are deliberately absent: they are
+    # derived from the roll ledger (rolls.expected_delivery_item_id) and can
+    # only change by linking/unlinking/editing rolls.
     client_fabric_code_id: Optional[int] = None
+    client_id: Optional[int] = None
     material_id: Optional[int] = None
-    lot_reference: Optional[str] = Field(None, max_length=100)
     expected_weight_kg: Optional[float] = Field(None, ge=0)
     expected_length_m: Optional[float] = Field(None, ge=0)
-    received_weight_kg: Optional[float] = Field(None, ge=0)
-    received_length_m: Optional[float] = Field(None, ge=0)
     notes: Optional[str] = None
 
 
@@ -892,6 +1050,7 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     received_weight_kg: float
     received_length_m: float
     client_fabric_code: Optional[ClientFabricCode] = None
+    client: Optional[Client] = None
     material: Optional[Material] = None
 
     class Config:
@@ -902,11 +1061,24 @@ class ExpectedDeliveryItem(ExpectedDeliveryItemInDB):
     pass
 
 
+SupplierType = Literal["client", "logical_location"]
+
+
 class ExpectedDeliveryBase(BaseModel):
-    supplier: str = Field(..., min_length=1, max_length=200)
+    # Polymorphic supplier reference: id into core.clients or
+    # wms.logical_locations depending on supplier_type. Both set or both null;
+    # existence is validated in CRUD (no DB-level FK possible).
+    client_supplier_id: Optional[int] = None
+    supplier_type: Optional[SupplierType] = None
     warehouse_id: Optional[int] = None
     expected_date: Optional[datetime] = None
     notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_supplier_pair(self) -> "ExpectedDeliveryBase":
+        if (self.client_supplier_id is None) != (self.supplier_type is None):
+            raise ValueError("client_supplier_id and supplier_type must both be set or both be null")
+        return self
 
 
 class ExpectedDeliveryCreate(ExpectedDeliveryBase):
@@ -914,7 +1086,8 @@ class ExpectedDeliveryCreate(ExpectedDeliveryBase):
 
 
 class ExpectedDeliveryUpdate(BaseModel):
-    supplier: Optional[str] = Field(None, min_length=1, max_length=200)
+    client_supplier_id: Optional[int] = None
+    supplier_type: Optional[SupplierType] = None
     warehouse_id: Optional[int] = None
     expected_date: Optional[datetime] = None
     status: Optional[str] = Field(None, pattern="^(pending|partial|received|cancelled)$")
@@ -924,6 +1097,8 @@ class ExpectedDeliveryUpdate(BaseModel):
 class ExpectedDeliveryInDB(ExpectedDeliveryBase):
     id: int
     status: str
+    # Display name resolved at read time from the supplier reference
+    supplier_name: Optional[str] = None
     created_by: Optional[int] = None
     created_at: datetime
     closed_at: Optional[datetime] = None
@@ -935,4 +1110,124 @@ class ExpectedDeliveryInDB(ExpectedDeliveryBase):
 
 
 class ExpectedDelivery(ExpectedDeliveryInDB):
+    pass
+
+
+# ── Job Order Material Request schemas ───────────────────────────────────────
+
+MeasurementScale = Literal["KG", "M"]
+
+
+class MaterialRequestFabricCode(BaseModel):
+    """Fabric code with the display details the material requests page needs."""
+
+    id: int
+    fabric_code: Optional[str] = None
+    material_id: int
+    color_id: int
+    client_id: int
+    material: Optional[Material] = None
+    color: Optional[Color] = None
+    client: Optional[Client] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MaterialRequestJobOrder(BaseModel):
+    id: int
+    job_order_number: str
+    client_id: int
+    client: Optional[Client] = None
+    notes: Optional[str] = None
+    date_created: Optional[datetime] = None
+    priority: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class JobOrderMaterialRequestBase(BaseModel):
+    job_order_id: int
+    panel_type: str = Field(..., min_length=1, max_length=100)
+    consumption: float = Field(..., ge=0)
+    quantity: Optional[float] = Field(None, ge=0)
+    measurement_scale: MeasurementScale = "KG"
+    fabric_code_id: int
+
+
+class JobOrderMaterialRequestCreate(JobOrderMaterialRequestBase):
+    pass
+
+
+class JobOrderMaterialRequestInDB(JobOrderMaterialRequestBase):
+    id: int
+    fulfilled: bool
+    fabric_code: Optional[MaterialRequestFabricCode] = None
+    job_order: Optional[MaterialRequestJobOrder] = None
+
+    class Config:
+        from_attributes = True
+
+
+class JobOrderMaterialRequest(JobOrderMaterialRequestInDB):
+    pass
+
+
+class MaterialRequestForceFulfill(BaseModel):
+    fulfilled: bool
+
+
+# ── Material Request Fulfillment schemas ─────────────────────────────────────
+
+class MRFNestedReceipt(BaseModel):
+    """Slim receipt reference embedded in a fulfillment for display."""
+
+    id: int
+    source_warehouse_id: int
+    target_logical_location_id: Optional[int] = None
+    status: str
+    issued_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class MaterialRequestFulfillmentBase(BaseModel):
+    material_request_id: int
+    internal_receipt_id: Optional[int] = None
+    supplier_receipt_id: Optional[int] = None
+    external_receipt_id: Optional[int] = None
+    quantity_issued: Optional[float] = Field(None, ge=0)
+    measurement_scale: Optional[str] = Field(None, max_length=50)
+    notes: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_at_most_one_receipt(self) -> "MaterialRequestFulfillmentBase":
+        refs = [self.internal_receipt_id, self.supplier_receipt_id, self.external_receipt_id]
+        if sum(r is not None for r in refs) > 1:
+            raise ValueError("A fulfillment may reference at most one receipt")
+        return self
+
+
+class MaterialRequestFulfillmentCreate(MaterialRequestFulfillmentBase):
+    pass
+
+
+class MaterialRequestFulfillmentUpdate(BaseModel):
+    quantity_issued: Optional[float] = Field(None, ge=0)
+    measurement_scale: Optional[str] = Field(None, max_length=50)
+    notes: Optional[str] = None
+
+
+class MaterialRequestFulfillmentInDB(MaterialRequestFulfillmentBase):
+    id: int
+    created_at: datetime
+    internal_receipt: Optional[MRFNestedReceipt] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MaterialRequestFulfillment(MaterialRequestFulfillmentInDB):
     pass

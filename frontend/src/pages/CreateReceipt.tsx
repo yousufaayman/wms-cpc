@@ -7,21 +7,26 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, Loader2, ScanLine, CheckCircle, Undo2, Trash2 } from "lucide-react";
+import { ArrowLeft, Loader2, ScanLine, CheckCircle, Undo2, Trash2, ClipboardList } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
-import { useLanguage } from "@/contexts/LanguageContext";
 import LanguageToggle from "@/components/LanguageToggle";
+import { ReceiverField } from "@/components/ReceiverField";
 import {
   supplierReceiptApi,
   internalReceiptApi,
   externalReceiptApi,
+  clientApi, type Client,
   warehouseApi, type Warehouse,
   logicalLocationApi, type LogicalLocation,
   fabricRollApi, type FabricRollDetail,
+  undyedFabricRollApi, type UndyedFabricRollDetail,
   fabricReceiptItemApi, type ReceiptKind,
+  materialRequestApi, type MaterialRequest,
+  materialRequestFulfillmentApi, type MaterialRequestFulfillment,
 } from "@/lib/api";
 import { buildMaterialGroups, fmt, type RollSummary, type MaterialGroup } from "@/lib/receiptAggregation";
 
@@ -29,12 +34,15 @@ import { buildMaterialGroups, fmt, type RollSummary, type MaterialGroup } from "
 
 type Kind = "supplier" | "internal" | "external";
 
+type RollType = "dyed" | "undyed";
+
 interface ScannedRoll extends RollSummary {
   roll_id: number;
   item_id: number;
+  roll_type: RollType;
   lot_number: string | null;
   status: string;
-  client_fabric_code_id: number;
+  client_fabric_code_id: number | null;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -87,6 +95,7 @@ interface SetupProps {
   kind: Kind;
   warehouses: Warehouse[];
   locations: LogicalLocation[];
+  clients: Client[];
   sourceWarehouseId: number | null;
   setSourceWarehouseId: (id: number | null) => void;
   targetLocationId: number | null;
@@ -102,7 +111,7 @@ interface SetupProps {
 }
 
 function SetupView({
-  kind, warehouses, locations,
+  kind, warehouses, locations, clients,
   sourceWarehouseId, setSourceWarehouseId,
   targetLocationId, setTargetLocationId,
   receiver, setReceiver,
@@ -160,14 +169,7 @@ function SetupView({
         )}
 
         {kind === "external" && (
-          <div>
-            <Label>{t("receiverName")} *</Label>
-            <Input
-              placeholder={t("enterReceiverName")}
-              value={receiver}
-              onChange={e => setReceiver(e.target.value)}
-            />
-          </div>
+          <ReceiverField clients={clients} value={receiver} onChange={setReceiver} />
         )}
 
         {kind === "supplier" && (
@@ -193,6 +195,74 @@ function SetupView({
   );
 }
 
+// ── FulfillmentPanel ──────────────────────────────────────────────────────────
+
+function FulfillmentPanel({
+  request, fulfillment, t,
+}: Readonly<{
+  request: MaterialRequest;
+  fulfillment: MaterialRequestFulfillment;
+  t: (k: string) => string;
+}>) {
+  const requested = request.quantity;
+  const issued = fulfillment.quantity_issued ?? 0;
+  const scale = fulfillment.measurement_scale ?? request.measurement_scale;
+  const pct = requested != null && requested > 0 ? Math.min(100, (issued / requested) * 100) : null;
+  const remaining = requested != null ? Math.max(0, requested - issued) : null;
+  const complete = pct !== null && pct >= 100;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-primary" />
+            {t("fulfillmentProgress")}
+          </CardTitle>
+          {complete && (
+            <Badge className="bg-green-100 text-green-800 border-green-300" variant="outline">
+              {t("statusFulfilled")}
+            </Badge>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="text-sm space-y-1">
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("jobOrderNumber")}</span>
+            <span className="font-semibold">{request.job_order?.job_order_number ?? `#${request.job_order_id}`}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("fabricCode")}</span>
+            <span className="font-mono font-semibold">{request.fabric_code?.fabric_code ?? "—"}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-muted-foreground">{t("panelType")}</span>
+            <span>{request.panel_type}</span>
+          </div>
+        </div>
+        {pct !== null && <Progress value={pct} />}
+        <div className="grid grid-cols-3 gap-2 text-center text-sm">
+          <div>
+            <p className="text-muted-foreground text-xs">{t("requestedQty")}</p>
+            <p className="font-semibold">{requested != null ? `${fmt(requested)} ${scale}` : "—"}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">{t("totalIssued")}</p>
+            <p className="font-semibold">{fmt(issued)} {scale}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground text-xs">{t("remaining")}</p>
+            <p className={`font-semibold ${complete ? "text-green-600" : ""}`}>
+              {remaining != null ? `${fmt(remaining)} ${scale}` : "—"}
+            </p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ── ScanView ──────────────────────────────────────────────────────────────────
 
 interface ScanProps {
@@ -202,17 +272,18 @@ interface ScanProps {
   targetLabel: string;
   scannedRolls: ScannedRoll[];
   materialGroups: MaterialGroup[];
-  onScan: (input: string) => Promise<void>;
+  onScan: (input: string, rollType: RollType) => Promise<void>;
   onUndo: () => Promise<void>;
   onRemove: (itemId: number) => Promise<void>;
   onDone: () => void;
   onBack: () => void;
+  fulfillmentPanel?: React.ReactNode;
   t: (k: string) => string;
 }
 
 function ScanView({
   kind, receiptId, sourceLabel, targetLabel,
-  scannedRolls, materialGroups, onScan, onUndo, onRemove, onDone, onBack, t,
+  scannedRolls, materialGroups, onScan, onUndo, onRemove, onDone, onBack, fulfillmentPanel, t,
 }: Readonly<ScanProps>) {
   const [input, setInput] = useState("");
   const [scanLoading, setScanLoading] = useState(false);
@@ -237,12 +308,12 @@ function ScanView({
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
-  async function triggerScan(value: string) {
+  async function triggerScan(value: string, rollType: RollType) {
     if (!value.trim() || scanLoading) return;
     setScanLoading(true);
     setScanError(null);
     try {
-      await onScan(value.trim());
+      await onScan(value.trim(), rollType);
     } catch (err) {
       setScanError(err instanceof Error ? err.message : t("rollNotFound"));
     } finally {
@@ -254,8 +325,14 @@ function ScanView({
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value;
     setScanError(null);
-    if (val.endsWith("F")) {
-      triggerScan(val.slice(0, -1));
+    // Roll barcodes: `<rollId>*F` = dyed, `<rollId>*K` = undyed — the suffix
+    // terminates the scan.
+    if (val.endsWith("*F")) {
+      triggerScan(val.slice(0, -2), "dyed");
+      return;
+    }
+    if (val.endsWith("*K")) {
+      triggerScan(val.slice(0, -2), "undyed");
       return;
     }
     setInput(val);
@@ -267,7 +344,8 @@ function ScanView({
       setScanError(null);
       return;
     }
-    if (e.key === "Enter") triggerScan(input);
+    // Manual entry (bare id + Enter) has no suffix — treat as dyed.
+    if (e.key === "Enter") triggerScan(input, "dyed");
   }
 
   async function handleUndo() {
@@ -395,7 +473,9 @@ function ScanView({
           )}
         </div>
 
-        {/* Right — aggregated overview */}
+        {/* Right — fulfillment progress + aggregated overview */}
+        <div className="space-y-4">
+        {fulfillmentPanel}
         {materialGroups.length > 0 && (
           <Card>
             <CardHeader><CardTitle>{t("scannedItems")}</CardTitle></CardHeader>
@@ -439,6 +519,7 @@ function ScanView({
             </CardContent>
           </Card>
         )}
+        </div>
 
       </div>
     </div>
@@ -452,7 +533,6 @@ const CreateReceipt = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   const resolvedKind = (kind ?? "vendor") as Kind;
   const warehouseQuery = searchParams.get("warehouse") ? `?warehouse=${searchParams.get("warehouse")}` : "";
@@ -460,6 +540,7 @@ const CreateReceipt = () => {
   // Reference data
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [locations, setLocations] = useState<LogicalLocation[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [refLoading, setRefLoading] = useState(true);
 
   // Setup form state
@@ -476,27 +557,85 @@ const CreateReceipt = () => {
   const [receiptId, setReceiptId] = useState<number | null>(receiptIdParam ? parseInt(receiptIdParam) : null);
   const [scannedRolls, setScannedRolls] = useState<ScannedRoll[]>([]);
 
+  // Material request fulfillment tracking: any receipt opened in the scan
+  // view is checked for material request links (via fulfillments) — a receipt
+  // can carry several requests, whether created from the Material Requests
+  // page or linked to an existing receipt later.
+  const [fulfillments, setFulfillments] = useState<MaterialRequestFulfillment[]>([]);
+  const [requestsById, setRequestsById] = useState<Map<number, MaterialRequest>>(new Map());
+
+  useEffect(() => {
+    if (!receiptId) {
+      setFulfillments([]);
+      setRequestsById(new Map());
+      return;
+    }
+    const filters =
+      resolvedKind === "internal" ? { internal_receipt_id: receiptId }
+      : resolvedKind === "supplier" ? { supplier_receipt_id: receiptId }
+      : { external_receipt_id: receiptId };
+    materialRequestFulfillmentApi.getAll(filters)
+      .then(async fs => {
+        setFulfillments(fs);
+        const ids = [...new Set(fs.map(f => f.material_request_id))];
+        const reqs = await Promise.allSettled(ids.map(id => materialRequestApi.getById(id)));
+        const map = new Map<number, MaterialRequest>();
+        reqs.forEach((res, idx) => {
+          if (res.status === "fulfilled") map.set(ids[idx], res.value);
+        });
+        setRequestsById(map);
+      })
+      .catch(e => console.error("Failed to check material request links", e));
+  }, [receiptId, resolvedKind]);
+
+  // Live progress: recompute issued quantities from the receipt's rolls
+  // after every scan/undo/remove (the sync endpoint reads the receipt items).
+  useEffect(() => {
+    if (fulfillments.length === 0) return;
+    const synced = fulfillments.map(f => f.id);
+    Promise.allSettled(synced.map(id => materialRequestFulfillmentApi.sync(id)))
+      .then(results => {
+        const updated = new Map<number, MaterialRequestFulfillment>();
+        results.forEach((res, idx) => {
+          if (res.status === "fulfilled") updated.set(synced[idx], res.value);
+        });
+        setFulfillments(prev => prev.map(f => updated.get(f.id) ?? f));
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scannedRolls.length, fulfillments.length]);
+
   async function loadExistingReceipt(rid: number) {
     const info = await fetchReceiptInfoByKind(resolvedKind, rid);
     setSourceWarehouseId(info.source_warehouse_id);
     if (info.receiver) setReceiver(info.receiver);
 
     const existingItems = await fabricReceiptItemApi.list(resolvedKind as ReceiptKind, rid);
-    const dyedRollIds = existingItems
-      .filter(i => i.item_type === "FabricRoll" && i.dyed_roll_id != null)
-      .map(i => ({ item_id: i.id, dyed_roll_id: i.dyed_roll_id! }));
+    const rollRefs = existingItems.flatMap<{ item_id: number; roll_id: number; roll_type: RollType }>(i => {
+      if (i.item_type === "FabricRoll" && i.dyed_roll_id != null) {
+        return [{ item_id: i.id, roll_id: i.dyed_roll_id, roll_type: "dyed" }];
+      }
+      if (i.item_type === "UndyedFabricRoll" && i.undyed_roll_id != null) {
+        return [{ item_id: i.id, roll_id: i.undyed_roll_id, roll_type: "undyed" }];
+      }
+      return [];
+    });
 
     const details = await Promise.allSettled(
-      dyedRollIds.map(({ dyed_roll_id }) => fabricRollApi.getDetail(dyed_roll_id)),
+      rollRefs.map(ref => ref.roll_type === "dyed"
+        ? fabricRollApi.getDetail(ref.roll_id)
+        : undyedFabricRollApi.getDetail(ref.roll_id)),
     );
 
     const rolls: ScannedRoll[] = [];
     details.forEach((result, idx) => {
-      if (result.status === "fulfilled") {
-        const d: FabricRollDetail = result.value;
+      if (result.status !== "fulfilled") return;
+      const ref = rollRefs[idx];
+      if (ref.roll_type === "dyed") {
+        const d = result.value as FabricRollDetail;
         rolls.push({
-          roll_id: dyedRollIds[idx].dyed_roll_id,
-          item_id: dyedRollIds[idx].item_id,
+          roll_id: ref.roll_id,
+          item_id: ref.item_id,
+          roll_type: "dyed",
           material_name: d.material_name,
           color_name: d.color_name,
           weight: d.weight,
@@ -505,6 +644,20 @@ const CreateReceipt = () => {
           status: d.status,
           client_fabric_code_id: d.client_fabric_code_id,
         });
+      } else {
+        const d = result.value as UndyedFabricRollDetail;
+        rolls.push({
+          roll_id: ref.roll_id,
+          item_id: ref.item_id,
+          roll_type: "undyed",
+          material_name: d.material_name,
+          color_name: t("undyedLabel"),
+          weight: d.weight,
+          length: d.length ?? null,
+          lot_number: d.lot_number ?? null,
+          status: d.status,
+          client_fabric_code_id: null,
+        });
       }
     });
     setScannedRolls(rolls);
@@ -512,10 +665,11 @@ const CreateReceipt = () => {
 
   useEffect(() => {
     const rid = receiptIdParam ? parseInt(receiptIdParam) : null;
-    Promise.all([warehouseApi.getAll(), logicalLocationApi.getAll({ limit: 500 })])
-      .then(([ws, lls]) => {
+    Promise.all([warehouseApi.getAll(), logicalLocationApi.getAll({ limit: 500 }), clientApi.getAll()])
+      .then(([ws, lls, cs]) => {
         setWarehouses(ws);
         setLocations(lls);
+        setClients(cs);
         if (rid) {
           loadExistingReceipt(rid).then(() => setScanning(true));
         } else {
@@ -549,13 +703,55 @@ const CreateReceipt = () => {
     }
   }
 
-  async function handleScan(input: string) {
+  async function handleScan(input: string, rollType: RollType) {
     if (!receiptId) return;
     const rollId = parseInt(input);
     if (isNaN(rollId)) throw new Error(t("rollNotFound"));
-    if (scannedRolls.some(r => r.roll_id === rollId)) throw new Error(t("rollAlreadyScanned"));
+    // Dyed and undyed ids are independent sequences — dedupe per type.
+    if (scannedRolls.some(r => r.roll_id === rollId && r.roll_type === rollType)) {
+      throw new Error(t("rollAlreadyScanned"));
+    }
+
+    // Receipt assigned to material requests: only rolls matching one of the
+    // requests' fabric codes may be scanned (undyed rolls carry no code).
+    const linkedRequests = [...requestsById.values()];
+    const allowedCodes = linkedRequests
+      .map(r => r.fabric_code?.fabric_code ?? `#${r.fabric_code_id}`)
+      .join(", ");
+    if (linkedRequests.length > 0 && rollType === "undyed") {
+      throw new Error(t("rollFabricCodeMismatch", { code: allowedCodes }));
+    }
+
+    if (rollType === "undyed") {
+      const detail: UndyedFabricRollDetail = await undyedFabricRollApi.getDetail(rollId);
+      if (detail.status !== "in") throw new Error(t("rollNotInStock"));
+      const added = await fabricReceiptItemApi.add(resolvedKind as ReceiptKind, receiptId, {
+        item_type: "UndyedFabricRoll",
+        undyed_roll_id: rollId,
+      });
+      setScannedRolls(prev => [...prev, {
+        roll_id: rollId,
+        item_id: added.id,
+        roll_type: "undyed",
+        material_name: detail.material_name,
+        color_name: t("undyedLabel"),
+        weight: detail.weight,
+        length: detail.length ?? null,
+        lot_number: detail.lot_number ?? null,
+        status: detail.status,
+        client_fabric_code_id: null,
+      }]);
+      return;
+    }
 
     const detail: FabricRollDetail = await fabricRollApi.getDetail(rollId);
+    if (detail.status !== "in") throw new Error(t("rollNotInStock"));
+    if (
+      linkedRequests.length > 0 &&
+      !linkedRequests.some(r => r.fabric_code_id === detail.client_fabric_code_id)
+    ) {
+      throw new Error(t("rollFabricCodeMismatch", { code: allowedCodes }));
+    }
     const added = await fabricReceiptItemApi.add(resolvedKind as ReceiptKind, receiptId, {
       item_type: "FabricRoll",
       dyed_roll_id: rollId,
@@ -563,6 +759,7 @@ const CreateReceipt = () => {
     setScannedRolls(prev => [...prev, {
       roll_id: rollId,
       item_id: added.id,
+      roll_type: "dyed",
       material_name: detail.material_name,
       color_name: detail.color_name,
       weight: detail.weight,
@@ -600,7 +797,7 @@ const CreateReceipt = () => {
   if (refLoading) {
     return (
       <PageTransition>
-        <div className={`min-h-screen bg-background ${language === "ar" ? "rtl" : "ltr"}`}>
+        <div className="min-h-screen bg-background">
           <div className="absolute top-4 right-4"><LanguageToggle /></div>
           <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
@@ -617,7 +814,7 @@ const CreateReceipt = () => {
 
   return (
     <PageTransition>
-      <div className={`min-h-screen bg-background flex ${language === "ar" ? "rtl" : "ltr"}`}>
+      <div className="min-h-screen bg-background flex">
         {!scanning && <Sidebar />}
         <main className="flex-1 p-6">
           <div className={scanning ? "h-full space-y-4" : "max-w-3xl mx-auto space-y-6"}>
@@ -640,6 +837,18 @@ const CreateReceipt = () => {
                 onRemove={handleRemove}
                 onDone={handleDone}
                 onBack={handleBack}
+                fulfillmentPanel={
+                  fulfillments.length > 0 ? (
+                    <>
+                      {fulfillments.map(f => {
+                        const req = requestsById.get(f.material_request_id);
+                        return req ? (
+                          <FulfillmentPanel key={f.id} request={req} fulfillment={f} t={t} />
+                        ) : null;
+                      })}
+                    </>
+                  ) : undefined
+                }
                 t={t}
               />
             ) : (
@@ -647,6 +856,7 @@ const CreateReceipt = () => {
                 kind={resolvedKind}
                 warehouses={warehouses}
                 locations={locations}
+                clients={clients}
                 sourceWarehouseId={sourceWarehouseId}
                 setSourceWarehouseId={setSourceWarehouseId}
                 targetLocationId={targetLocationId}

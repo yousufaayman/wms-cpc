@@ -1,11 +1,12 @@
 import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen } from "lucide-react";
+import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen, ClipboardList, TrendingUp, MapPin } from "lucide-react";
 import { useEffect, useState } from "react";
 import { warehouseApi, Warehouse } from "@/lib/api";
 import LanguageToggle from "./LanguageToggle";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { clearToken } from "@/lib/auth";
 
 const Sidebar = () => {
@@ -17,16 +18,20 @@ const Sidebar = () => {
   const [loading, setLoading] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(() => window.innerWidth < 1024);
   const { t } = useTranslation();
+  const { can } = useCurrentUser();
   useLanguage();
 
   // Determine active page
   const isDashboardActive = location.pathname === "/dashboard";
   const isManageRacksActive = location.pathname === "/manage-racks";
+  const isManageLogicalLocationsActive = location.pathname === "/manage-logical-locations";
   const isReceiptsActive = location.pathname.startsWith("/receipts");
   const isFabricRollsActive = location.pathname === "/fabric-rolls";
   const isUndyedFabricRollsActive = location.pathname === "/undyed-fabric-rolls";
   const isFabricInventoryActive = location.pathname === "/fabric-inventory";
   const isExpectedDeliveriesActive = location.pathname.startsWith("/expected-deliveries");
+  const isMaterialRequestsActive = location.pathname.startsWith("/material-requests");
+  const isAnalyticsActive = location.pathname === "/analytics";
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed);
@@ -49,6 +54,10 @@ const Sidebar = () => {
     navigate(`/manage-racks?warehouse=${warehouseId}`);
   };
 
+  const handleManageLogicalLocations = () => {
+    navigate(`/manage-logical-locations?warehouse=${warehouseId}`);
+  };
+
   const handleReceipts = () => {
     navigate(`/receipts?warehouse=${warehouseId}`);
   };
@@ -67,6 +76,14 @@ const Sidebar = () => {
 
   const handleExpectedDeliveries = () => {
     navigate(`/expected-deliveries?warehouse=${warehouseId}`);
+  };
+
+  const handleMaterialRequests = () => {
+    navigate(`/material-requests?warehouse=${warehouseId}`);
+  };
+
+  const handleAnalytics = () => {
+    navigate(`/analytics?warehouse=${warehouseId}`);
   };
 
   useEffect(() => {
@@ -110,15 +127,17 @@ const Sidebar = () => {
 
       {/* Navigation */}
       <div className="space-y-2">
-        <Button
-          variant={isDashboardActive ? "secondary" : "ghost"}
-          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isDashboardActive ? "bg-primary/10 text-primary" : ""}`}
-          onClick={handleDashboard}
-          title={isCollapsed ? t('dashboard') : ''}
-        >
-          <BarChart3 className="h-4 w-4" />
-          {!isCollapsed && <span className="ml-2">{t('dashboard')}</span>}
-        </Button>
+        {can('operations') && (
+          <Button
+            variant={isDashboardActive ? "secondary" : "ghost"}
+            className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isDashboardActive ? "bg-primary/10 text-primary" : ""}`}
+            onClick={handleDashboard}
+            title={isCollapsed ? t('dashboard') : ''}
+          >
+            <BarChart3 className="h-4 w-4" />
+            {!isCollapsed && <span className="ml-2">{t('dashboard')}</span>}
+          </Button>
+        )}
         <Button
           variant={isFabricInventoryActive ? "secondary" : "ghost"}
           className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isFabricInventoryActive ? "bg-primary/10 text-primary" : ""}`}
@@ -137,16 +156,29 @@ const Sidebar = () => {
           <FileText className="h-4 w-4" />
           {!isCollapsed && <span className="ml-2">{t('receipts')}</span>}
         </Button>
-        <Button
-          variant={isExpectedDeliveriesActive ? "secondary" : "ghost"}
-          className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isExpectedDeliveriesActive ? "bg-primary/10 text-primary" : ""}`}
-          onClick={handleExpectedDeliveries}
-          title={isCollapsed ? t('expectedDeliveries') : ''}
-        >
-          <PackageOpen className="h-4 w-4" />
-          {!isCollapsed && <span className="ml-2">{t('expectedDeliveries')}</span>}
-        </Button>
-        {warehouse?.type === 'Fabric' && (
+        {can('operations') && (
+          <>
+            <Button
+              variant={isExpectedDeliveriesActive ? "secondary" : "ghost"}
+              className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isExpectedDeliveriesActive ? "bg-primary/10 text-primary" : ""}`}
+              onClick={handleExpectedDeliveries}
+              title={isCollapsed ? t('expectedDeliveries') : ''}
+            >
+              <PackageOpen className="h-4 w-4" />
+              {!isCollapsed && <span className="ml-2">{t('expectedDeliveries')}</span>}
+            </Button>
+            <Button
+              variant={isMaterialRequestsActive ? "secondary" : "ghost"}
+              className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isMaterialRequestsActive ? "bg-primary/10 text-primary" : ""}`}
+              onClick={handleMaterialRequests}
+              title={isCollapsed ? t('materialRequests') : ''}
+            >
+              <ClipboardList className="h-4 w-4" />
+              {!isCollapsed && <span className="ml-2">{t('materialRequests')}</span>}
+            </Button>
+          </>
+        )}
+        {warehouse?.type === 'Fabric' && can('ingest_fabric') && (
           <>
             <Button
               variant={isFabricRollsActive ? "secondary" : "ghost"}
@@ -170,29 +202,56 @@ const Sidebar = () => {
         )}
       </div>
 
-      {/* Administrative section */}
-      <div className="mt-4">
-        <div className={`flex items-center gap-2 mb-2 ${isCollapsed ? 'justify-center' : ''}`}>
-          <div className="flex-1 h-px bg-border" />
-          {!isCollapsed && (
-            <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
-              {t('administrativeSection')}
-            </span>
-          )}
-          <div className="flex-1 h-px bg-border" />
+      {/* Administrative section — each link only shown if this role holds
+          the matching permission; the whole section hides if none do. */}
+      {(can('warehouse_racks') || can('logical_locations') || can('analytics')) && (
+        <div className="mt-4">
+          <div className={`flex items-center gap-2 mb-2 ${isCollapsed ? 'justify-center' : ''}`}>
+            <div className="flex-1 h-px bg-border" />
+            {!isCollapsed && (
+              <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider whitespace-nowrap">
+                {t('administrativeSection')}
+              </span>
+            )}
+            <div className="flex-1 h-px bg-border" />
+          </div>
+          <div className="space-y-2">
+            {can('warehouse_racks') && (
+              <Button
+                variant={isManageRacksActive ? "secondary" : "ghost"}
+                className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isManageRacksActive ? "bg-primary/10 text-primary" : ""}`}
+                onClick={handleManageRacks}
+                title={isCollapsed ? t('manageWarehouseRacks') : ''}
+              >
+                <Layout className="h-4 w-4" />
+                {!isCollapsed && <span className="ml-2">{t('manageWarehouseRacks')}</span>}
+              </Button>
+            )}
+            {can('logical_locations') && (
+              <Button
+                variant={isManageLogicalLocationsActive ? "secondary" : "ghost"}
+                className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isManageLogicalLocationsActive ? "bg-primary/10 text-primary" : ""}`}
+                onClick={handleManageLogicalLocations}
+                title={isCollapsed ? t('manageLogicalLocations') : ''}
+              >
+                <MapPin className="h-4 w-4" />
+                {!isCollapsed && <span className="ml-2">{t('manageLogicalLocations')}</span>}
+              </Button>
+            )}
+            {can('analytics') && (
+              <Button
+                variant={isAnalyticsActive ? "secondary" : "ghost"}
+                className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isAnalyticsActive ? "bg-primary/10 text-primary" : ""}`}
+                onClick={handleAnalytics}
+                title={isCollapsed ? t('analytics') : ''}
+              >
+                <TrendingUp className="h-4 w-4" />
+                {!isCollapsed && <span className="ml-2">{t('analytics')}</span>}
+              </Button>
+            )}
+          </div>
         </div>
-        <div className="space-y-2">
-          <Button
-            variant={isManageRacksActive ? "secondary" : "ghost"}
-            className={`w-full ${isCollapsed ? 'justify-center px-0' : 'justify-start'} ${isManageRacksActive ? "bg-primary/10 text-primary" : ""}`}
-            onClick={handleManageRacks}
-            title={isCollapsed ? t('manageWarehouseRacks') : ''}
-          >
-            <Layout className="h-4 w-4" />
-            {!isCollapsed && <span className="ml-2">{t('manageWarehouseRacks')}</span>}
-          </Button>
-        </div>
-      </div>
+      )}
 
       {/* Spacer */}
       <div className="flex-1"></div>

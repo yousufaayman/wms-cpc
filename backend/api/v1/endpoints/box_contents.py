@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from backend.core.deps import get_db
+from backend import models
+from backend.core.deps import get_db, require_permission
+from backend.core.authz import PERM_CREATE_RECEIPTS
 from backend.crud import box_contents
 from backend.schemas import BoxContent, BoxContentCreate, BoxContentUpdate, BoxContentWithDetails
 
 router = APIRouter()
+_REQUIRE_CREATE_RECEIPTS = Depends(require_permission(PERM_CREATE_RECEIPTS))
 
 @router.get("/", response_model=List[BoxContentWithDetails])
 def get_box_contents(
@@ -43,7 +46,8 @@ def get_box_content(
 @router.post("/", response_model=BoxContent)
 def create_box_content(
     content: BoxContentCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_CREATE_RECEIPTS,
 ):
     """Create a new box content."""
     return box_contents.create_box_content(db, content=content)
@@ -52,7 +56,8 @@ def create_box_content(
 def update_box_content(
     content_id: int,
     content: BoxContentUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_CREATE_RECEIPTS,
 ):
     """Update a box content."""
     db_content = box_contents.get_box_content(db, content_id=content_id)
@@ -66,7 +71,8 @@ def update_box_content(
 @router.delete("/{content_id}")
 def delete_box_content(
     content_id: int,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_CREATE_RECEIPTS,
 ):
     """Delete a box content."""
     success = box_contents.delete_box_content(db, content_id=content_id)

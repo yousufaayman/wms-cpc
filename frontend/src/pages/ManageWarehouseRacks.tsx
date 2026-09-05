@@ -38,8 +38,7 @@ const ManageWarehouseRacks = () => {
   // Bulk creation state
   const [bulkData, setBulkData] = useState({
     rack_group: "",
-    letter_start: t("defaultStartLetter"),
-    letter_end: t("defaultEndLetter"),
+    rack_count: "",
   });
 
   useEffect(() => {
@@ -48,13 +47,28 @@ const ManageWarehouseRacks = () => {
     }
   }, [currentWarehouseId]);
 
+  // The API caps each request at 100 racks, so page through until the
+  // warehouse's full rack list is loaded
+  const loadAllRacks = async (warehouseId: number) => {
+    const pageSize = 100;
+    const allRacks: WarehouseRack[] = [];
+    let skip = 0;
+    while (true) {
+      const page = await warehouseRackApi.getAll(warehouseId, skip, pageSize);
+      allRacks.push(...page);
+      if (page.length < pageSize) break;
+      skip += pageSize;
+    }
+    return allRacks;
+  };
+
   const loadData = async () => {
     if (!currentWarehouseId) return;
-    
+
     try {
       setLoading(true);
       const [racksData, warehouseData] = await Promise.all([
-        warehouseRackApi.getAll(parseInt(currentWarehouseId)),
+        loadAllRacks(parseInt(currentWarehouseId)),
         warehouseApi.getById(parseInt(currentWarehouseId))
       ]);
       setRacks(racksData);
@@ -76,17 +90,46 @@ const ManageWarehouseRacks = () => {
     return matchesSearch;
   });
 
-  const generateRackCodes = () => {
-    const codes = [];
-    const startCharCode = bulkData.letter_start.charCodeAt(0);
-    const endCharCode = bulkData.letter_end.charCodeAt(0);
-    
-    for (let charCode = startCharCode; charCode <= endCharCode; charCode++) {
+  // Letters already used by existing racks of this group in the current
+  // warehouse (any level counts)
+  const getUsedLetters = () => {
+    const prefix = `${t("rackPrefix")}${bulkData.rack_group}`.toUpperCase();
+    const warehouseId = currentWarehouseId ? parseInt(currentWarehouseId) : null;
+    const used = new Set<string>();
+    racks.forEach(rack => {
+      if (warehouseId !== null && rack.warehouse_id !== warehouseId) return;
+      const code = rack.rack_code.toUpperCase();
+      if (code.startsWith(prefix) && code.length === prefix.length + 2) {
+        const letter = code.charAt(prefix.length);
+        if (letter >= "A" && letter <= "Z") {
+          used.add(letter);
+        }
+      }
+    });
+    return used;
+  };
+
+  const getAssignedLetters = () => {
+    const count = parseInt(bulkData.rack_count, 10);
+    if (!bulkData.rack_group.trim() || isNaN(count) || count <= 0) return [];
+    const used = getUsedLetters();
+    const letters: string[] = [];
+    for (let charCode = 65; charCode <= 90 && letters.length < count; charCode++) {
       const letter = String.fromCharCode(charCode);
+      if (!used.has(letter)) {
+        letters.push(letter);
+      }
+    }
+    return letters;
+  };
+
+  const generateRackCodes = () => {
+    const codes: string[] = [];
+    getAssignedLetters().forEach(letter => {
       // Always create both upper and lower levels
       codes.push(`${t("rackPrefix")}${bulkData.rack_group}${letter}${t("lowerLevelSuffix")}`); // Lower level
       codes.push(`${t("rackPrefix")}${bulkData.rack_group}${letter}${t("upperLevelSuffix")}`); // Upper level
-    }
+    });
     return codes;
   };
 
@@ -110,8 +153,36 @@ const ManageWarehouseRacks = () => {
         return;
       }
 
+      const requestedCount = parseInt(bulkData.rack_count, 10);
+      if (isNaN(requestedCount) || requestedCount <= 0) {
+        toast({
+          title: t("error"),
+          description: t("pleaseEnterValidNumberOfRacks"),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const assignedLetters = getAssignedLetters();
+
+      if (assignedLetters.length === 0) {
+        toast({
+          title: t("error"),
+          description: t("allLettersUsedForGroup", { group: bulkData.rack_group }),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      if (assignedLetters.length < requestedCount) {
+        toast({
+          title: t("warning"),
+          description: t("onlyLettersAvailableForGroup", { count: assignedLetters.length, group: bulkData.rack_group }),
+        });
+      }
+
       const rackCodes = generateRackCodes();
-      
+
       if (rackCodes.length === 0) {
         toast({
           title: t("error"),
@@ -146,7 +217,7 @@ const ManageWarehouseRacks = () => {
 
       setRacksToPrint(createdRacks);
       setIsDialogOpen(false);
-      setBulkData({ rack_group: "", letter_start: t("defaultStartLetter"), letter_end: t("defaultEndLetter") });
+      setBulkData({ rack_group: "", rack_count: "" });
       loadData();
       
       // Open print dialog
@@ -302,13 +373,13 @@ const ManageWarehouseRacks = () => {
   };
 
   const openCreateDialog = () => {
-    setBulkData({ rack_group: "", letter_start: t("defaultStartLetter"), letter_end: t("defaultEndLetter") });
+    setBulkData({ rack_group: "", rack_count: "" });
     setIsDialogOpen(true);
   };
 
   const closeDialog = () => {
     setIsDialogOpen(false);
-    setBulkData({ rack_group: "", letter_start: t("defaultStartLetter"), letter_end: t("defaultEndLetter") });
+    setBulkData({ rack_group: "", rack_count: "" });
   };
 
   const closeGroupDeleteDialog = () => {
@@ -413,45 +484,41 @@ const ManageWarehouseRacks = () => {
                             />
                           </div>
                           
-                          <div className="grid grid-cols-2 gap-4">
-                            <div className="space-y-2">
-                              <Label htmlFor="letter_start">{t("startLetter")}</Label>
-                              <Input
-                                id="letter_start"
-                                placeholder={t("defaultStartLetter")}
-                                value={bulkData.letter_start}
-                                onChange={(e) => setBulkData({ ...bulkData, letter_start: e.target.value.toUpperCase() })}
-                                maxLength={1}
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="letter_end">{t("endLetter")}</Label>
-                              <Input
-                                id="letter_end"
-                                placeholder={t("defaultEndLetter")}
-                                value={bulkData.letter_end}
-                                onChange={(e) => setBulkData({ ...bulkData, letter_end: e.target.value.toUpperCase() })}
-                                maxLength={1}
-                              />
-                            </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="rack_count">{t("numberOfRacks")}</Label>
+                            <Input
+                              id="rack_count"
+                              type="number"
+                              min={1}
+                              max={26}
+                              placeholder={t("numberOfRacksPlaceholder")}
+                              value={bulkData.rack_count}
+                              onChange={(e) => setBulkData({ ...bulkData, rack_count: e.target.value })}
+                            />
                           </div>
 
                           <div className="space-y-2">
                             <Label>{t("pattern")}</Label>
                             <div className="p-2 bg-muted rounded-md">
                               <div className="text-sm text-muted-foreground">
-                                {t("rackPrefix")}{bulkData.rack_group || t("placeholderX")}{bulkData.letter_start || t("defaultStartLetter")}{t("lowerLevelSuffix")}{t("commaSeparator")} {t("rackPrefix")}{bulkData.rack_group || t("placeholderX")}{bulkData.letter_start || t("defaultStartLetter")}{t("upperLevelSuffix")}{t("commaSeparator")} {t("ellipsis")}
+                                {t("rackPrefix")}{bulkData.rack_group || t("placeholderX")}{getAssignedLetters()[0] || t("defaultStartLetter")}{t("lowerLevelSuffix")}{t("commaSeparator")} {t("rackPrefix")}{bulkData.rack_group || t("placeholderX")}{getAssignedLetters()[0] || t("defaultStartLetter")}{t("upperLevelSuffix")}{t("commaSeparator")} {t("ellipsis")}
                               </div>
                               <div className="text-xs text-muted-foreground mt-1">
                                 {t("alwaysCreatesBothLevels")}
                               </div>
+                              <div className="text-xs text-muted-foreground mt-1">
+                                {t("lettersAutoAssignedNote")}
+                              </div>
                             </div>
                           </div>
 
-                          {bulkData.rack_group && bulkData.letter_start && bulkData.letter_end && (
+                          {bulkData.rack_group && bulkData.rack_count && (
                             <div className="space-y-2">
                               <Label>{t("preview", { count: generateRackCodes().length })}</Label>
                               <div className="p-2 bg-muted rounded-md max-h-32 overflow-y-auto">
+                                <div className="text-xs text-muted-foreground mb-1">
+                                  {t("assignedLetters", { letters: getAssignedLetters().join(t("commaSeparator")) })}
+                                </div>
                                 <div className="text-sm font-mono">
                                   {generateRackCodes().slice(0, 10).join(t("commaSeparator"))}
                                   {generateRackCodes().length > 10 && `${t("ellipsis")} ${t("andMore", { count: generateRackCodes().length - 10 })}`}
