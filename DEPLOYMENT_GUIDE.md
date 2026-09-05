@@ -23,7 +23,7 @@ After it runs, edit `.env` and fill in the real secrets (see table below), and m
 
 | Variable | Description |
 |---|---|
-| `POSTGRES_HOST` | Overridden to `host.docker.internal` inside `docker-compose.yml`; kept in `.env` for local/dev reference only. |
+| `POSTGRES_HOST` | Overridden to the explicit host IP (`192.168.0.249`) inside `docker-compose.yml`; kept in `.env` for local/dev reference only. |
 | `POSTGRES_PORT` | Port the host Postgres listens on. Default `5432`. |
 | `POSTGRES_DATABASE` | Database name for this app. |
 | `POSTGRES_USER` | Postgres login role for this app. |
