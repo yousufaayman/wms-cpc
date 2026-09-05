@@ -56,11 +56,9 @@ services:
     env_file:
       - .env
     environment:
-      POSTGRES_HOST: host.docker.internal   # host-run Postgres — Rule 8
+      POSTGRES_HOST: 192.168.0.249   # host-run Postgres — Rule 8
       BACKEND_CORS_ORIGINS: ${BACKEND_CORS_ORIGINS}
       TZ: Africa/Cairo
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - app_net
     healthcheck:
