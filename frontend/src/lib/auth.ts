@@ -27,7 +27,7 @@ export async function login(username: string, password: string): Promise<LoginRe
   body.append("username", username);
   body.append("password", password);
 
-  const response = await fetch(`${(api as any)["baseUrl"] || "http://localhost:8000/api/v1"}/auth/login`, {
+  const response = await fetch(`${api.baseUrl}/auth/login`, {
     method: "POST",
     headers: {
       "Content-Type": "application/x-www-form-urlencoded",

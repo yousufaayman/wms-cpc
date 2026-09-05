@@ -6,7 +6,7 @@ export interface ApiClientOptions {
 }
 
 export class ApiClient {
-  private baseUrl: string;
+  readonly baseUrl: string;
   private getToken?: () => string | null;
 
   constructor(options?: ApiClientOptions) {
