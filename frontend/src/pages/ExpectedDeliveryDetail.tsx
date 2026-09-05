@@ -194,7 +194,7 @@ export default function ExpectedDeliveryDetail() {
     expectedDeliveryApi
       .getById(Number(id))
       .then(setDelivery)
-      .catch(() => toast.error("Failed to load delivery"))
+      .catch(() => toast.error(t("failedToLoadDelivery")))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -236,9 +236,9 @@ export default function ExpectedDeliveryDetail() {
     try {
       const updated = await expectedDeliveryApi.update(delivery.id, { status: newStatus });
       setDelivery(updated);
-      toast.success(`Status updated to ${statusLabel[newStatus]}`);
+      toast.success(t("statusUpdatedTo", { status: statusLabel[newStatus] }));
     } catch {
-      toast.error("Failed to update status");
+      toast.error(t("failedToUpdateStatus"));
     } finally {
       setUpdatingStatus(false);
     }
@@ -253,9 +253,9 @@ export default function ExpectedDeliveryDetail() {
       await expectedDeliveryApi.deleteItem(deleteItemId);
       setDeleteItemId(null);
       loadDelivery();
-      toast.success("Item removed");
+      toast.success(t("itemRemoved"));
     } catch {
-      toast.error("Failed to delete item");
+      toast.error(t("failedToDeleteItem"));
     } finally {
       setDeletingItem(false);
     }
@@ -294,12 +294,12 @@ export default function ExpectedDeliveryDetail() {
     setAddingItem(true);
     try {
       await expectedDeliveryApi.addItem(delivery.id, payload);
-      toast.success("Item added");
+      toast.success(t("itemAdded"));
       setAddOpen(false);
       resetAddForm();
       loadDelivery();
     } catch {
-      toast.error("Failed to add item");
+      toast.error(t("failedToAddItem"));
     } finally {
       setAddingItem(false);
     }
@@ -323,7 +323,7 @@ export default function ExpectedDeliveryDetail() {
       <div className="flex min-h-screen bg-background">
         <Sidebar />
         <main className="flex-1 p-6">
-          <p className="text-muted-foreground">Delivery not found.</p>
+          <p className="text-muted-foreground">{t("deliveryNotFound")}</p>
         </main>
       </div>
     );

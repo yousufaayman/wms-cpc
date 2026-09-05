@@ -31,7 +31,8 @@ function formatDate(ds: string) {
 }
 
 function ClosedBadge({ closed }: Readonly<{ closed: boolean }>) {
-  return <Badge variant={closed ? "destructive" : "default"}>{closed ? "Closed" : "Open"}</Badge>;
+  const { t } = useTranslation();
+  return <Badge variant={closed ? "destructive" : "default"}>{closed ? t("closedReceipt") : t("openReceipt")}</Badge>;
 }
 
 function StatusBadge({ status }: Readonly<{ status: string }>) {
@@ -102,7 +103,7 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
             <Select value={closedFilter} onValueChange={setClosedFilter}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">{t("all")}</SelectItem>
                 <SelectItem value="open">{t("openReceipt")}</SelectItem>
                 <SelectItem value="closed">{t("closedReceipt")}</SelectItem>
               </SelectContent>
@@ -137,10 +138,10 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
+                  <TableHead>{t("idColumn")}</TableHead>
                   <TableHead>{t("sourceWarehouse")}</TableHead>
                   <TableHead>{t("targetLocation")}</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("status")}</TableHead>
                   <TableHead>{t("issuedAt")}</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -155,7 +156,7 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                     <TableCell><div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" />{formatDate(r.issued_at)}</div></TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" onClick={() => navigate(`/receipts/supplier/${r.id}${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
-                        <Eye className="h-4 w-4 mr-1" />View
+                        <Eye className="h-4 w-4 mr-1" />{t("view")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -234,15 +235,15 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="issued">Issued</SelectItem>
-                <SelectItem value="confirmed">Confirmed</SelectItem>
+                <SelectItem value="all">{t("allStatuses")}</SelectItem>
+                <SelectItem value="issued">{t("issued")}</SelectItem>
+                <SelectItem value="confirmed">{t("confirmed")}</SelectItem>
               </SelectContent>
             </Select>
             <Select value={closedFilter} onValueChange={setClosedFilter}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">{t("all")}</SelectItem>
                 <SelectItem value="open">{t("openReceipt")}</SelectItem>
                 <SelectItem value="closed">{t("closedReceipt")}</SelectItem>
               </SelectContent>
@@ -277,11 +278,11 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
+                  <TableHead>{t("idColumn")}</TableHead>
                   <TableHead>{t("sourceWarehouse")}</TableHead>
                   <TableHead>{t("targetLocation")}</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Closed</TableHead>
+                  <TableHead>{t("status")}</TableHead>
+                  <TableHead>{t("closedReceipt")}</TableHead>
                   <TableHead>{t("issuedAt")}</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -297,7 +298,7 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                     <TableCell><div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" />{formatDate(r.issued_at)}</div></TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" onClick={() => navigate(`/receipts/internal/${r.id}${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
-                        <Eye className="h-4 w-4 mr-1" />View
+                        <Eye className="h-4 w-4 mr-1" />{t("view")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -361,7 +362,7 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
             <Select value={closedFilter} onValueChange={setClosedFilter}>
               <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="all">{t("all")}</SelectItem>
                 <SelectItem value="open">{t("openReceipt")}</SelectItem>
                 <SelectItem value="closed">{t("closedReceipt")}</SelectItem>
               </SelectContent>
@@ -396,10 +397,10 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>ID</TableHead>
+                  <TableHead>{t("idColumn")}</TableHead>
                   <TableHead>{t("sourceWarehouse")}</TableHead>
                   <TableHead>{t("receiver")}</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>{t("status")}</TableHead>
                   <TableHead>{t("issuedAt")}</TableHead>
                   <TableHead></TableHead>
                 </TableRow>
@@ -414,7 +415,7 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
                     <TableCell><div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" />{formatDate(r.issued_at)}</div></TableCell>
                     <TableCell>
                       <Button variant="outline" size="sm" onClick={() => navigate(`/receipts/external/${r.id}${warehouseId ? `?warehouse=${warehouseId}` : ""}`)}>
-                        <Eye className="h-4 w-4 mr-1" />View
+                        <Eye className="h-4 w-4 mr-1" />{t("view")}
                       </Button>
                     </TableCell>
                   </TableRow>
@@ -475,7 +476,7 @@ const Receipts = () => {
               {warehouseId && (
                 <Badge variant="outline">
                   <Package className="h-3 w-3 mr-1" />
-                  {warehouses.find(w => w.id === warehouseId)?.name ?? `Warehouse #${warehouseId}`}
+                  {warehouses.find(w => w.id === warehouseId)?.name ?? t("warehouseNumberLabel", { id: warehouseId })}
                 </Badge>
               )}
             </div>

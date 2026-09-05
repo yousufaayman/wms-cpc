@@ -387,7 +387,7 @@ function RollTable({ rolls, ctx }: { rolls: InventoryRollDetail[]; ctx: RollCont
         <Table>
           <TableHeader>
             <TableRow className="bg-muted/40">
-              <TableHead className="w-16">ID</TableHead>
+              <TableHead className="w-16">{t('idColumn')}</TableHead>
               <TableHead>{t('weightKg')}</TableHead>
               <TableHead>{t('lengthM')}</TableHead>
               <TableHead>{t('gsm')}</TableHead>

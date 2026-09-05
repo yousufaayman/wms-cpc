@@ -23,6 +23,31 @@ export const translations = {
     errorLoadingWarehouses: "Error Loading Warehouses",
     select: "Select",
     loading: "Loading...",
+    failedToFetchWarehouses: "Failed to fetch warehouses",
+    failedToLoadReceipt: "Failed to load receipt",
+    receiptNumberLabel: "Receipt #{{id}}",
+    userNumberLabel: "User #{{id}}",
+    failedToLoadExpectedDeliveries: "Failed to load expected deliveries",
+    expectedDeliveryCreated: "Expected delivery created",
+    failedToCreateExpectedDelivery: "Failed to create expected delivery",
+    deleted: "Deleted",
+    failedToDelete: "Failed to delete",
+    failedToLoadDelivery: "Failed to load delivery",
+    statusUpdatedTo: "Status updated to {{status}}",
+    failedToUpdateStatus: "Failed to update status",
+    itemRemoved: "Item removed",
+    deliveryNotFound: "Delivery not found.",
+    idColumn: "ID",
+    view: "View",
+    all: "All",
+    confirmed: "Confirmed",
+    warehouseNumberLabel: "Warehouse #{{id}}",
+    widthExamplePlaceholder: "e.g. 150",
+    gsmExamplePlaceholder: "e.g. 220",
+    weightExamplePlaceholder: "e.g. 24.500",
+    lengthExamplePlaceholder: "e.g. 80.00",
+    savedAsMetersHint: "→ saved as m",
+    rackIdLabel: "ID #{{id}}",
     
     // Dashboard
     noWidgetsYet: "No widgets available for this warehouse type yet",
@@ -705,6 +730,15 @@ export const translations = {
     userCreated: "User {{username}} created",
     failedToCreateUser: "Failed to create user",
 
+    // Not Found Page
+    pageNotFound: "Oops! Page not found",
+    returnToHome: "Return to Home",
+
+    // Loading / Auth guards
+    pleaseWaitLoadingContent: "Please wait while we load the content...",
+    checkingAccess: "Checking access...",
+    checkingAuthentication: "Checking authentication...",
+
     // Languages
     english: "English",
     arabic: "العربية"
@@ -733,6 +767,31 @@ export const translations = {
     errorLoadingWarehouses: "خطأ في تحميل المخازن",
     select: "اختر",
     loading: "جاري التحميل...",
+    failedToFetchWarehouses: "فشل جلب المخازن",
+    failedToLoadReceipt: "فشل تحميل الإيصال",
+    receiptNumberLabel: "إيصال رقم {{id}}",
+    userNumberLabel: "مستخدم رقم {{id}}",
+    failedToLoadExpectedDeliveries: "فشل تحميل التوريدات المتوقعة",
+    expectedDeliveryCreated: "تم إنشاء التوريد المتوقع",
+    failedToCreateExpectedDelivery: "فشل إنشاء التوريد المتوقع",
+    deleted: "تم الحذف",
+    failedToDelete: "فشل الحذف",
+    failedToLoadDelivery: "فشل تحميل التوريد",
+    statusUpdatedTo: "تم تحديث الحالة إلى {{status}}",
+    failedToUpdateStatus: "فشل تحديث الحالة",
+    itemRemoved: "تمت إزالة العنصر",
+    deliveryNotFound: "التوريد غير موجود.",
+    idColumn: "المعرّف",
+    view: "عرض",
+    all: "الكل",
+    confirmed: "مؤكد",
+    warehouseNumberLabel: "المخزن رقم {{id}}",
+    widthExamplePlaceholder: "مثال: 150",
+    gsmExamplePlaceholder: "مثال: 220",
+    weightExamplePlaceholder: "مثال: 24.500",
+    lengthExamplePlaceholder: "مثال: 80.00",
+    savedAsMetersHint: "← يُحفظ كـ م",
+    rackIdLabel: "المعرّف #{{id}}",
     
     // Dashboard
     noWidgetsYet: "لا توجد عناصر متاحة لهذا النوع من المخازن بعد",
@@ -1414,6 +1473,15 @@ export const translations = {
     passwordsDoNotMatch: "كلمتا المرور غير متطابقتين",
     userCreated: "تم إنشاء المستخدم {{username}}",
     failedToCreateUser: "فشل إنشاء المستخدم",
+
+    // Not Found Page
+    pageNotFound: "عفواً! الصفحة غير موجودة",
+    returnToHome: "العودة إلى الرئيسية",
+
+    // Loading / Auth guards
+    pleaseWaitLoadingContent: "يرجى الانتظار أثناء تحميل المحتوى...",
+    checkingAccess: "جاري التحقق من الصلاحية...",
+    checkingAuthentication: "جاري التحقق من الهوية...",
 
     // Languages
     english: "English",

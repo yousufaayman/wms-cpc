@@ -217,7 +217,7 @@ const ReceiptDetail = () => {
       setReceipt(data);
       await loadItems(rid);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load receipt");
+      setError(e instanceof Error ? e.message : t("failedToLoadReceipt"));
     } finally {
       setLoading(false);
     }
@@ -313,7 +313,7 @@ const ReceiptDetail = () => {
               </Button>
               <FileText className="h-6 w-6 text-primary" />
               <div>
-                <h1 className="text-2xl font-bold text-primary leading-tight">Receipt #{receipt.id}</h1>
+                <h1 className="text-2xl font-bold text-primary leading-tight">{t("receiptNumberLabel", { id: receipt.id })}</h1>
                 <p className="text-muted-foreground text-sm">{kindLabel}</p>
               </div>
             </div>
@@ -371,7 +371,7 @@ const ReceiptDetail = () => {
                     <div className="flex items-center gap-1.5">
                       <User className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">{t("issuedBy")}</span>
-                      <span className="text-sm font-medium">User #{receipt.issued_by}</span>
+                      <span className="text-sm font-medium">{t("userNumberLabel", { id: receipt.issued_by })}</span>
                     </div>
                   )}
                   <div className="flex items-center gap-1.5">
@@ -383,14 +383,14 @@ const ReceiptDetail = () => {
                     <div className="flex items-center gap-1.5">
                       <User className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">{t("confirmedBy")}</span>
-                      <span className="text-sm font-medium">User #{internalReceipt.confirmed_by}</span>
+                      <span className="text-sm font-medium">{t("userNumberLabel", { id: internalReceipt.confirmed_by })}</span>
                     </div>
                   )}
                   {receipt.closed_by != null && (
                     <div className="flex items-center gap-1.5">
                       <User className="h-3.5 w-3.5 text-muted-foreground" />
                       <span className="text-sm text-muted-foreground">{t("closedBy")}</span>
-                      <span className="text-sm font-medium">User #{receipt.closed_by}</span>
+                      <span className="text-sm font-medium">{t("userNumberLabel", { id: receipt.closed_by })}</span>
                     </div>
                   )}
                   {(supplierReceipt?.closed_at || externalReceipt?.closed_at) && (

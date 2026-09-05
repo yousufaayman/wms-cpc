@@ -81,7 +81,7 @@ export default function ExpectedDeliveries() {
     expectedDeliveryApi
       .getAll(warehouseId ? { warehouse_id: Number(warehouseId), limit: 200 } : { limit: 200 })
       .then(setDeliveries)
-      .catch(() => toast.error("Failed to load expected deliveries"))
+      .catch(() => toast.error(t("failedToLoadExpectedDeliveries")))
       .finally(() => setLoading(false));
   };
 
@@ -124,12 +124,12 @@ export default function ExpectedDeliveries() {
         },
         user?.id,
       );
-      toast.success("Expected delivery created");
+      toast.success(t("expectedDeliveryCreated"));
       setCreateOpen(false);
       resetCreateForm();
       navigate(`/expected-deliveries/${created.id}?warehouse=${warehouseId}`);
     } catch {
-      toast.error("Failed to create expected delivery");
+      toast.error(t("failedToCreateExpectedDelivery"));
     } finally {
       setCreating(false);
     }
@@ -140,11 +140,11 @@ export default function ExpectedDeliveries() {
     setDeleting(true);
     try {
       await expectedDeliveryApi.delete(deleteId);
-      toast.success("Deleted");
+      toast.success(t("deleted"));
       setDeleteId(null);
       load();
     } catch {
-      toast.error("Failed to delete");
+      toast.error(t("failedToDelete"));
     } finally {
       setDeleting(false);
     }

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import type { Permission } from "@/lib/permissions";
 import LoadingSpinner from "./LoadingSpinner";
+import { useTranslation } from "@/hooks/useTranslation";
 
 interface RequirePermissionProps {
   permission: Permission;
@@ -16,6 +17,7 @@ const RequirePermission = ({ permission, children }: RequirePermissionProps) => 
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { role, can, loading } = useCurrentUser();
+  const { t } = useTranslation();
 
   const warehouseId = searchParams.get("warehouse");
   const homePath = role === "Viewer" ? "/receipts" : "/dashboard";
@@ -30,7 +32,7 @@ const RequirePermission = ({ permission, children }: RequirePermissionProps) => 
   }, [loading, allowed, redirectTo, navigate]);
 
   if (loading || !allowed) {
-    return <LoadingSpinner message="Checking access..." />;
+    return <LoadingSpinner message={t("checkingAccess")} />;
   }
 
   return <>{children}</>;

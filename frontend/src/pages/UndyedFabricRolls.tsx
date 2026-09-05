@@ -520,7 +520,7 @@ const UndyedFabricRolls = () => {
                         <Label>{t('fabricWidthCm')}</Label>
                         <Input
                           type="number"
-                          placeholder="e.g. 150"
+                          placeholder={t('widthExamplePlaceholder')}
                           value={fabricWidthInput}
                           onChange={(e) => setFabricWidthInput(e.target.value)}
                           disabled={locked}
@@ -530,7 +530,7 @@ const UndyedFabricRolls = () => {
                         <Label>{t('gsmLabel')}</Label>
                         <Input
                           type="number"
-                          placeholder="e.g. 220"
+                          placeholder={t('gsmExamplePlaceholder')}
                           value={gsmInput}
                           onChange={(e) => setGsmInput(e.target.value)}
                           disabled={locked}
@@ -568,7 +568,7 @@ const UndyedFabricRolls = () => {
                       {resolvedRack ? (
                         <div className="flex items-center gap-2">
                           <Badge className="text-sm px-3 py-1">{resolvedRack.rack_code}</Badge>
-                          <span className="text-xs text-muted-foreground">ID #{resolvedRack.id}</span>
+                          <span className="text-xs text-muted-foreground">{t('rackIdLabel', { id: resolvedRack.id })}</span>
                           <Button variant="ghost" size="sm" onClick={() => { setResolvedRack(null); setRackError(null); setRackInput(""); }} className="h-6 w-6 p-0">
                             <X className="h-3 w-3" />
                           </Button>
@@ -667,7 +667,7 @@ const UndyedFabricRolls = () => {
                         <Input
                           ref={weightRef}
                           type="number"
-                          placeholder="e.g. 24.500"
+                          placeholder={t('weightExamplePlaceholder')}
                           value={weightInput}
                           onChange={(e) => setWeightInput(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && handleWeightEnter()}
@@ -680,13 +680,13 @@ const UndyedFabricRolls = () => {
                         <Label>
                           {t('length')} ({lockedDetails.lengthUnit === "yd" ? t('yardsShort') : t('metersShort')})
                           {lockedDetails.lengthUnit === "yd" && (
-                            <span className="ml-1 text-xs text-muted-foreground">→ saved as m</span>
+                            <span className="ml-1 text-xs text-muted-foreground">{t('savedAsMetersHint')}</span>
                           )}
                         </Label>
                         <Input
                           ref={lengthRef}
                           type="number"
-                          placeholder="e.g. 80.00"
+                          placeholder={t('lengthExamplePlaceholder')}
                           value={lengthInput}
                           onChange={(e) => setLengthInput(e.target.value)}
                           onKeyDown={(e) => e.key === "Enter" && handleLengthEnter()}

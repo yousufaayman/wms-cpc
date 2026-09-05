@@ -54,7 +54,7 @@ const Warehouses = () => {
         const data = await warehouseApi.getAll();
         setWarehouses(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to fetch warehouses");
+        setError(err instanceof Error ? err.message : t("failedToFetchWarehouses"));
       } finally {
         setLoading(false);
       }

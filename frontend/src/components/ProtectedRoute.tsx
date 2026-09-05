@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getToken } from "@/lib/auth";
 import LoadingSpinner from "./LoadingSpinner";
+import { useTranslation } from "@/hooks/useTranslation";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -11,6 +12,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   useEffect(() => {
     const checkAuth = () => {
@@ -27,7 +29,7 @@ const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   }, [navigate]);
 
   if (isLoading) {
-    return <LoadingSpinner message="Checking authentication..." />;
+    return <LoadingSpinner message={t("checkingAuthentication")} />;
   }
 
   if (!isAuthenticated) {
