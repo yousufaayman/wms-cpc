@@ -11,6 +11,7 @@ def create_enum_types() -> None:
     ]
 
     with engine.connect() as conn:
+        conn.execute(text("CREATE SCHEMA IF NOT EXISTS wms"))
         for enum_name, enum_values in enum_types:
             result = conn.execute(
                 text(

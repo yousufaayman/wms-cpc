@@ -1,0 +1,47 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-wms
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    environment: production
+    env:
+      APP_DIR: /home/cpc_services/apps/wms-cpc
+    steps:
+      - name: Pull latest code
+        run: |
+          cd "$APP_DIR"
+          git fetch origin main
+          git reset --hard origin/main
+
+      - name: Show what's deployed
+        run: |
+          cd "$APP_DIR"
+          echo "Deploying in: $(pwd)"
+          git log -1 --oneline
+
+      - name: Write .env from GitHub
+        env:
+          ENV_FILE: ${{ secrets.ENV_FILE }}
+        run: |
+          cd "$APP_DIR"
+          if [ -z "$ENV_FILE" ]; then echo "::error::ENV_FILE secret is empty"; exit 1; fi
+          printf '%s\n' "$ENV_FILE" | tr -d '\r' > .env
+          chmod 600 .env
+
+      - name: Build and restart
+        run: |
+          cd "$APP_DIR"
+          docker compose up -d --build --remove-orphans --wait --wait-timeout 180
+
+      - name: Clean up old images
+        if: success()
+        run: docker image prune -f

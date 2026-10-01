@@ -10,7 +10,7 @@ password = quote_plus(settings.POSTGRES_PASSWORD)
 def create_database_if_not_exists() -> None:
     # Connect to PostgreSQL server (not specific database)
     initial_engine = create_engine(
-        f"postgresql://{settings.POSTGRES_USER}:{password}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/postgres",
+        f"postgresql+psycopg2://{settings.POSTGRES_USER}:{password}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/postgres",
         pool_pre_ping=True,
         pool_recycle=3600
     )
@@ -24,7 +24,7 @@ def create_database_if_not_exists() -> None:
         conn.commit()
 
 # Now create engine with database name (connections are lazy until first use)
-SQLALCHEMY_DATABASE_URL = f"postgresql://{settings.POSTGRES_USER}:{password}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DATABASE}"
+SQLALCHEMY_DATABASE_URL = f"postgresql+psycopg2://{settings.POSTGRES_USER}:{password}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DATABASE}"
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     pool_pre_ping=True,

@@ -1,4 +1,4 @@
-# Internal App Deployment Framework — v2.0 (Final)
+# Internal App Deployment Framework — v2.1
 
 **Scope:** All internally developed apps deployed via Docker on the company VM (Windows Server host).
 **Applies to any app built on the standard stack:**
@@ -29,6 +29,8 @@ app-name/
 │       ├── Dockerfile
 │       └── *.py
 ├── docker-compose.yml
+├── .github/workflows/deploy.yml   # CI/CD — see §13
+├── .gitattributes             # `* text=auto` + `*.sh text eol=lf`
 ├── .env.example
 ├── .dockerignore              # required wherever a Dockerfile uses COPY . .
 ├── setup.sh
@@ -51,6 +53,9 @@ These are non-negotiable across every app on this stack — each one closes a sp
 6. **Every container that can meaningfully report readiness gets a `HEALTHCHECK`**, and every service that depends on another for correct startup uses `depends_on: <service>: condition: service_healthy` — not just a bare `depends_on` list, which only guarantees container *start*, not *readiness*.
 7. **All custom images run as non-root UID/GID `1000:1000`**, matching the ownership set on `/opt/appdata/<app-name>/*` by `setup.sh`. This is what lets the same setup script work unmodified across every app.
 8. **`DB_HOST=host.docker.internal`** is the standard for reaching the host-run PostgreSQL instance. Don't containerize Postgres per-app — one engine to patch and back up beats N.
+9. **Pin exact dependency versions for the core stack** (web framework, ORM, DB driver, password-hashing libs) in `requirements.txt`. Loose `>=` pins have silently pulled SQLAlchemy 2.1 (defaults to psycopg 3, so `postgresql://` URLs stop resolving to `psycopg2`) and bcrypt 5 (breaks passlib 1.7.x login). Use an explicit driver in the URL (`postgresql+psycopg2://`) and copy known-good versions from a working app's container (`pip freeze`).
+10. **nginx forwards `Host $http_host`, not `$host`.** `$host` drops the port, so app-generated redirects (e.g. FastAPI's 307 trailing-slash redirects) point at the wrong origin and the browser reports a CORS error.
+11. **Database/schema/enum/table bootstrap runs once, before the app server starts** (e.g. `CMD ["sh","-c","python -m <pkg>.init_db && exec uvicorn ..."]`) — never at module import or in a per-worker startup hook. Import-time `create_all` runs before ENUM types exist on a fresh database and races across workers.
 
 ---
 
@@ -71,7 +76,7 @@ services:
       frontend:
         condition: service_healthy
     ports:
-      - "0.0.0.0:<HOST_PORT>:80"   # see §7 port registry
+      - "${APP_PORT:-<HOST_PORT>}:80"   # see §7 port registry
     volumes:
       - media_files:/app/media:ro
       - /etc/localtime:/etc/localtime:ro
@@ -330,7 +335,7 @@ http {
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection 'upgrade';
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -347,7 +352,7 @@ http {
 
         location / {
             proxy_pass http://frontend_upstream;
-            proxy_set_header Host $host;
+            proxy_set_header Host $http_host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
             proxy_set_header X-Forwarded-Proto $scheme;
@@ -379,7 +384,8 @@ MEDIA_ROOT=/app/media
 REPORTS_ROOT=/app/reports
 
 # Networking
-BACKEND_CORS_ORIGINS=
+APP_PORT=                  # host port from the §7 registry
+BACKEND_CORS_ORIGINS=      # origin ports must match APP_PORT
 
 # App-specific blocks (SMTP, third-party APIs, etc.) — documented inline
 ```
@@ -398,7 +404,7 @@ Maintain a single running registry across all apps:
 |---|---|---|
 | *(app 1)* | `81` | via Windows portproxy → 80 |
 | *(app 2)* | `82` | |
-| *(app 3)* | `83` | |
+| wms-cpc | `83` | `APP_PORT`; nginx entrypoint → 80 |
 
 - Reserve the port before writing the compose file; record it in this table and in the app's own `DEPLOYMENT_GUIDE.md`.
 - Internal container ports stay fixed regardless of app: nginx `80`, backend `8000`, frontend `3000`. Only the host-side mapping changes — this keeps every app's internal network topology identical and predictable to debug.
@@ -467,7 +473,7 @@ Every app ships a `DEPLOYMENT_GUIDE.md`, sections in this order:
 ## 12. New App Onboarding Checklist
 
 - [ ] Repo follows §1 structure
-- [ ] All eight Standing Rules (§2) verified — not assumed
+- [ ] All eleven Standing Rules (§2) verified — not assumed
 - [ ] `docker-compose.yml` built from the §3 template, adjusted only where the app's actual needs differ
 - [ ] Dockerfiles built from the §4 templates
 - [ ] `nginx.conf` built from the §5 template
@@ -476,8 +482,28 @@ Every app ships a `DEPLOYMENT_GUIDE.md`, sections in this order:
 - [ ] `/opt/appdata/<app-name>/` paths defined and confirmed persistent (§8)
 - [ ] `setup.sh` implements the standard 5 steps (§9)
 - [ ] `DEPLOYMENT_GUIDE.md` written using the §11 template
+- [ ] `.github/workflows/deploy.yml` + `ENV_FILE` secret in place (§13); secret includes `APP_PORT`
 - [ ] `docker compose ps` + all healthchecks green post-deploy
 - [ ] Backup/restore path for this app's persistent data confirmed
+
+---
+
+## 13. CI/CD (GitHub Actions, self-hosted runner)
+
+Each app ships `.github/workflows/deploy.yml`, identical across apps except two values:
+
+- `concurrency.group: deploy-<app>` (serializes deploys; `cancel-in-progress: false`)
+- `env.APP_DIR: /home/cpc_services/apps/<app-name>`
+
+Triggers: push to `main` and `workflow_dispatch`; `runs-on: self-hosted`, `environment: production`. Steps, in order:
+
+1. `git fetch origin main && git reset --hard origin/main` in `$APP_DIR`
+2. Log the deployed commit (`pwd` + `git log -1 --oneline`)
+3. Write `.env` from the `ENV_FILE` secret (fail if empty; strip CR characters; `chmod 600`)
+4. `docker compose up -d --build --remove-orphans --wait --wait-timeout 180`
+5. `docker image prune -f` on success
+
+`.env` is owned by the `ENV_FILE` secret in CI — change variables there, not on the server, or the next deploy overwrites them. `.gitattributes` must force LF on `*.sh` so scripts survive checkout from Windows.
 
 ---
 

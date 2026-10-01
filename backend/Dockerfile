@@ -9,7 +9,7 @@ RUN pip install --no-cache-dir -r ./backend/requirements.txt
 FROM base AS dev
 COPY backend/ ./backend/
 EXPOSE 8000
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+CMD ["sh", "-c", "python -m backend.init_db && exec uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"]
 
 # ── Production ─────────────────────────────────────────────────────────────────
 FROM base AS prod
@@ -26,4 +26,4 @@ RUN useradd --uid 1000 --create-home --shell /bin/bash appuser && \
 USER 1000:1000
 
 EXPOSE 8000
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+CMD ["sh", "-c", "python -m backend.init_db && exec uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 2"]

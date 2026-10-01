@@ -10,7 +10,7 @@ services:
       frontend:
         condition: service_healthy
     ports:
-      - "0.0.0.0:82:80"   # host port per deployment registry — wms-cpc
+      - "${APP_PORT:-83}:80"   # host port per deployment registry — wms-cpc
     networks:
       - app_net
     environment:
