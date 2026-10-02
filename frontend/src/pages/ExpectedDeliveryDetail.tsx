@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { badgeVariants } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  ArrowLeft, PackageOpen, Loader2, Plus, Trash2, Check,
+  ArrowLeft, PackageOpen, Loader2, Plus, Trash2, Check, Pencil,
   TrendingUp, TrendingDown, Minus,
 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
@@ -228,6 +228,22 @@ export default function ExpectedDeliveryDetail() {
     return () => { cancelled = true; };
   }, [addType, addClientId, addMaterialId, addColorId]);
 
+  // Insert-and-select: create a client/material/color inline (backend get-or-creates by name).
+  const createRef = async <T extends { id: number; name: string }>(
+    api: { create: (name: string) => Promise<T> },
+    setList: (fn: (prev: T[]) => T[]) => void,
+    select: (id: number) => void,
+    name: string,
+  ) => {
+    try {
+      const created = await api.create(name);
+      setList(prev => prev.some(x => x.id === created.id) ? prev : [...prev, created]);
+      select(created.id);
+    } catch {
+      toast.error(t("createFailed"));
+    }
+  };
+
   // ── Status change ──────────────────────────────────────────────────────────
 
   const changeStatus = async (newStatus: ExpectedDeliveryStatus) => {
@@ -241,6 +257,36 @@ export default function ExpectedDeliveryDetail() {
       toast.error("Failed to update status");
     } finally {
       setUpdatingStatus(false);
+    }
+  };
+
+  // ── Edit item (expected weight / length) ───────────────────────────────────
+
+  const [editItemId, setEditItemId] = useState<number | null>(null);
+  const [editWeight, setEditWeight] = useState("");
+  const [editLength, setEditLength] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const openEdit = (item: ExpectedDeliveryItem) => {
+    setEditItemId(item.id);
+    setEditWeight(item.expected_weight_kg != null ? String(item.expected_weight_kg) : "");
+    setEditLength(item.expected_length_m != null ? String(item.expected_length_m) : "");
+  };
+
+  const handleSaveEdit = async () => {
+    if (editItemId === null) return;
+    setSavingEdit(true);
+    try {
+      await expectedDeliveryApi.updateItem(editItemId, {
+        expected_weight_kg: editWeight !== "" ? Number(editWeight) : null,
+        expected_length_m: editLength !== "" ? Number(editLength) : null,
+      });
+      setEditItemId(null);
+      loadDelivery();
+    } catch {
+      toast.error(t("saveFailed"));
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -505,6 +551,14 @@ export default function ExpectedDeliveryDetail() {
                                 <Button
                                   size="sm"
                                   variant="ghost"
+                                  title={t("editDeliveryItem")}
+                                  onClick={() => openEdit(item)}
+                                >
+                                  <Pencil className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
                                   className="text-destructive hover:text-destructive"
                                   title={t("deleteDeliveryItem")}
                                   onClick={() => setDeleteItemId(item.id)}
@@ -563,6 +617,7 @@ export default function ExpectedDeliveryDetail() {
                   items={clients.map(c => ({ id: c.id, label: c.name }))}
                   value={addClientId}
                   onSelect={setAddClientId}
+                  onCreate={n => createRef(clientApi, setClients, setAddClientId, n)}
                   placeholder={t("selectClient")}
                 />
               </div>
@@ -572,6 +627,7 @@ export default function ExpectedDeliveryDetail() {
                   items={materials.map(m => ({ id: m.id, label: m.name }))}
                   value={addMaterialId}
                   onSelect={setAddMaterialId}
+                  onCreate={n => createRef(materialApi, setMaterials, setAddMaterialId, n)}
                   placeholder={t("selectMaterial")}
                 />
               </div>
@@ -582,6 +638,7 @@ export default function ExpectedDeliveryDetail() {
                     items={colors.map(c => ({ id: c.id, label: c.name }))}
                     value={addColorId}
                     onSelect={setAddColorId}
+                    onCreate={n => createRef(colorApi, setColors, setAddColorId, n)}
                     placeholder={t("selectColor")}
                   />
                 </div>
@@ -645,6 +702,34 @@ export default function ExpectedDeliveryDetail() {
             >
               {addingItem && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
               {t("addDeliveryItem")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit item */}
+      <Dialog open={editItemId !== null} onOpenChange={open => !open && setEditItemId(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("editDeliveryItem")}</DialogTitle>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3 py-2">
+            <div className="space-y-1.5">
+              <Label>{t("expectedWeightKg")}</Label>
+              <Input type="number" min="0" step="0.01" value={editWeight}
+                onChange={e => setEditWeight(e.target.value)} placeholder="0.00" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>{t("expectedLengthM")}</Label>
+              <Input type="number" min="0" step="0.01" value={editLength}
+                onChange={e => setEditLength(e.target.value)} placeholder="0.00" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditItemId(null)}>{t("cancel")}</Button>
+            <Button onClick={handleSaveEdit} disabled={savingEdit}>
+              {savingEdit && <Loader2 className="h-4 w-4 animate-spin mr-2" />}
+              {t("saveChanges")}
             </Button>
           </DialogFooter>
         </DialogContent>

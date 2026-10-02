@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Check, ChevronsUpDown } from "lucide-react";
+import { Check, ChevronsUpDown, Plus } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 
 export interface ComboItem {
@@ -12,20 +12,26 @@ export interface ComboItem {
 
 /** Searchable single-select combobox — same UX as the roll-ingestion pages. */
 export function Combobox({
-  items, value, onSelect, placeholder, disabled = false,
+  items, value, onSelect, placeholder, disabled = false, onCreate,
 }: Readonly<{
   items: ComboItem[];
   value: number | null;
   onSelect: (id: number) => void;
   placeholder: string;
   disabled?: boolean;
+  /** When provided, typing a name with no exact match offers to create it. */
+  onCreate?: (name: string) => Promise<void> | void;
 }>) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const { t } = useTranslation();
   const selected = items.find((i) => i.id === value);
+  const trimmed = query.trim();
+  const canCreate = !!onCreate && trimmed !== "" &&
+    !items.some((i) => i.label.trim().toLowerCase() === trimmed.toLowerCase());
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={o => { setOpen(o); if (!o) setQuery(""); }}>
       <PopoverTrigger asChild>
         <Button
           variant="outline"
@@ -39,7 +45,7 @@ export function Combobox({
       </PopoverTrigger>
       <PopoverContent className="w-full p-0" align="start">
         <Command>
-          <CommandInput placeholder={t('search')} />
+          <CommandInput placeholder={t('search')} value={query} onValueChange={setQuery} />
           <CommandList>
             <CommandEmpty>{t('noResults')}</CommandEmpty>
             <CommandGroup>
@@ -53,6 +59,15 @@ export function Combobox({
                   {item.label}
                 </CommandItem>
               ))}
+              {canCreate && (
+                <CommandItem
+                  value={`__create__${trimmed}`}
+                  onSelect={async () => { await onCreate!(trimmed); setOpen(false); setQuery(""); }}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  {t('createNamed')} "{trimmed}"
+                </CommandItem>
+              )}
             </CommandGroup>
           </CommandList>
         </Command>

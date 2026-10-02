@@ -7,4 +7,6 @@ export interface Color {
 
 export const colorApi = {
   getAll: () => api.request<Color[]>('/colors/'),
+  create: (name: string) =>
+    api.request<Color>('/colors/', 'POST', { name }),
 };

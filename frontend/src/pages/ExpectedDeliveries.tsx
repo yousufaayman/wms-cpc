@@ -299,6 +299,15 @@ export default function ExpectedDeliveries() {
                   items={clients.map(c => ({ id: c.id, label: c.name }))}
                   value={supplierClientId}
                   onSelect={setSupplierClientId}
+                  onCreate={async (name) => {
+                    try {
+                      const created = await clientApi.create(name);
+                      setClients(prev => prev.some(x => x.id === created.id) ? prev : [...prev, created]);
+                      setSupplierClientId(created.id);
+                    } catch {
+                      toast.error(t("createFailed"));
+                    }
+                  }}
                   placeholder={t("selectSupplierClient")}
                 />
               ) : (

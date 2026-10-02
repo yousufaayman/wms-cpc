@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from backend.core.deps import get_db
+from backend.core.authz import PERM_MANAGE_EXPECTED_DELIVERIES
+from backend.core.deps import get_db, require_permission
 from backend.crud import clients as crud_clients
-from backend.schemas import Client
+from backend.schemas import Client, ClientCreate
 
 router = APIRouter()
 
@@ -21,3 +22,15 @@ def get_client(client_id: int, db: Session = Depends(get_db)):
     if not client:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Client not found")
     return client
+
+
+@router.post("/", response_model=Client, status_code=status.HTTP_201_CREATED)
+def create_client(
+    payload: ClientCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission(PERM_MANAGE_EXPECTED_DELIVERIES)),
+):
+    """Create a client (returns the existing one if the name already exists, case-insensitively)."""
+    if not payload.name.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name is required")
+    return crud_clients.get_or_create_client(db, payload.name)
