@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from backend.core.deps import get_db
+from backend.core.authz import PERM_MANAGE_EXPECTED_DELIVERIES
+from backend.core.deps import get_db, require_permission
 from backend.crud import colors as crud_colors
-from backend.schemas import Color
+from backend.schemas import Color, ColorCreate
 
 router = APIRouter()
 
@@ -21,3 +22,15 @@ def get_color(color_id: int, db: Session = Depends(get_db)):
     if not color:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Color not found")
     return color
+
+
+@router.post("/", response_model=Color, status_code=status.HTTP_201_CREATED)
+def create_color(
+    payload: ColorCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission(PERM_MANAGE_EXPECTED_DELIVERIES)),
+):
+    """Create a color (returns the existing one if the name already exists, case-insensitively)."""
+    if not payload.name.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name is required")
+    return crud_colors.get_or_create_color(db, payload.name)

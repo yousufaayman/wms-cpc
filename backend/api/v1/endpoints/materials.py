@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from backend.core.deps import get_db
+from backend.core.authz import PERM_MANAGE_EXPECTED_DELIVERIES
+from backend.core.deps import get_db, require_permission
 from backend.crud import materials as crud_materials
-from backend.schemas import Material
+from backend.schemas import Material, MaterialCreate
 
 router = APIRouter()
 
@@ -22,3 +23,15 @@ def get_material(material_id: int, db: Session = Depends(get_db)):
     if not mat:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Material not found")
     return mat
+
+
+@router.post("/", response_model=Material, status_code=status.HTTP_201_CREATED)
+def create_material(
+    payload: MaterialCreate,
+    db: Session = Depends(get_db),
+    _user=Depends(require_permission(PERM_MANAGE_EXPECTED_DELIVERIES)),
+):
+    """Create a material (returns the existing one if the name already exists, case-insensitively)."""
+    if not payload.name.strip():
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Name is required")
+    return crud_materials.get_or_create_material(db, payload.name)

@@ -571,6 +571,9 @@ class SingleTransaction(SingleTransactionInDB):
 class MaterialBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
 
+class MaterialCreate(MaterialBase):
+    pass
+
 class MaterialInDB(MaterialBase):
     id: int
 

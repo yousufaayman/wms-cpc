@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 300
     
-    model_config = SettingsConfigDict(case_sensitive=True, env_file=(".env", "backend/.env"))
+    model_config = SettingsConfigDict(case_sensitive=True, env_file=(".env", "backend/.env"), extra="ignore")
 
     def cors_origins_list(self) -> List[str]:
         value = self.CORS_ORIGINS or self.BACKEND_CORS_ORIGINS
