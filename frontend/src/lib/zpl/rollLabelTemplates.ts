@@ -1,5 +1,6 @@
-// ZPL Label Templates for Fabric Rolls (dyed & undyed). Labels are 5cm x 10cm
-// stock fed landscape: 10cm wide (^PW800) x 5cm tall (^LL400) at 203dpi.
+// ZPL Label Templates for Fabric Rolls (dyed & undyed). The printer is fed
+// 10cm wide (^PW800) x 5cm tall (^LL400) at 203dpi, but the content is a 5cm x
+// 10cm portrait layout printed rotated 270° (ZPL orientation B) into that frame.
 
 export interface DyedRollLabelData {
   rollId: number;
@@ -26,6 +27,25 @@ const field = (value: number | string | null | undefined): string => {
   return zplSafe(String(value));
 };
 
+// Layout coordinates are in the portrait reading frame (LAYOUT_W x LAYOUT_H).
+// Rotating 270° maps reading +x to printer -y and reading +y to printer +x, so a
+// field's box at (x, y) with reading width w lands at printer ^FO y, LAYOUT_W - x - w.
+const LAYOUT_W = 400; // = printer ^LL
+const LAYOUT_H = 800; // = printer ^PW
+const fo = (x: number, y: number, w: number): string => `^FO${y},${Math.max(0, LAYOUT_W - x - w)}`;
+
+// ^BC without a start code uses Code 128 subset B: start + data + check (11
+// modules each) + stop (13 modules).
+const BARCODE_MODULE = 2; // ^BY module width
+const code128Width = (data: string): number => (11 * (data.length + 2) + 13) * BARCODE_MODULE;
+
+const barcode = (x: number, y: number, data: string, height: number): string =>
+  `${fo(x, y, code128Width(data))}^BCB,${height},N,N,N^FD${data}^FS`;
+
+// Horizontal rule in the reading frame becomes a vertical bar on the printer.
+const rule = (y: number, thickness: number): string =>
+  `^FO${y},0^GB${thickness},${LAYOUT_W},${thickness}^FS`;
+
 // ZPL cannot measure text, so measure it in the browser with an Arial-metric
 // font (Swiss 721 is Helvetica-compatible) and scale the size to just fit.
 const MIN_FONT = 12;
@@ -48,20 +68,27 @@ const textWidthAtSize = (text: string, size: number): number => {
 };
 
 /**
- * Text field in the Arabic font at the largest size (up to `baseSize`, down to
- * MIN_FONT) whose measured width fits `maxWidth` dots, vertically centered
- * within its `baseSize` line box. ^FB is kept as a last-resort clip.
+ * Rotated text field in the Arabic font at the largest size (up to `baseSize`,
+ * down to MIN_FONT) whose measured width fits `maxWidth` dots, centered within
+ * its `baseSize` line box. ^FB is kept as a last-resort clip.
  */
-const fitText = (x: number, y: number, text: string, baseSize: number, maxWidth: number): string => {
+const fitText = (
+  x: number,
+  y: number,
+  text: string,
+  baseSize: number,
+  maxWidth: number,
+  align: "L" | "C" = "L",
+): string => {
   const widthAtBase = textWidthAtSize(text, baseSize);
   const fit = widthAtBase > 0 ? Math.floor((baseSize * maxWidth * FIT_MARGIN) / widthAtBase) : baseSize;
   const size = Math.max(MIN_FONT, Math.min(baseSize, fit));
   const top = y + Math.round((baseSize - size) / 2);
-  return `^FO${x},${top}^A1N,${size},${size}^FB${maxWidth},1,0,L^FD${text}^FS`;
+  return `${fo(x, top, maxWidth)}^A1B,${size},${size}^FB${maxWidth},1,0,${align}^FD${text}^FS`;
 };
 
-const detail = (x: number, y: number, label: string, value: string): string =>
-  fitText(x, y, `${label}: ${value}`, 30, 370);
+const detail = (y: number, label: string, value: string): string =>
+  fitText(20, y, `${label}: ${value}`, 30, 370);
 
 /**
  * Dyed roll label. Barcode encodes `<rollId>*F`, with the roll id and fabric
@@ -69,38 +96,33 @@ const detail = (x: number, y: number, label: string, value: string): string =>
  * with the printer-resident Swiss 721 TrueType font (^CW1 → ^A1).
  */
 export function generateDyedRollLabel(data: DyedRollLabelData, copies = 2): string {
+  const code = `${data.rollId}*F`;
   return `
 ^XA
 
-^PW800
-^LL400
+^PW${LAYOUT_H}
+^LL${LAYOUT_W}
 ^CI28
 
 ^CW1,E:SWISS271.TTF
-^BY2,2,80
+^BY${BARCODE_MODULE},2,80
 
-^FO20,15
-^BCN,100,N,N,N
-^FD${data.rollId}*F^FS
+${barcode(10, 20, code, 100)}
+${fitText(10, 130, String(data.rollId), 20, code128Width(code), "C")}
 
-^FO20,125
-^A1N,20,20
-^FB360,1,0,L
-^FD${data.rollId}^FS
+${fitText(10, 170, field(data.fabricCode), 55, 380)}
 
-${fitText(400, 40, field(data.fabricCode), 55, 380)}
+${rule(240, 6)}
 
-^FO0,165^GB800,5,5^FS
-
-${detail(20, 180, 'العميل', `${field(data.client)}`)}
-${detail(20, 222, 'الخامة', `${field(data.material)}`)}
-${detail(20, 264, 'اللون', `${field(data.color)}`)}
-${detail(20, 306, 'حوض', `${field(data.lot)}`)}
-${detail(20, 348, 'المورد', `${field(data.supplier)}`)}
-${detail(410, 180, 'الوزن', `${field(data.weightKg)} كجم`)}
-${detail(410, 222, 'الطول', `${field(data.lengthM)} م`)}
-${detail(410, 264, 'العرض', `${field(data.widthCm)} سم`)}
-${detail(410, 306, 'المتر المربع', `${field(data.gsm)} جم`)}
+${detail(270, 'العميل', `${field(data.client)}`)}
+${detail(330, 'الخامة', `${field(data.material)}`)}
+${detail(390, 'اللون', `${field(data.color)}`)}
+${detail(450, 'حوض', `${field(data.lot)}`)}
+${detail(510, 'الوزن', `${field(data.weightKg)} كجم`)}
+${detail(570, 'الطول', `${field(data.lengthM)} م`)}
+${detail(630, 'العرض', `${field(data.widthCm)} سم`)}
+${detail(690, 'المتر المربع', `${field(data.gsm)} جم`)}
+${detail(750, 'المورد', `${field(data.supplier)}`)}
 
 ^PQ${Math.max(1, copies)}
 ^XZ
@@ -115,27 +137,25 @@ export function generateUndyedRollLabel(data: UndyedRollLabelData, copies = 2): 
   return `
 ^XA
 
-^PW800
-^LL400
+^PW${LAYOUT_H}
+^LL${LAYOUT_W}
 ^CI28
 
 ^CW1,E:SWISS271.TTF
+^BY${BARCODE_MODULE},2,80
 
-^BY2,2,80
-^FO20,15
-^BCN,100,N,N,N
-^FD${data.rollId}*K^FS
+${barcode(10, 20, `${data.rollId}*K`, 100)}
 
-^FO0,135^GB800,5,5^FS
+${rule(150, 5)}
 
-${detail(20, 160, 'العميل', `${field(data.client)}`)}
-${detail(20, 220, 'الخامة', `${field(data.material)}`)}
-${detail(20, 280, 'حوض', `${field(data.lot)}`)}
-${detail(20, 340, 'المورد', `${field(data.supplier)}`)}
-${detail(410, 160, 'الوزن', `${field(data.weightKg)} كجم`)}
-${detail(410, 220, 'الطول', `${field(data.lengthM)} م`)}
-${detail(410, 280, 'العرض', `${field(data.widthCm)} سم`)}
-${detail(410, 340, 'المتر المربع', `${field(data.gsm)} جم`)}
+${detail(190, 'العميل', `${field(data.client)}`)}
+${detail(270, 'الخامة', `${field(data.material)}`)}
+${detail(350, 'حوض', `${field(data.lot)}`)}
+${detail(430, 'الوزن', `${field(data.weightKg)} كجم`)}
+${detail(510, 'الطول', `${field(data.lengthM)} م`)}
+${detail(590, 'العرض', `${field(data.widthCm)} سم`)}
+${detail(670, 'المتر المربع', `${field(data.gsm)} جم`)}
+${detail(750, 'المورد', `${field(data.supplier)}`)}
 
 ^PQ${Math.max(1, copies)}
 ^XZ
