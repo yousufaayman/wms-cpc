@@ -32,6 +32,7 @@ services:
       target: prod
       args:
         - VITE_API_BASE_URL=/api/v1   # always relative — Rule 5
+        - VITE_ZEBRA_LABEL_FONT=${VITE_ZEBRA_LABEL_FONT:-E:SWISS271.TTF}   # Arabic TrueType font on the printer
     restart: unless-stopped
     environment:
       - TZ=Africa/Cairo

@@ -19,8 +19,17 @@ export interface DyedRollLabelData {
 
 export type UndyedRollLabelData = Omit<DyedRollLabelData, "color" | "fabricCode">;
 
-// ^FD field data must not contain ZPL control characters.
-const zplSafe = (value: string): string => value.replace(/[\^~\\]/g, " ");
+// ^FD field data must not contain ZPL control characters or line breaks.
+const zplSafe = (value: string): string => value.replace(/[\^~\\\r\n]+/g, " ");
+
+// TrueType font on the printer assigned to slot 1 (^CW1 → ^A1). Bitmap fonts
+// can't draw Arabic, so this file must already be uploaded to the printer.
+const LABEL_FONT = (import.meta.env?.VITE_ZEBRA_LABEL_FONT ||"E:SWISS271.TTF").trim();
+
+// UTF-8 field data, the Arabic-capable font in slot 1, and ^PA0,1,1,1 (default
+// glyph off, bidirectional/RTL layout on, character shaping on, OpenType on) so
+// the printer itself joins Arabic letters and orders mixed Arabic/Latin lines.
+const LABEL_TEXT_SETUP = `^CI28\n^CW1,${LABEL_FONT}\n^PA0,1,1,1`;
 
 const field = (value: number | string | null | undefined): string => {
   if (value == null || value === "") return "-";
@@ -102,9 +111,8 @@ export function generateDyedRollLabel(data: DyedRollLabelData, copies = 2): stri
 
 ^PW${LAYOUT_H}
 ^LL${LAYOUT_W}
-^CI28
+${LABEL_TEXT_SETUP}
 
-^CW1,E:SWISS271.TTF
 ^BY${BARCODE_MODULE},2,80
 
 ${barcode(10, 20, code, 100)}
@@ -139,9 +147,8 @@ export function generateUndyedRollLabel(data: UndyedRollLabelData, copies = 2): 
 
 ^PW${LAYOUT_H}
 ^LL${LAYOUT_W}
-^CI28
+${LABEL_TEXT_SETUP}
 
-^CW1,E:SWISS271.TTF
 ^BY${BARCODE_MODULE},2,80
 
 ${barcode(10, 20, `${data.rollId}*K`, 100)}
