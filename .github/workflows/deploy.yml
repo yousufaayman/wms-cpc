@@ -42,6 +42,29 @@ jobs:
           cd "$APP_DIR"
           docker compose up -d --build --remove-orphans --wait --wait-timeout 180
 
+      # nginx resolves the backend/frontend upstream names once at startup, so
+      # when those containers are recreated with new IPs an untouched nginx keeps
+      # proxying to the old ones (502s). Reload it on every deploy so it
+      # re-resolves the upstreams and picks up any nginx.conf change.
+      - name: Reload nginx
+        run: |
+          cd "$APP_DIR"
+          docker compose exec -T nginx nginx -t
+          docker compose exec -T nginx nginx -s reload
+
+      - name: Verify through nginx
+        run: |
+          cd "$APP_DIR"
+          APP_PORT=$(grep -E '^APP_PORT=' .env | tail -n1 | cut -d= -f2- | tr -d '"' || true)
+          url="http://127.0.0.1:${APP_PORT:-83}/"
+          for i in $(seq 1 10); do
+            if curl -fsS -o /dev/null "$url"; then echo "nginx OK at $url"; exit 0; fi
+            sleep 3
+          done
+          echo "::error::nginx did not respond at $url after reload"
+          docker compose logs --tail 50 nginx
+          exit 1
+
       - name: Clean up old images
         if: success()
         run: docker image prune -f
