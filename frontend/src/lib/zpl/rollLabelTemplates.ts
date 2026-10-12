@@ -24,12 +24,21 @@ const zplSafe = (value: string): string => value.replace(/[\^~\\\r\n]+/g, " ");
 
 // TrueType font on the printer assigned to slot 1 (^CW1 → ^A1). Bitmap fonts
 // can't draw Arabic, so this file must already be uploaded to the printer.
-const LABEL_FONT = (import.meta.env?.VITE_ZEBRA_LABEL_FONT ||"E:SWISS271.TTF").trim();
+const LABEL_FONT = (import.meta.env?.VITE_ZEBRA_LABEL_FONT ||"E:TT0003M_.TTF").trim();
 
-// UTF-8 field data, the Arabic-capable font in slot 1, and ^PA0,1,1,1 (default
-// glyph off, bidirectional/RTL layout on, character shaping on, OpenType on) so
-// the printer itself joins Arabic letters and orders mixed Arabic/Latin lines.
-const LABEL_TEXT_SETUP = `^CI28\n^CW1,${LABEL_FONT}\n^PA0,1,1,1`;
+// Swiss 721 linked to the label font (^FL): glyphs missing from LABEL_FONT are
+// drawn from this font instead of printing blank. Empty disables the link.
+const LABEL_FALLBACK_FONT = (import.meta.env?.VITE_ZEBRA_LABEL_FALLBACK_FONT ?? "E:SWISS271.TTF").trim();
+const FONT_LINK =
+  LABEL_FALLBACK_FONT && LABEL_FALLBACK_FONT !== LABEL_FONT
+    ? `^FL${LABEL_FALLBACK_FONT},${LABEL_FONT},1\n`
+    : "";
+
+// UTF-8 field data, the Arabic-capable font in slot 1 (with its fallback link),
+// and ^PA0,1,1,1 (default glyph off, bidirectional/RTL layout on, character
+// shaping on, OpenType on) so the printer itself joins Arabic letters and
+// orders mixed Arabic/Latin lines.
+const LABEL_TEXT_SETUP = `^CI28\n${FONT_LINK}^CW1,${LABEL_FONT}\n^PA0,1,1,1`;
 
 const field = (value: number | string | null | undefined): string => {
   if (value == null || value === "") return "-";
@@ -56,7 +65,7 @@ const rule = (y: number, thickness: number): string =>
   `^FO${y},0^GB${thickness},${LAYOUT_W},${thickness}^FS`;
 
 // ZPL cannot measure text, so measure it in the browser with an Arial-metric
-// font (Swiss 721 is Helvetica-compatible) and scale the size to just fit.
+// font (the Zebra TrueType fonts are Helvetica-compatible) and scale the size to just fit.
 const MIN_FONT = 12;
 const FIT_MARGIN = 0.98; // small safety margin for printer/browser metric drift
 const FALLBACK_GLYPH_RATIO = 0.5; // avg glyph width / height when no canvas is available
@@ -79,7 +88,11 @@ const textWidthAtSize = (text: string, size: number): number => {
 /**
  * Rotated text field in the Arabic font at the largest size (up to `baseSize`,
  * down to MIN_FONT) whose measured width fits `maxWidth` dots, centered within
- * its `baseSize` line box. ^FB is kept as a last-resort clip.
+ * its `baseSize` line box.
+ *
+ * No ^FB here: the printer's Arabic shaping / RTL layout (^PA) breaks inside a
+ * ^FB field block, so alignment is done by positioning the field from the
+ * measured text width instead.
  */
 const fitText = (
   x: number,
@@ -93,7 +106,11 @@ const fitText = (
   const fit = widthAtBase > 0 ? Math.floor((baseSize * maxWidth * FIT_MARGIN) / widthAtBase) : baseSize;
   const size = Math.max(MIN_FONT, Math.min(baseSize, fit));
   const top = y + Math.round((baseSize - size) / 2);
-  return `${fo(x, top, maxWidth)}^A1B,${size},${size}^FB${maxWidth},1,0,${align}^FD${text}^FS`;
+  // Rotated (B) fields grow from the bottom of their box, so the reading-frame
+  // start depends on the text's own width; place the box using that width.
+  const textWidth = Math.min(maxWidth, Math.ceil(textWidthAtSize(text, size)));
+  const left = align === "C" ? x + Math.floor((maxWidth - textWidth) / 2) : x;
+  return `${fo(left, top, textWidth)}^A1B,${size},${size}^FD${text}^FS`;
 };
 
 const detail = (y: number, label: string, value: string): string =>
@@ -102,7 +119,7 @@ const detail = (y: number, label: string, value: string): string =>
 /**
  * Dyed roll label. Barcode encodes `<rollId>*F`, with the roll id and fabric
  * code printed as text lines under it; detail lines are in Arabic, rendered
- * with the printer-resident Swiss 721 TrueType font (^CW1 → ^A1).
+ * with the printer-resident TrueType font in slot 1 (^CW1 → ^A1).
  */
 export function generateDyedRollLabel(data: DyedRollLabelData, copies = 2): string {
   const code = `${data.rollId}*F`;
@@ -139,7 +156,7 @@ ${detail(750, 'المورد', `${field(data.supplier)}`)}
 
 /**
  * Undyed roll label. Barcode encodes `<rollId>*K` (dyed uses `*F`);
- * no color / fabric code lines, Arabic details via Swiss 721 (^CW1 → ^A1).
+ * no color / fabric code lines, Arabic details via the slot 1 font (^CW1 → ^A1).
  */
 export function generateUndyedRollLabel(data: UndyedRollLabelData, copies = 2): string {
   return `
