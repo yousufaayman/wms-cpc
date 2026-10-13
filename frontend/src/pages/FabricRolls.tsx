@@ -6,14 +6,13 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer, Recycle } from "lucide-react";
+import { Check, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer, Recycle } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
+import { Combobox } from "@/components/Combobox";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   clientApi, colorApi, materialApi, logicalLocationApi,
@@ -22,6 +21,7 @@ import {
   type ClientFabricCode, type Lot, type FabricRoll, type WarehouseRack,
 } from "@/lib/api";
 import { generateDyedRollLabel, sendZplToDevice } from "@/lib/zpl";
+import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,60 +35,6 @@ interface LockedDetails {
   lengthUnit: "m" | "yd";
   /** Dyed roll this batch's rolls are a remnant/re-ingestion of, if any. */
   originalRollId: number | null;
-}
-
-// ─── Combobox helper ──────────────────────────────────────────────────────────
-
-interface ComboItem { id: number; label: string }
-
-function Combobox({
-  items, value, onSelect, placeholder, disabled = false,
-}: {
-  items: ComboItem[];
-  value: number | null;
-  onSelect: (id: number) => void;
-  placeholder: string;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const { t } = useTranslation();
-  const selected = items.find((i) => i.id === value);
-
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button
-          variant="outline"
-          role="combobox"
-          className="w-full justify-between font-normal"
-          disabled={disabled}
-        >
-          {selected ? selected.label : placeholder}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-full p-0" align="start">
-        <Command>
-          <CommandInput placeholder={t('search')} />
-          <CommandList>
-            <CommandEmpty>{t('noResults')}</CommandEmpty>
-            <CommandGroup>
-              {items.map((item) => (
-                <CommandItem
-                  key={item.id}
-                  value={item.label}
-                  onSelect={() => { onSelect(item.id); setOpen(false); }}
-                >
-                  <Check className={`mr-2 h-4 w-4 ${value === item.id ? "opacity-100" : "opacity-0"}`} />
-                  {item.label}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
@@ -274,6 +220,22 @@ const FabricRolls = () => {
     }
     const ll = logicalLocations.find((x) => x.id === supplierLocationId);
     return ll ? ll.name : null;
+  };
+
+  // Insert-and-select: create a material/color inline (backend get-or-creates by name).
+  const createRef = async <T extends { id: number; name: string }>(
+    api: { create: (name: string) => Promise<T> },
+    setList: (fn: (prev: T[]) => T[]) => void,
+    select: (id: number) => void,
+    name: string,
+  ) => {
+    try {
+      const created = await api.create(name);
+      setList((prev) => (prev.some((x) => x.id === created.id) ? prev : [...prev, created]));
+      select(created.id);
+    } catch {
+      toast.error(t('createFailed'));
+    }
   };
 
   const canLock =
@@ -669,11 +631,23 @@ const FabricRolls = () => {
                       </div>
                       <div className="space-y-1">
                         <Label>{t('material')} *</Label>
-                        <Combobox items={materialItems} value={materialId} onSelect={setMaterialId} placeholder={t('selectMaterial')} />
+                        <Combobox
+                          items={materialItems}
+                          value={materialId}
+                          onSelect={setMaterialId}
+                          onCreate={(n) => createRef(materialApi, setMaterials, setMaterialId, n)}
+                          placeholder={t('selectMaterial')}
+                        />
                       </div>
                       <div className="space-y-1">
                         <Label>{t('color')} *</Label>
-                        <Combobox items={colorItems} value={colorId} onSelect={setColorId} placeholder={t('selectColor')} />
+                        <Combobox
+                          items={colorItems}
+                          value={colorId}
+                          onSelect={setColorId}
+                          onCreate={(n) => createRef(colorApi, setColors, setColorId, n)}
+                          placeholder={t('selectColor')}
+                        />
                       </div>
                     </div>
 
