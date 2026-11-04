@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import {
   Check,
   ChevronDown,
@@ -23,12 +24,15 @@ import {
   Recycle,
   Tag,
   Boxes,
+  Trash2,
   User,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import {
   fabricRollApi,
   undyedFabricRollApi,
@@ -53,6 +57,10 @@ interface RollContext {
   lotNumber?: string | null;
   supplier?: string | null;
 }
+
+// Roll deletion handler for the active tab (dyed/undyed); null when the
+// current user isn't an admin, which hides the delete button entirely.
+const RollDeleteContext = createContext<((rollId: number) => Promise<void>) | null>(null);
 
 // ── Dyed filter / flag types ───────────────────────────────────────────────────
 
@@ -379,7 +387,22 @@ function RollDetailDialog({
 
 function RollTable({ rolls, ctx }: { rolls: InventoryRollDetail[]; ctx: RollContext }) {
   const [selectedRoll, setSelectedRoll] = useState<InventoryRollDetail | null>(null);
+  const [deletingRollId, setDeletingRollId] = useState<number | null>(null);
+  const onDelete = useContext(RollDeleteContext);
   const { t } = useTranslation();
+
+  const handleDelete = async (rollId: number) => {
+    if (!onDelete) return;
+    setDeletingRollId(rollId);
+    try {
+      await onDelete(rollId);
+      toast.success(t('sessionRollDeleted', { id: String(rollId) }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('error'));
+    } finally {
+      setDeletingRollId(null);
+    }
+  };
 
   return (
     <>
@@ -396,7 +419,7 @@ function RollTable({ rolls, ctx }: { rolls: InventoryRollDetail[]; ctx: RollCont
               <TableHead>{t('grade')}</TableHead>
               <TableHead>{t('defects')}</TableHead>
               <TableHead>{t('received')}</TableHead>
-              <TableHead className="w-10"></TableHead>
+              <TableHead className={onDelete ? "w-20" : "w-10"}></TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -424,15 +447,49 @@ function RollTable({ rolls, ctx }: { rolls: InventoryRollDetail[]; ctx: RollCont
                 <TableCell>{roll.defect_points ?? "—"}</TableCell>
                 <TableCell className="text-xs text-muted-foreground">{fmtDate(roll.received_date)}</TableCell>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => setSelectedRoll(roll)}
-                    title={t('viewFullDetails')}
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                  </Button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={() => setSelectedRoll(roll)}
+                      title={t('viewFullDetails')}
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </Button>
+                    {onDelete && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+                            disabled={deletingRollId === roll.id}
+                            title={t('delete')}
+                          >
+                            {deletingRollId === roll.id
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <Trash2 className="h-3.5 w-3.5" />}
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>{t('deleteSessionRollTitle', { id: String(roll.id) })}</AlertDialogTitle>
+                            <AlertDialogDescription>{t('deleteSessionRollDescription')}</AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleDelete(roll.id)}
+                            >
+                              {t('delete')}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             ))}
@@ -918,6 +975,18 @@ const FabricInventory = () => {
 
   useEffect(() => { loadDyed(); loadUndyed(); }, []);
 
+  // Admin-only roll deletion. Refetch without the loading state so the
+  // expanded client/material/lot sections stay open and totals stay correct.
+  const { isAdmin } = useCurrentUser();
+  const deleteDyedRoll = async (rollId: number) => {
+    await fabricRollApi.delete(rollId);
+    setDyedInventory(await fabricRollApi.getInventory());
+  };
+  const deleteUndyedRoll = async (rollId: number) => {
+    await undyedFabricRollApi.delete(rollId);
+    setUndyedInventory(await undyedFabricRollApi.getInventory());
+  };
+
   // ── Dyed: cascading options ──────────────────────────────────────────────────
 
   const dyedClientOptions = useMemo(
@@ -1041,11 +1110,13 @@ const FabricInventory = () => {
                 </div>
               )}
               {!dyedLoading && !dyedError && filteredDyed.length > 0 && (
-                <div className="space-y-3">
-                  {filteredDyed.map((client) => (
-                    <DyedClientCard key={client.client_id} group={client} flags={dyedFlags} />
-                  ))}
-                </div>
+                <RollDeleteContext.Provider value={isAdmin ? deleteDyedRoll : null}>
+                  <div className="space-y-3">
+                    {filteredDyed.map((client) => (
+                      <DyedClientCard key={client.client_id} group={client} flags={dyedFlags} />
+                    ))}
+                  </div>
+                </RollDeleteContext.Provider>
               )}
             </TabsContent>
 
@@ -1073,11 +1144,13 @@ const FabricInventory = () => {
                 </div>
               )}
               {!undyedLoading && !undyedError && filteredUndyed.length > 0 && (
-                <div className="space-y-3">
-                  {filteredUndyed.map((client) => (
-                    <UndyedClientCard key={client.client_id} group={client} flags={undyedFlags} />
-                  ))}
-                </div>
+                <RollDeleteContext.Provider value={isAdmin ? deleteUndyedRoll : null}>
+                  <div className="space-y-3">
+                    {filteredUndyed.map((client) => (
+                      <UndyedClientCard key={client.client_id} group={client} flags={undyedFlags} />
+                    ))}
+                  </div>
+                </RollDeleteContext.Provider>
               )}
             </TabsContent>
 
