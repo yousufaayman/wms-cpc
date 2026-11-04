@@ -130,6 +130,9 @@ export const undyedFabricRollApi = {
   create: (roll: UndyedFabricRollCreate) =>
     api.request<UndyedFabricRoll>('/undyed-fabric-rolls/', 'POST', roll),
 
+  swapWeightLength: (rollId: number) =>
+    api.request<UndyedFabricRoll>(`/undyed-fabric-rolls/${rollId}/swap-weight-length`, 'POST'),
+
   delete: (rollId: number) =>
     api.request<void>(`/undyed-fabric-rolls/${rollId}`, 'DELETE'),
 };

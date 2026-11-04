@@ -8,9 +8,10 @@ import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer } from "lucide-react";
+import { ArrowLeftRight, Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -21,6 +22,7 @@ import {
   type UndyedFabricRoll, type UndyedFabricRollCreate,
 } from "@/lib/api";
 import { generateUndyedRollLabel, sendZplToDevice } from "@/lib/zpl";
+import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -135,6 +137,7 @@ const UndyedFabricRolls = () => {
   const [addErrorField, setAddErrorField] = useState<"weight" | "lot" | null>(null);
   const [sessionRolls, setSessionRolls] = useState<UndyedFabricRoll[]>([]);
   const [rollRackNames, setRollRackNames] = useState<Record<number, string>>({});
+  const [swappingRollId, setSwappingRollId] = useState<number | null>(null);
   const weightRef = useRef<HTMLInputElement>(null);
   const lengthRef = useRef<HTMLInputElement>(null);
   const lotRef = useRef<HTMLInputElement>(null);
@@ -341,6 +344,25 @@ const UndyedFabricRolls = () => {
       lotRef.current?.focus();
     } finally {
       setAddLoading(false);
+    }
+  };
+
+  // Typo correction: weight and length were keyed into each other's field.
+  // Swapped server-side (delivery ledger resynced), then the label reprinted
+  // since the one already on the roll shows the wrong values.
+  const handleSwapWeightLength = async (roll: UndyedFabricRoll) => {
+    setSwappingRollId(roll.id);
+    try {
+      const updated = await undyedFabricRollApi.swapWeightLength(roll.id);
+      setSessionRolls((prev) =>
+        prev.map((r) => (r.id === roll.id ? { ...r, weight: updated.weight, length: updated.length } : r)),
+      );
+      printRollLabel(updated, updated.lot_number ?? "");
+      toast.success(t('swapWeightLengthDone', { id: String(roll.id) }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('error'));
+    } finally {
+      setSwappingRollId(null);
     }
   };
 
@@ -742,6 +764,7 @@ const UndyedFabricRolls = () => {
                               <TableHead>{t('rack')}</TableHead>
                               <TableHead>{t('status')}</TableHead>
                               <TableHead>{t('linkedDelivery')}</TableHead>
+                              <TableHead />
                             </TableRow>
                           </TableHeader>
                           <TableBody>
@@ -767,6 +790,42 @@ const UndyedFabricRolls = () => {
                                       {t('matchedToDelivery', { id: String(roll.matched_delivery_id) })}
                                     </Badge>
                                   ) : "—"}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs flex items-center gap-1"
+                                        disabled={roll.length == null || swappingRollId === roll.id}
+                                        title={roll.length == null ? t('swapWeightLengthNoLength') : undefined}
+                                      >
+                                        {swappingRollId === roll.id
+                                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                                          : <ArrowLeftRight className="h-3 w-3" />}
+                                        {t('swapWeightLength')}
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>{t('swapWeightLengthTitle', { id: String(roll.id) })}</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                          {t('swapWeightLengthDescription', {
+                                            weight: String(roll.weight),
+                                            length: String(roll.length ?? ""),
+                                          })}
+                                          {selectedPrinter && ` ${t('swapWeightLengthReprintHint')}`}
+                                        </AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleSwapWeightLength(roll)}>
+                                          {t('swapWeightLength')}
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
                                 </TableCell>
                               </TableRow>
                             ))}

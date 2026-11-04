@@ -61,6 +61,24 @@ def delete_fabric_roll(db: Session, roll_id: int) -> bool:
     return True
 
 
+def swap_fabric_roll_weight_length(db: Session, roll_id: int) -> Optional[DyedFabricRoll]:
+    """Swap a roll's weight and length to correct an entry typo (the two
+    fields were keyed into each other's input during ingestion)."""
+    db_roll = db.query(DyedFabricRoll).filter(DyedFabricRoll.id == roll_id).first()
+    if not db_roll:
+        return None
+    if db_roll.length is None:
+        raise ValueError("Roll has no length to swap with its weight")
+    db_roll.weight, db_roll.length = db_roll.length, db_roll.weight
+    # Weight/length change the roll's ledger contribution — resync.
+    if db_roll.expected_delivery_item_id is not None:
+        db.flush()
+        sync_delivery_item_from_rolls(db, db_roll.expected_delivery_item_id)
+    db.commit()
+    db.refresh(db_roll)
+    return db_roll
+
+
 def get_fabric_rolls(
     db: Session,
     skip: int = 0,

@@ -67,6 +67,18 @@ def create_fabric_roll(roll: DyedFabricRollCreate, db: Session = Depends(get_db)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.post("/{roll_id}/swap-weight-length", response_model=DyedFabricRoll)
+def swap_fabric_roll_weight_length(roll_id: int, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_INGEST):
+    """Swap a dyed roll's weight and length (typo correction during ingestion)."""
+    try:
+        updated = crud_rolls.swap_fabric_roll_weight_length(db, roll_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if not updated:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    return updated
+
+
 @router.delete("/{roll_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_fabric_roll(roll_id: int, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_INGEST):
     """Delete a dyed fabric roll, reversing its contribution to any linked

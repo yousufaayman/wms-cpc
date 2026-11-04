@@ -116,6 +116,24 @@ def update_undyed_fabric_roll(
     return db_roll
 
 
+def swap_undyed_fabric_roll_weight_length(db: Session, roll_id: int) -> Optional[UndyedFabricRoll]:
+    """Swap a roll's weight and length to correct an entry typo (the two
+    fields were keyed into each other's input during ingestion)."""
+    db_roll = get_undyed_fabric_roll(db, roll_id)
+    if not db_roll:
+        return None
+    if db_roll.length is None:
+        raise ValueError("Roll has no length to swap with its weight")
+    db_roll.weight, db_roll.length = db_roll.length, db_roll.weight
+    # Weight/length change the roll's ledger contribution — resync.
+    if db_roll.expected_delivery_item_id is not None:
+        db.flush()
+        sync_delivery_item_from_rolls(db, db_roll.expected_delivery_item_id)
+    db.commit()
+    db.refresh(db_roll)
+    return db_roll
+
+
 def _build_undyed_lot_groups(rolls_with_racks: list) -> list:
     lot_key_map: Dict[tuple, Dict[str, Any]] = {}
     for roll, rack in rolls_with_racks:
