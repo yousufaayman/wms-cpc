@@ -11,7 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeftRight, Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer } from "lucide-react";
+import { ArrowLeftRight, Check, ChevronsUpDown, Lock, LockOpen, Plus, Loader2, Scissors, ScanBarcode, X, Printer, Trash2 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -138,6 +138,7 @@ const UndyedFabricRolls = () => {
   const [sessionRolls, setSessionRolls] = useState<UndyedFabricRoll[]>([]);
   const [rollRackNames, setRollRackNames] = useState<Record<number, string>>({});
   const [swappingRollId, setSwappingRollId] = useState<number | null>(null);
+  const [deletingRollId, setDeletingRollId] = useState<number | null>(null);
   const weightRef = useRef<HTMLInputElement>(null);
   const lengthRef = useRef<HTMLInputElement>(null);
   const lotRef = useRef<HTMLInputElement>(null);
@@ -363,6 +364,26 @@ const UndyedFabricRolls = () => {
       toast.error(e instanceof Error ? e.message : t('error'));
     } finally {
       setSwappingRollId(null);
+    }
+  };
+
+  const handleReprintLabel = (roll: UndyedFabricRoll) => {
+    setPrintError(null);
+    printRollLabel(roll, roll.lot_number ?? "");
+  };
+
+  // Deletion is only offered for rolls added in the current session; once the
+  // session is reset the list is cleared and the rolls can no longer be removed here.
+  const handleDeleteRoll = async (roll: UndyedFabricRoll) => {
+    setDeletingRollId(roll.id);
+    try {
+      await undyedFabricRollApi.delete(roll.id);
+      setSessionRolls((prev) => prev.filter((r) => r.id !== roll.id));
+      toast.success(t('sessionRollDeleted', { id: String(roll.id) }));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t('error'));
+    } finally {
+      setDeletingRollId(null);
     }
   };
 
@@ -791,7 +812,19 @@ const UndyedFabricRolls = () => {
                                     </Badge>
                                   ) : "—"}
                                 </TableCell>
-                                <TableCell className="text-right">
+                                <TableCell>
+                                  <div className="flex items-center justify-end gap-1">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 px-2 text-xs flex items-center gap-1"
+                                    disabled={!selectedPrinter}
+                                    title={!selectedPrinter ? t('noPrinterSelectedHint') : undefined}
+                                    onClick={() => handleReprintLabel(roll)}
+                                  >
+                                    <Printer className="h-3 w-3" />
+                                    {t('reprintLabel')}
+                                  </Button>
                                   <AlertDialog>
                                     <AlertDialogTrigger asChild>
                                       <Button
@@ -826,6 +859,37 @@ const UndyedFabricRolls = () => {
                                       </AlertDialogFooter>
                                     </AlertDialogContent>
                                   </AlertDialog>
+                                  <AlertDialog>
+                                    <AlertDialogTrigger asChild>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-7 px-2 text-xs flex items-center gap-1 text-destructive hover:text-destructive"
+                                        disabled={deletingRollId === roll.id}
+                                      >
+                                        {deletingRollId === roll.id
+                                          ? <Loader2 className="h-3 w-3 animate-spin" />
+                                          : <Trash2 className="h-3 w-3" />}
+                                        {t('delete')}
+                                      </Button>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                      <AlertDialogHeader>
+                                        <AlertDialogTitle>{t('deleteSessionRollTitle', { id: String(roll.id) })}</AlertDialogTitle>
+                                        <AlertDialogDescription>{t('deleteSessionRollDescription')}</AlertDialogDescription>
+                                      </AlertDialogHeader>
+                                      <AlertDialogFooter>
+                                        <AlertDialogCancel>{t('cancel')}</AlertDialogCancel>
+                                        <AlertDialogAction
+                                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                          onClick={() => handleDeleteRoll(roll)}
+                                        >
+                                          {t('delete')}
+                                        </AlertDialogAction>
+                                      </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                  </AlertDialog>
+                                  </div>
                                 </TableCell>
                               </TableRow>
                             ))}
