@@ -37,7 +37,6 @@ type Kind = "supplier" | "internal" | "external";
 type RollType = "dyed" | "undyed";
 
 interface ScannedRoll extends RollSummary {
-  roll_id: number;
   item_id: number;
   roll_type: RollType;
   lot_number: string | null;
@@ -419,6 +418,19 @@ function ScanView({
                 {scanLoading && <Loader2 className="h-5 w-5 animate-spin self-center text-muted-foreground" />}
               </div>
               {scanError && <p className="text-destructive text-sm">{scanError}</p>}
+              {!scanError && scannedRolls.length > 0 && (() => {
+                const last = scannedRolls[scannedRolls.length - 1];
+                return (
+                  <div className="flex items-center gap-2 flex-wrap rounded-md border border-green-500/50 bg-green-50/50 dark:bg-green-950/30 px-3 py-2 text-sm">
+                    <span className="text-muted-foreground">{t("lastScanned")}:</span>
+                    <span className="font-mono text-lg font-bold">#{last.roll_id}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className="font-medium">{last.material_name} / {last.color_name}</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{fmt(last.weight)} kg</span>
+                  </div>
+                );
+              })()}
             </CardContent>
           </Card>
 
@@ -500,7 +512,14 @@ function ScanView({
                       </TableRow>
                       {mat.colors.map(col => (
                         <TableRow key={`${mat.material_name}-${col.color_name}`} className="text-sm">
-                          <TableCell className="pl-8 text-muted-foreground">{col.color_name}</TableCell>
+                          <TableCell className="pl-8 text-muted-foreground">
+                            {col.color_name}
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {col.roll_ids.map(rid => (
+                                <Badge key={rid} variant="outline" className="font-mono text-[11px] px-1.5 py-0">#{rid}</Badge>
+                              ))}
+                            </div>
+                          </TableCell>
                           <TableCell className="text-right">{col.count}</TableCell>
                           <TableCell className="text-right">{fmt(col.total_length)}</TableCell>
                           <TableCell className="text-right">{fmt(col.total_weight)}</TableCell>

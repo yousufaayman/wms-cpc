@@ -68,9 +68,7 @@ function getKindLabel(kind: ReceiptKind | undefined, t: (key: string) => string)
   return t("supplierReceipts");
 }
 
-interface RollDetail extends RollSummary {
-  roll_id: number;
-}
+type RollDetail = RollSummary;
 
 async function fetchItemsWithDetails(
   kind: ReceiptKind,
@@ -146,7 +144,14 @@ function ItemsContent({
               </TableRow>
               {mat.colors.map(col => (
                 <TableRow key={`${mat.material_name}-${col.color_name}`} className="text-sm">
-                  <TableCell className="pl-8 text-muted-foreground">{col.color_name}</TableCell>
+                  <TableCell className="pl-8 text-muted-foreground">
+                    {col.color_name}
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      {col.roll_ids.map(rid => (
+                        <Badge key={rid} variant="outline" className="font-mono text-[11px] px-1.5 py-0">#{rid}</Badge>
+                      ))}
+                    </div>
+                  </TableCell>
                   <TableCell className="text-right">{col.count}</TableCell>
                   <TableCell className="text-right">{fmt(col.total_length)}</TableCell>
                   <TableCell className="text-right">{fmt(col.total_weight)}</TableCell>

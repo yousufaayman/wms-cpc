@@ -1,4 +1,5 @@
 export interface RollSummary {
+  roll_id: number;
   material_name: string;
   color_name: string;
   weight: number;
@@ -10,6 +11,7 @@ export interface ColorGroup {
   total_weight: number;
   total_length: number | null;
   count: number;
+  roll_ids: number[];
 }
 
 export interface MaterialGroup {
@@ -21,7 +23,7 @@ export interface MaterialGroup {
 }
 
 export function buildMaterialGroups(rolls: RollSummary[]): MaterialGroup[] {
-  const matMap = new Map<string, Map<string, { w: number; l: number | null; n: number }>>();
+  const matMap = new Map<string, Map<string, { w: number; l: number | null; n: number; ids: number[] }>>();
   for (const roll of rolls) {
     if (!matMap.has(roll.material_name)) matMap.set(roll.material_name, new Map());
     const colorMap = matMap.get(roll.material_name)!;
@@ -29,9 +31,10 @@ export function buildMaterialGroups(rolls: RollSummary[]): MaterialGroup[] {
     if (existing) {
       existing.w += roll.weight;
       existing.n += 1;
+      existing.ids.push(roll.roll_id);
       if (roll.length !== null) existing.l = (existing.l ?? 0) + roll.length;
     } else {
-      colorMap.set(roll.color_name, { w: roll.weight, l: roll.length, n: 1 });
+      colorMap.set(roll.color_name, { w: roll.weight, l: roll.length, n: 1, ids: [roll.roll_id] });
     }
   }
 
@@ -40,7 +43,7 @@ export function buildMaterialGroups(rolls: RollSummary[]): MaterialGroup[] {
     const colors: ColorGroup[] = [];
     let mw = 0, ml: number | null = null, mc = 0;
     for (const [colorName, data] of colorMap) {
-      colors.push({ color_name: colorName, total_weight: data.w, total_length: data.l, count: data.n });
+      colors.push({ color_name: colorName, total_weight: data.w, total_length: data.l, count: data.n, roll_ids: data.ids });
       mw += data.w;
       if (data.l !== null) ml = (ml ?? 0) + data.l;
       mc += data.n;
