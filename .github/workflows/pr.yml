@@ -1,0 +1,92 @@
+# Checks every pull request into development or main. Runs on GitHub's
+# machines: it never touches production. Database changes are checked in the
+# cpc-db repo; this only checks the app.
+name: PR checks
+
+on:
+  pull_request:
+    branches: [development, main]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:18-alpine   # same major version as production
+        env:
+          POSTGRES_PASSWORD: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      # Throwaway CI database only, never real credentials.
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ci
+      POSTGRES_DATABASE: ci_dev          # unused in CI; tests build wms_cpc_test
+      SECRET_KEY: ci-only-secret
+      TEST_SCHEMA_SOURCE: atlas          # CI must use the real migration history
+      CPC_DB_MIGRATIONS_DIR: ${{ github.workspace }}/cpc-db/migrations
+      HAS_CPC_DB_TOKEN: ${{ secrets.CPC_DB_READ_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The schema comes from the private cpc-db repo. Until the repo secret
+      # CPC_DB_READ_TOKEN (read-only access to cpc-db) exists, these steps are
+      # skipped and the database tests report "skipped".
+      - name: Check out cpc-db (schema history)
+        if: env.HAS_CPC_DB_TOKEN == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: yousufaayman/cpc-db
+          token: ${{ secrets.CPC_DB_READ_TOKEN }}
+          path: cpc-db
+
+      - name: Install Atlas Community
+        if: env.HAS_CPC_DB_TOKEN == 'true'
+        run: curl -sSf https://atlasgo.sh | sh -s -- --community
+
+      # Same as cpc-db's CI: migrations GRANT to these roles, so they must exist.
+      - name: Create the production role names
+        if: env.HAS_CPC_DB_TOKEN == 'true'
+        run: psql "postgres://postgres:ci@localhost:5432/postgres" -qX -v ON_ERROR_STOP=1 -c "CREATE ROLE cpc_migrator; CREATE ROLE cpc_app; CREATE ROLE cpc_readonly;"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"   # same as backend/Dockerfile
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+
+      - name: Install Python packages
+        run: pip install -r backend/requirements-dev.txt
+
+      # Includes the permission sync check (authz.py vs permissions.ts) and the
+      # models-vs-database check.
+      - name: Backend tests
+        run: python -m pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"   # same as frontend/Dockerfile
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - name: Type-check
+        run: npx tsc -p tsconfig.app.json --noEmit
+      - name: Build
+        run: npm run build

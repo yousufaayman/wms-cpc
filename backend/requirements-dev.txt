@@ -1,0 +1,4 @@
+# Extra packages for running the tests (not installed in the app image).
+-r requirements.txt
+pytest>=8.0
+httpx>=0.27

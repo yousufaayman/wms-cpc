@@ -230,7 +230,7 @@ const ReceiptDetail = () => {
 
   useEffect(() => { loadReceipt(); }, [id, kind]);
 
-  async function handleAction(op: () => Promise<void>) {
+  async function handleAction(op: () => Promise<unknown>) {
     setActionLoading(true);
     try { await op(); loadReceipt(); }
     finally { setActionLoading(false); }

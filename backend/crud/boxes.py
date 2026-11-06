@@ -265,53 +265,6 @@ def refresh_box_aggregations(db: Session) -> None:
     db.commit()
 
 
-def bulk_create_boxes_with_contents(
-    db: Session, 
-    boxes_data: List[Dict[str, Any]], 
-    box_contents_data: List[Dict[str, Any]]
-) -> None:
-    """Create multiple boxes and their contents efficiently with disabled triggers."""
-    try:
-        # Disable triggers for bulk operation
-        db.execute(text("ALTER TABLE wms.box_contents DISABLE TRIGGER ALL"))
-        db.execute(text("ALTER TABLE wms.boxes DISABLE TRIGGER ALL"))
-        
-        # Insert boxes
-        if boxes_data:
-            for box_data in boxes_data:
-                box = Box(**box_data)
-                db.add(box)
-            db.flush()  # Get the IDs without committing
-        
-        # Insert box contents
-        if box_contents_data:
-            for content_data in box_contents_data:
-                content = BoxContent(**content_data)
-                db.add(content)
-        
-        # Commit all changes
-        db.commit()
-        
-        # Re-enable triggers
-        db.execute(text("ALTER TABLE wms.box_contents ENABLE TRIGGER ALL"))
-        db.execute(text("ALTER TABLE wms.boxes ENABLE TRIGGER ALL"))
-        
-        # Schedule a single refresh for all changes
-        db.execute(text("SELECT wms.schedule_aggregation_refresh()"))
-        db.commit()
-        
-    except Exception as e:
-        db.rollback()
-        # Re-enable triggers even on error
-        try:
-            db.execute(text("ALTER TABLE wms.box_contents ENABLE TRIGGER ALL"))
-            db.execute(text("ALTER TABLE wms.boxes ENABLE TRIGGER ALL"))
-            db.commit()
-        except:
-            pass
-        raise e
-
-
 def get_aggregation_status(db: Session) -> Dict[str, Any]:
     """Get current status of aggregations."""
     try:
