@@ -190,3 +190,5 @@ frontend/.parcel-cache/
 frontend/.env
 frontend/.env.local
 frontend/.env.*.local
+/development_DOCs
+CLAUDE.md
