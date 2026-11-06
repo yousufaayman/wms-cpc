@@ -6,6 +6,7 @@ from backend import models
 from backend.core.deps import get_db, require_permission
 from backend.core.authz import PERM_CREATE_RECEIPTS
 from backend.crud import material_request_fulfillments as crud
+from backend.core.warehouse_modules import ensure_receipt_line_kind
 from backend.schemas import (
     MaterialRequestFulfillment,
     MaterialRequestFulfillmentCreate,
@@ -48,6 +49,12 @@ def create_fulfillment(
     db: Session = Depends(get_db),
     current_user: models.User = _REQUIRE_CREATE_RECEIPTS,
 ):
+    # Material requests are fabric requests: they can only be issued on a
+    # receipt from a Fabric warehouse.
+    for kind in ("internal", "supplier", "external"):
+        rid = getattr(fulfillment, f"{kind}_receipt_id")
+        if rid is not None:
+            ensure_receipt_line_kind(db, kind, rid, "fabric")
     try:
         return crud.create_fulfillment(db, fulfillment=fulfillment)
     except ValueError as e:

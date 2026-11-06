@@ -200,3 +200,6 @@ export {
   type ExpectedDeliveryStatus,
   type SupplierType,
 } from './expected-deliveries';
+
+// Export feature flag types and API
+export { featureApi, type Features } from './features';

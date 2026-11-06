@@ -7,6 +7,8 @@ from backend.core.authz import PERM_INGEST_FABRIC, PERM_ANALYTICS
 from backend.crud import fabric_rolls as crud_rolls
 from backend.schemas import DyedFabricRoll, DyedFabricRollCreate, ClientInventoryGroup, FabricRollDetail, DyedRollFlowEntry
 
+from backend.core.warehouse_modules import ensure_rack_module
+
 router = APIRouter()
 
 _NOT_FOUND = "Dyed fabric roll not found"
@@ -61,6 +63,7 @@ def get_fabric_roll(roll_id: int, db: Session = Depends(get_db)):
 @router.post("/", response_model=DyedFabricRoll, status_code=status.HTTP_201_CREATED)
 def create_fabric_roll(roll: DyedFabricRollCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_INGEST):
     """Create a new dyed fabric roll, recording who ingested it."""
+    ensure_rack_module(db, roll.rack_id, "fabric_rolls")
     try:
         return crud_rolls.create_fabric_roll(db, roll, ingested_by=current_user.id)
     except ValueError as e:

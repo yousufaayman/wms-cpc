@@ -751,6 +751,9 @@ export const translations = {
     // Loading / Auth guards
     pleaseWaitLoadingContent: "Please wait while we load the content...",
     checkingAccess: "Checking access...",
+    moduleNotAvailableTitle: "Not available here",
+    moduleNotAvailableInWarehouse: "This page isn't part of {{name}}, or it hasn't been switched on yet.",
+    accessoryRequirementsComingSoon: "Fabric requests are handled in the Fabric warehouse. Accessory job-order requirements will appear here in a later update.",
     checkingAuthentication: "Checking authentication...",
 
     // Languages
@@ -1509,6 +1512,9 @@ export const translations = {
     // Loading / Auth guards
     pleaseWaitLoadingContent: "يرجى الانتظار أثناء تحميل المحتوى...",
     checkingAccess: "جاري التحقق من الصلاحية...",
+    moduleNotAvailableTitle: "غير متاح هنا",
+    moduleNotAvailableInWarehouse: "هذه الصفحة ليست جزءًا من {{name}}، أو لم يتم تفعيلها بعد.",
+    accessoryRequirementsComingSoon: "طلبات القماش تُدار من مخزن القماش. احتياجات الإكسسوارات لأوامر الشغل ستظهر هنا في تحديث لاحق.",
     checkingAuthentication: "جاري التحقق من الهوية...",
 
     // Languages

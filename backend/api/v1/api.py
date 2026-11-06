@@ -25,6 +25,7 @@ from .endpoints import (
     undyed_fabric_rolls,
     receipt_items,
     expected_deliveries,
+    features,
     material_requests,
     material_request_fulfillments,
 )
@@ -60,4 +61,5 @@ api_router.include_router(receipt_items.router, prefix="/receipts", tags=["recei
 api_router.include_router(expected_deliveries.router, prefix="/expected-deliveries", tags=["expected-deliveries"], dependencies=_WT_OR_ADMIN)
 api_router.include_router(material_requests.router, prefix="/job-order-material-requests", tags=["job-order-material-requests"], dependencies=_WT_OR_ADMIN)
 api_router.include_router(material_request_fulfillments.router, prefix="/material-request-fulfillments", tags=["material-request-fulfillments"], dependencies=_WT_OR_ADMIN)
+api_router.include_router(features.router, prefix="/features", tags=["features"], dependencies=_WT_OR_ADMIN)
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"], dependencies=_WT_OR_ADMIN)

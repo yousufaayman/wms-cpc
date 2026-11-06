@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     SECRET_KEY: str = ""
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 300
+
+    # Feature flags: switch unfinished modules on per deployment via .env
+    # (prod: the ENV_FILE secret). Off unless set to true/1/yes. Exposed to
+    # the frontend by GET /api/v1/features (endpoints/features.py).
+    # Needle exchange lives inside the Accessory warehouse, so it only counts
+    # as on when accessories are on too (see features_enabled below).
+    FEATURE_ACCESSORIES: bool = False
+    FEATURE_NEEDLES: bool = False
     
     model_config = SettingsConfigDict(case_sensitive=True, env_file=(".env", "backend/.env"), extra="ignore")
 
@@ -38,6 +46,13 @@ class Settings(BaseSettings):
         except Exception:
             pass
         return [origin.strip() for origin in value.split(',') if origin.strip()]
+
+    def features_enabled(self) -> dict:
+        """The effective on/off state of each feature flag."""
+        return {
+            "accessories": self.FEATURE_ACCESSORIES,
+            "needles": self.FEATURE_ACCESSORIES and self.FEATURE_NEEDLES,
+        }
 
     @field_validator("POSTGRES_PASSWORD", "SECRET_KEY", mode="after")
     @classmethod

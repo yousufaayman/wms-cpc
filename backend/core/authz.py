@@ -56,6 +56,27 @@ PERM_ANALYTICS = "analytics"
 # read-only and restricted to receipts, fabric inventory, and analytics.
 PERM_OPERATIONS = "operations"
 
+# Accessory warehouse (role matrix: development_DOCs/Tab 1.md, "Roles and
+# permissions"). Viewing Accessory Inventory and accessory receipts needs no
+# permission, as with fabric. Reclassify, merge-duplicate-items and reversals
+# are admin-only: they get no permission and are checked with ensure_admin.
+#   manage_accessory_items     create/edit items, templates, variants, trim refs
+#   receive_accessories        supplier receipts, split into packs, labels, move packs
+#   confirm_accessory_receipts confirm accessory receipts (posts to the ledger);
+#                              separate from confirm_receipts so W_Manager can
+#                              confirm accessories while fabric stays admin-only
+#   manage_jo_requirements     JO accessory requirement lines
+#   issue_accessories          issue to JOs, returns from the floor, split/merge packs
+#   needle_exchange            needle exchanges
+#   adjust_accessories         adjustments, write-offs, opening balance (admin only)
+PERM_MANAGE_ACCESSORY_ITEMS = "manage_accessory_items"
+PERM_RECEIVE_ACCESSORIES = "receive_accessories"
+PERM_CONFIRM_ACCESSORY_RECEIPTS = "confirm_accessory_receipts"
+PERM_MANAGE_JO_REQUIREMENTS = "manage_jo_requirements"
+PERM_ISSUE_ACCESSORIES = "issue_accessories"
+PERM_NEEDLE_EXCHANGE = "needle_exchange"
+PERM_ADJUST_ACCESSORIES = "adjust_accessories"
+
 ROLE_PERMISSIONS = {
     ROLE_W_MANAGER: {
         PERM_CREATE_RECEIPTS,
@@ -65,17 +86,27 @@ ROLE_PERMISSIONS = {
         PERM_LOGICAL_LOCATIONS,
         PERM_ANALYTICS,
         PERM_OPERATIONS,
+        PERM_MANAGE_ACCESSORY_ITEMS,
+        PERM_RECEIVE_ACCESSORIES,
+        PERM_CONFIRM_ACCESSORY_RECEIPTS,
+        PERM_MANAGE_JO_REQUIREMENTS,
+        PERM_ISSUE_ACCESSORIES,
+        PERM_NEEDLE_EXCHANGE,
     },
     ROLE_W_WORKER: {
         PERM_CREATE_RECEIPTS,
         PERM_INGEST_FABRIC,
         PERM_OPERATIONS,
+        PERM_RECEIVE_ACCESSORIES,
+        PERM_ISSUE_ACCESSORIES,
+        PERM_NEEDLE_EXCHANGE,
     },
     ROLE_GEN_OPS: {
         PERM_MANAGE_EXPECTED_DELIVERIES,
         PERM_LOGICAL_LOCATIONS,
         PERM_ANALYTICS,
         PERM_OPERATIONS,
+        PERM_MANAGE_JO_REQUIREMENTS,
     },
     ROLE_VIEWER: {
         PERM_ANALYTICS,

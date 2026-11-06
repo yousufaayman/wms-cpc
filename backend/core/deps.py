@@ -59,3 +59,15 @@ def require_permission(permission: str):
     ) -> models.User:
         return ensure_permission(db, current_user, permission)
     return _dependency
+
+def require_feature(feature: str):
+    """Dependency factory: 404s while feature flag `feature` is off
+    (see settings.features_enabled), so a switched-off module's endpoints
+    look like they don't exist. Use on accessory/needle routers."""
+    if feature not in settings.features_enabled():
+        raise ValueError(f"Unknown feature flag: {feature!r}")
+
+    def _dependency() -> None:
+        if not settings.features_enabled()[feature]:
+            raise HTTPException(status_code=404, detail="Not Found")
+    return _dependency

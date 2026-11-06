@@ -7,6 +7,8 @@ from backend.core.authz import PERM_INGEST_FABRIC, PERM_ANALYTICS
 from backend.crud import undyed_fabric_rolls as crud_rolls
 from backend.schemas import UndyedFabricRoll, UndyedFabricRollCreate, UndyedFabricRollUpdate, UndyedClientInventoryGroup, UndyedFabricRollDetail, UndyedRollFlowEntry
 
+from backend.core.warehouse_modules import ensure_rack_module
+
 router = APIRouter()
 
 _NOT_FOUND = "Undyed fabric roll not found"
@@ -61,12 +63,15 @@ def get_undyed_fabric_roll(roll_id: int, db: Session = Depends(get_db)):
 @router.post("/", response_model=UndyedFabricRoll, status_code=status.HTTP_201_CREATED)
 def create_undyed_fabric_roll(roll: UndyedFabricRollCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_INGEST):
     """Create a new undyed fabric roll, recording who ingested it."""
+    ensure_rack_module(db, roll.rack_id, "fabric_rolls")
     return crud_rolls.create_undyed_fabric_roll(db, roll, ingested_by=current_user.id)
 
 
 @router.patch("/{roll_id}", response_model=UndyedFabricRoll)
 def update_undyed_fabric_roll(roll_id: int, roll: UndyedFabricRollUpdate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_INGEST):
     """Update an undyed fabric roll."""
+    if roll.rack_id is not None:
+        ensure_rack_module(db, roll.rack_id, "fabric_rolls")
     updated = crud_rolls.update_undyed_fabric_roll(db, roll_id, roll)
     if not updated:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)

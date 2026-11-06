@@ -6,6 +6,7 @@ from backend import models
 from backend.core.authz import ensure_admin, PERM_OPERATIONS
 from backend.core.deps import get_db, get_current_user, require_permission
 from backend.crud import material_requests as crud
+from backend.core.warehouse_modules import FABRIC, ensure_module
 from backend.schemas import (
     JobOrderMaterialRequest,
     JobOrderMaterialRequestCreate,
@@ -25,9 +26,17 @@ def list_material_requests(
     limit: int = 100,
     job_order_id: Optional[int] = Query(None),
     fulfilled: Optional[bool] = Query(None),
+    warehouse_id: Optional[int] = Query(None, description="Only the requests this warehouse fulfils"),
     db: Session = Depends(get_db),
     current_user: models.User = _REQUIRE_OPERATIONS,
 ):
+    # These rows are fabric requests (core.job_order_material_requests). An
+    # Accessory warehouse has its own JO requirements (item 19), so it gets
+    # none of them; a warehouse without the module gets a 400.
+    if warehouse_id is not None:
+        wh = ensure_module(db, warehouse_id, "material_requests")
+        if getattr(wh.type, "value", wh.type) != FABRIC:
+            return []
     return crud.get_material_requests(
         db, skip=skip, limit=limit, job_order_id=job_order_id, fulfilled=fulfilled
     )

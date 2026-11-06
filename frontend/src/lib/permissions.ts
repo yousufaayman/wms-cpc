@@ -11,7 +11,15 @@ export type Permission =
   | "warehouse_racks"
   | "logical_locations"
   | "analytics"
-  | "operations";
+  | "operations"
+  // Accessory warehouse (see authz.py for what each covers)
+  | "manage_accessory_items"
+  | "receive_accessories"
+  | "confirm_accessory_receipts"
+  | "manage_jo_requirements"
+  | "issue_accessories"
+  | "needle_exchange"
+  | "adjust_accessories";
 
 const ROLE_PERMISSIONS: Record<WmsRole, Set<Permission>> = {
   admin: new Set(), // admin bypasses the set entirely — see hasPermission
@@ -23,17 +31,27 @@ const ROLE_PERMISSIONS: Record<WmsRole, Set<Permission>> = {
     "logical_locations",
     "analytics",
     "operations",
+    "manage_accessory_items",
+    "receive_accessories",
+    "confirm_accessory_receipts",
+    "manage_jo_requirements",
+    "issue_accessories",
+    "needle_exchange",
   ]),
   W_Worker: new Set<Permission>([
     "create_receipts",
     "ingest_fabric",
     "operations",
+    "receive_accessories",
+    "issue_accessories",
+    "needle_exchange",
   ]),
   gen_ops: new Set<Permission>([
     "manage_expected_deliveries",
     "logical_locations",
     "analytics",
     "operations",
+    "manage_jo_requirements",
   ]),
   Viewer: new Set<Permission>([
     "analytics",

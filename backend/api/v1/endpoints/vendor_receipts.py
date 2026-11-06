@@ -8,6 +8,7 @@ from backend import models
 from backend.crud import vendor_receipts as crud
 from backend.schemas import SupplierReceipt, SupplierReceiptCreate, SupplierReceiptUpdate
 
+from backend.core.warehouse_modules import ensure_module, ensure_same_warehouse_type
 router = APIRouter()
 
 _NOT_FOUND = "Supplier receipt not found"
@@ -39,6 +40,7 @@ def create_vendor_receipt(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
+    ensure_module(db, receipt.source_warehouse_id, "receipts")
     return crud.create_vendor_receipt(db, receipt=receipt, issued_by=current_user.id)
 
 
@@ -52,6 +54,8 @@ def update_vendor_receipt(
     db_receipt = crud.get_vendor_receipt(db, receipt_id=receipt_id)
     if not db_receipt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
+    if receipt.source_warehouse_id is not None:
+        ensure_same_warehouse_type(db, db_receipt.source_warehouse_id, receipt.source_warehouse_id, "receipts")
     return crud.update_vendor_receipt(db, receipt_id=receipt_id, receipt=receipt)
 
 

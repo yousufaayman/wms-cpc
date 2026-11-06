@@ -12,6 +12,7 @@ from backend.schemas import (
     ExternalReceiptUpdate,
 )
 
+from backend.core.warehouse_modules import ensure_module, ensure_same_warehouse_type
 router = APIRouter()
 
 
@@ -41,6 +42,7 @@ def create_external_receipt(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
+    ensure_module(db, receipt.source_warehouse_id, "receipts")
     return crud.create_external_receipt(db, receipt=receipt, issued_by=current_user.id)
 
 
@@ -54,6 +56,8 @@ def update_external_receipt(
     db_receipt = crud.get_external_receipt(db, receipt_id=receipt_id)
     if not db_receipt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="External receipt not found")
+    if receipt.source_warehouse_id is not None:
+        ensure_same_warehouse_type(db, db_receipt.source_warehouse_id, receipt.source_warehouse_id, "receipts")
     return crud.update_external_receipt(db, receipt_id=receipt_id, receipt=receipt)
 
 

@@ -27,11 +27,11 @@ const MaterialRequestsWidget = ({ warehouseId }: WidgetProps) => {
     // Server returns requests ordered by job order priority (most urgent
     // first), so the first N unfulfilled rows are the top N.
     materialRequestApi
-      .getAll({ fulfilled: false, limit: TOP_N })
+      .getAll({ fulfilled: false, limit: TOP_N, warehouse_id: warehouseId })
       .then(setRequests)
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, []);
+  }, [warehouseId]);
 
   // Lands on the Material Requests page with the issue-receipt dialog open
   // for this request — the path into the receipt create/scan view.

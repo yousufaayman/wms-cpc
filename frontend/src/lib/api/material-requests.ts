@@ -46,6 +46,8 @@ export interface MaterialRequestCreate {
 export interface MaterialRequestFilters {
   job_order_id?: number;
   fulfilled?: boolean;
+  /** Only the requests this warehouse fulfils (none for non-Fabric warehouses yet). */
+  warehouse_id?: number;
   skip?: number;
   limit?: number;
 }
@@ -70,6 +72,7 @@ export const materialRequestApi = {
     const params = new URLSearchParams();
     if (filters?.job_order_id !== undefined) params.append('job_order_id', String(filters.job_order_id));
     if (filters?.fulfilled !== undefined) params.append('fulfilled', String(filters.fulfilled));
+    if (filters?.warehouse_id !== undefined) params.append('warehouse_id', String(filters.warehouse_id));
     if (filters?.skip !== undefined) params.append('skip', String(filters.skip));
     if (filters?.limit !== undefined) params.append('limit', String(filters.limit));
     const qs = params.toString();

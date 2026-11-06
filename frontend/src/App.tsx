@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import LoadingSpinner from "./components/LoadingSpinner";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RequirePermission from "./components/RequirePermission";
+import RequireModule from "./components/RequireModule";
 import { LanguageProvider } from "./contexts/LanguageContext";
 
 // Lazy load Dashboard component
@@ -49,9 +50,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="operations">
-                    <Suspense fallback={<LoadingSpinner message="Loading Dashboard..." />}>
-                      <Dashboard />
-                    </Suspense>
+                    <RequireModule module="dashboard">
+                      <Suspense fallback={<LoadingSpinner message="Loading Dashboard..." />}>
+                        <Dashboard />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -61,9 +64,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="warehouse_racks">
-                    <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
-                      <ManageWarehouseRacks />
-                    </Suspense>
+                    <RequireModule module="warehouse_racks">
+                      <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
+                        <ManageWarehouseRacks />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -73,9 +78,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="logical_locations">
-                    <Suspense fallback={<LoadingSpinner message="Loading Logical Locations..." />}>
-                      <ManageLogicalLocations />
-                    </Suspense>
+                    <RequireModule module="logical_locations">
+                      <Suspense fallback={<LoadingSpinner message="Loading Logical Locations..." />}>
+                        <ManageLogicalLocations />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -85,9 +92,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission anyRole>
-                    <Suspense fallback={<LoadingSpinner message="Loading Receipts..." />}>
-                      <Receipts />
-                    </Suspense>
+                    <RequireModule module="receipts">
+                      <Suspense fallback={<LoadingSpinner message="Loading Receipts..." />}>
+                        <Receipts />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -97,9 +106,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="create_receipts">
-                    <Suspense fallback={<LoadingSpinner message="Loading..." />}>
-                      <CreateReceipt />
-                    </Suspense>
+                    <RequireModule module="receipts">
+                      <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                        <CreateReceipt />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -109,9 +120,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission anyRole>
-                    <Suspense fallback={<LoadingSpinner message="Loading Receipt Details..." />}>
-                      <ReceiptDetail />
-                    </Suspense>
+                    <RequireModule module="receipts">
+                      <Suspense fallback={<LoadingSpinner message="Loading Receipt Details..." />}>
+                        <ReceiptDetail />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -121,9 +134,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="ingest_fabric">
-                    <Suspense fallback={<LoadingSpinner message="Loading Fabric Rolls..." />}>
-                      <FabricRolls />
-                    </Suspense>
+                    <RequireModule module="fabric_rolls">
+                      <Suspense fallback={<LoadingSpinner message="Loading Fabric Rolls..." />}>
+                        <FabricRolls />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -133,9 +148,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission anyRole>
-                    <Suspense fallback={<LoadingSpinner message="Loading Fabric Inventory..." />}>
-                      <FabricInventory />
-                    </Suspense>
+                    <RequireModule module="fabric_inventory">
+                      <Suspense fallback={<LoadingSpinner message="Loading Fabric Inventory..." />}>
+                        <FabricInventory />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -145,9 +162,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="ingest_fabric">
-                    <Suspense fallback={<LoadingSpinner message="Loading Undyed Fabric Rolls..." />}>
-                      <UndyedFabricRolls />
-                    </Suspense>
+                    <RequireModule module="fabric_rolls">
+                      <Suspense fallback={<LoadingSpinner message="Loading Undyed Fabric Rolls..." />}>
+                        <UndyedFabricRolls />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -157,9 +176,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="operations">
-                    <Suspense fallback={<LoadingSpinner message="Loading Expected Deliveries..." />}>
-                      <ExpectedDeliveries />
-                    </Suspense>
+                    <RequireModule module="expected_deliveries">
+                      <Suspense fallback={<LoadingSpinner message="Loading Expected Deliveries..." />}>
+                        <ExpectedDeliveries />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -169,9 +190,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="operations">
-                    <Suspense fallback={<LoadingSpinner message="Loading Delivery..." />}>
-                      <ExpectedDeliveryDetail />
-                    </Suspense>
+                    <RequireModule module="expected_deliveries">
+                      <Suspense fallback={<LoadingSpinner message="Loading Delivery..." />}>
+                        <ExpectedDeliveryDetail />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -181,9 +204,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="operations">
-                    <Suspense fallback={<LoadingSpinner message="Loading Material Requests..." />}>
-                      <MaterialRequests />
-                    </Suspense>
+                    <RequireModule module="material_requests">
+                      <Suspense fallback={<LoadingSpinner message="Loading Material Requests..." />}>
+                        <MaterialRequests />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }
@@ -193,9 +218,11 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <RequirePermission permission="analytics">
-                    <Suspense fallback={<LoadingSpinner message="Loading Analytics..." />}>
-                      <Analytics />
-                    </Suspense>
+                    <RequireModule module="analytics">
+                      <Suspense fallback={<LoadingSpinner message="Loading Analytics..." />}>
+                        <Analytics />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }

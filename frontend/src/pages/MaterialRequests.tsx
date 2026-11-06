@@ -16,6 +16,7 @@ import { ReceiverField } from "@/components/ReceiverField";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useWarehouse } from "@/hooks/useWarehouse";
 import {
   materialRequestApi, type MaterialRequest,
   materialRequestFulfillmentApi,
@@ -49,6 +50,8 @@ export default function MaterialRequests() {
   const { t } = useTranslation();
   useLanguage();
   const { isAdmin } = useCurrentUser();
+  // The page is behind RequireModule, so a warehouse is always selected.
+  const { warehouse: currentWarehouse } = useWarehouse();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const warehouseParam = searchParams.get("warehouse");
@@ -84,12 +87,12 @@ export default function MaterialRequests() {
     setLoading(true);
     // The API returns requests sorted by job order priority (most urgent first)
     materialRequestApi
-      .getAll({ limit: 500 })
+      .getAll({ limit: 500, ...(warehouseParam ? { warehouse_id: Number(warehouseParam) } : {}) })
       .then(setRequests)
       .catch(() => toast.error(t("failedToLoadMaterialRequests")))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [warehouseParam]);
 
   const filtered = requests.filter(r => {
     if (fulfilledFilter === "fulfilled" && !r.fulfilled) return false;
@@ -285,6 +288,9 @@ export default function MaterialRequests() {
               {t("materialRequests")}
             </h1>
             <p className="text-muted-foreground text-sm mt-1">{t("materialRequestsDesc")}</p>
+            {currentWarehouse?.type === "Accessory" && (
+              <p className="text-sm mt-2 rounded-md border bg-muted/50 px-3 py-2">{t("accessoryRequirementsComingSoon")}</p>
+            )}
           </div>
 
           <Tabs defaultValue="job-orders">
@@ -498,7 +504,9 @@ export default function MaterialRequests() {
                   <div className="space-y-1.5">
                     <Label>{t("sourceWarehouse")} *</Label>
                     <Combobox
-                      items={warehouses.map(w => ({ id: w.id, label: w.name }))}
+                      items={warehouses
+                        .filter(w => !currentWarehouse || w.type === currentWarehouse.type)
+                        .map(w => ({ id: w.id, label: w.name }))}
                       value={sourceWarehouseId}
                       onSelect={setSourceWarehouseId}
                       placeholder={t("selectSourceWarehouse")}
