@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from typing import List, Optional
 
+from backend.domains import posting
 from backend.models import InternalReceipt
 from backend.schemas import InternalReceiptCreate, InternalReceiptUpdate
 
@@ -66,6 +67,7 @@ def confirm_internal_receipt(db: Session, receipt_id: int, confirmed_by: int) ->
     if db_receipt and db_receipt.status == 'issued':
         db_receipt.status = 'confirmed'
         db_receipt.confirmed_by = confirmed_by
+        posting.post_confirm(db, "internal", db_receipt, confirmed_by)
         db.commit()
         db.refresh(db_receipt)
     return db_receipt
