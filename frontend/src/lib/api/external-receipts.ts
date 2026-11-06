@@ -44,14 +44,15 @@ export const externalReceiptApi = {
 
   getById: (id: number) => api.request<ExternalReceipt>(`/external-receipts/${id}`),
 
-  create: (receipt: ExternalReceiptCreate, issuedBy: number) =>
-    api.request<ExternalReceipt>(`/external-receipts?issued_by=${issuedBy}`, 'POST', receipt),
+  // The server records the logged-in user as issuer/closer/confirmer.
+  create: (receipt: ExternalReceiptCreate) =>
+    api.request<ExternalReceipt>(`/external-receipts`, 'POST', receipt),
 
   update: (id: number, receipt: ExternalReceiptUpdate) =>
     api.request<ExternalReceipt>(`/external-receipts/${id}`, 'PUT', receipt),
 
-  close: (id: number, closedBy: number) =>
-    api.request<ExternalReceipt>(`/external-receipts/${id}/close`, 'POST', { closed_by: closedBy }),
+  close: (id: number) =>
+    api.request<ExternalReceipt>(`/external-receipts/${id}/close`, 'POST'),
 
   open: (id: number) =>
     api.request<ExternalReceipt>(`/external-receipts/${id}/open`, 'POST'),

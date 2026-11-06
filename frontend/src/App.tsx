@@ -84,9 +84,11 @@ const App = () => (
               path="/receipts"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Receipts..." />}>
-                    <Receipts />
-                  </Suspense>
+                  <RequirePermission anyRole>
+                    <Suspense fallback={<LoadingSpinner message="Loading Receipts..." />}>
+                      <Receipts />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />
@@ -106,9 +108,11 @@ const App = () => (
               path="/receipts/:kind/:id"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Receipt Details..." />}>
-                    <ReceiptDetail />
-                  </Suspense>
+                  <RequirePermission anyRole>
+                    <Suspense fallback={<LoadingSpinner message="Loading Receipt Details..." />}>
+                      <ReceiptDetail />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />
@@ -128,9 +132,11 @@ const App = () => (
               path="/fabric-inventory"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading Fabric Inventory..." />}>
-                    <FabricInventory />
-                  </Suspense>
+                  <RequirePermission anyRole>
+                    <Suspense fallback={<LoadingSpinner message="Loading Fabric Inventory..." />}>
+                      <FabricInventory />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />
@@ -198,9 +204,11 @@ const App = () => (
               path="/user-management"
               element={
                 <ProtectedRoute>
-                  <Suspense fallback={<LoadingSpinner message="Loading User Management..." />}>
-                    <UserManagement />
-                  </Suspense>
+                  <RequirePermission adminOnly>
+                    <Suspense fallback={<LoadingSpinner message="Loading User Management..." />}>
+                      <UserManagement />
+                    </Suspense>
+                  </RequirePermission>
                 </ProtectedRoute>
               }
             />

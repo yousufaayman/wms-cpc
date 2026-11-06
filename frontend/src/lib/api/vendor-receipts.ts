@@ -47,14 +47,15 @@ export const supplierReceiptApi = {
 
   getById: (id: number) => api.request<SupplierReceipt>(`/supplier-receipts/${id}`),
 
-  create: (receipt: SupplierReceiptCreate, issuedBy: number) =>
-    api.request<SupplierReceipt>(`/supplier-receipts?issued_by=${issuedBy}`, 'POST', receipt),
+  // The server records the logged-in user as issuer/closer/confirmer.
+  create: (receipt: SupplierReceiptCreate) =>
+    api.request<SupplierReceipt>(`/supplier-receipts`, 'POST', receipt),
 
   update: (id: number, receipt: SupplierReceiptUpdate) =>
     api.request<SupplierReceipt>(`/supplier-receipts/${id}`, 'PUT', receipt),
 
-  close: (id: number, closedBy: number) =>
-    api.request<SupplierReceipt>(`/supplier-receipts/${id}/close`, 'POST', { closed_by: closedBy }),
+  close: (id: number) =>
+    api.request<SupplierReceipt>(`/supplier-receipts/${id}/close`, 'POST'),
 
   open: (id: number) =>
     api.request<SupplierReceipt>(`/supplier-receipts/${id}/open`, 'POST'),

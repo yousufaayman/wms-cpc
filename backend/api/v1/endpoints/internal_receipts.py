@@ -10,8 +10,6 @@ from backend.schemas import (
     InternalReceipt,
     InternalReceiptCreate,
     InternalReceiptUpdate,
-    InternalReceiptConfirm,
-    InternalReceiptClose,
 )
 
 router = APIRouter()
@@ -45,11 +43,10 @@ def get_internal_receipt(receipt_id: int, db: Session = Depends(get_db)):
 @router.post("/", response_model=InternalReceipt, status_code=status.HTTP_201_CREATED)
 def create_internal_receipt(
     receipt: InternalReceiptCreate,
-    issued_by: int = Query(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
-    return crud.create_internal_receipt(db, receipt=receipt, issued_by=issued_by)
+    return crud.create_internal_receipt(db, receipt=receipt, issued_by=current_user.id)
 
 
 @router.put("/{receipt_id}", response_model=InternalReceipt)
@@ -68,11 +65,10 @@ def update_internal_receipt(
 @router.post("/{receipt_id}/confirm", response_model=InternalReceipt)
 def confirm_internal_receipt(
     receipt_id: int,
-    body: InternalReceiptConfirm,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CONFIRM_RECEIPTS)),
 ):
-    receipt = crud.confirm_internal_receipt(db, receipt_id=receipt_id, confirmed_by=body.confirmed_by)
+    receipt = crud.confirm_internal_receipt(db, receipt_id=receipt_id, confirmed_by=current_user.id)
     if not receipt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internal receipt not found")
     return receipt
@@ -81,11 +77,10 @@ def confirm_internal_receipt(
 @router.post("/{receipt_id}/close", response_model=InternalReceipt)
 def close_internal_receipt(
     receipt_id: int,
-    body: InternalReceiptClose,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
-    receipt = crud.close_internal_receipt(db, receipt_id=receipt_id, closed_by=body.closed_by)
+    receipt = crud.close_internal_receipt(db, receipt_id=receipt_id, closed_by=current_user.id)
     if not receipt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Internal receipt not found")
     return receipt

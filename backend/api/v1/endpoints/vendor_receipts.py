@@ -6,7 +6,7 @@ from backend.core.deps import get_db, get_current_active_superuser, require_perm
 from backend.core.authz import PERM_CREATE_RECEIPTS, PERM_DELETE_RECEIPTS
 from backend import models
 from backend.crud import vendor_receipts as crud
-from backend.schemas import SupplierReceipt, SupplierReceiptCreate, SupplierReceiptUpdate, SupplierReceiptClose
+from backend.schemas import SupplierReceipt, SupplierReceiptCreate, SupplierReceiptUpdate
 
 router = APIRouter()
 
@@ -36,11 +36,10 @@ def get_vendor_receipt(receipt_id: int, db: Session = Depends(get_db)):
 @router.post("/", response_model=SupplierReceipt, status_code=status.HTTP_201_CREATED)
 def create_vendor_receipt(
     receipt: SupplierReceiptCreate,
-    issued_by: int = Query(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
-    return crud.create_vendor_receipt(db, receipt=receipt, issued_by=issued_by)
+    return crud.create_vendor_receipt(db, receipt=receipt, issued_by=current_user.id)
 
 
 @router.put("/{receipt_id}", response_model=SupplierReceipt)
@@ -59,11 +58,10 @@ def update_vendor_receipt(
 @router.post("/{receipt_id}/close", response_model=SupplierReceipt)
 def close_vendor_receipt(
     receipt_id: int,
-    body: SupplierReceiptClose,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
-    receipt = crud.close_vendor_receipt(db, receipt_id=receipt_id, closed_by=body.closed_by)
+    receipt = crud.close_vendor_receipt(db, receipt_id=receipt_id, closed_by=current_user.id)
     if not receipt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
     return receipt

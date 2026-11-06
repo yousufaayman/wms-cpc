@@ -48,7 +48,7 @@ const PAGE_SIZE = 25;
 export default function MaterialRequests() {
   const { t } = useTranslation();
   useLanguage();
-  const { user, isAdmin } = useCurrentUser();
+  const { isAdmin } = useCurrentUser();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const warehouseParam = searchParams.get("warehouse");
@@ -210,22 +210,18 @@ export default function MaterialRequests() {
         navigate(`/receipts/create/${receiptKind}?receipt_id=${receipt.id}&warehouse=${receipt.warehouseId}`);
         return;
       }
-      const issuedBy = user?.id ?? 1;
       let receiptId: number;
       if (receiptKind === "internal") {
         receiptId = (await internalReceiptApi.create(
           { source_warehouse_id: sourceWarehouseId!, target_logical_location_id: targetLocationId! },
-          issuedBy,
         )).id;
       } else if (receiptKind === "supplier") {
         receiptId = (await supplierReceiptApi.create(
           { source_warehouse_id: sourceWarehouseId!, target_logical_location_id: targetLocationId!, remarks: null },
-          issuedBy,
         )).id;
       } else {
         receiptId = (await externalReceiptApi.create(
           { source_warehouse_id: sourceWarehouseId!, receiver: receiver.trim() },
-          issuedBy,
         )).id;
       }
       await linkRequestToReceipt(receiptId);

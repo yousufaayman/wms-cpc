@@ -54,12 +54,11 @@ def get_expected_delivery(delivery_id: int, db: Session = Depends(get_db), curre
 @router.post("/", response_model=ExpectedDelivery, status_code=status.HTTP_201_CREATED)
 def create_expected_delivery(
     delivery: ExpectedDeliveryCreate,
-    created_by: Optional[int] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = _REQUIRE_MANAGE,
 ):
     try:
-        return crud.create_expected_delivery(db, delivery=delivery, created_by=created_by)
+        return crud.create_expected_delivery(db, delivery=delivery, created_by=current_user.id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
@@ -83,7 +82,9 @@ def update_expected_delivery(
         if existing.status in _CLOSED_STATUSES:
             ensure_admin(db, current_user)
     try:
-        result = crud.update_expected_delivery(db, delivery_id=delivery_id, delivery=delivery)
+        result = crud.update_expected_delivery(
+            db, delivery_id=delivery_id, delivery=delivery, actor_id=current_user.id,
+        )
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not result:

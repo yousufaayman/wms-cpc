@@ -48,7 +48,7 @@ export default function ExpectedDeliveries() {
   const warehouseId = searchParams.get("warehouse");
   const { t } = useTranslation();
   useLanguage();
-  const { user, can } = useCurrentUser();
+  const { can } = useCurrentUser();
 
   const [deliveries, setDeliveries] = useState<ExpectedDelivery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,7 +122,6 @@ export default function ExpectedDeliveries() {
           expected_date: newDate || null,
           notes: newNotes.trim() || null,
         },
-        user?.id,
       );
       toast.success(t("expectedDeliveryCreated"));
       setCreateOpen(false);

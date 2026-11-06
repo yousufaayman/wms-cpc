@@ -113,10 +113,9 @@ export const expectedDeliveryApi = {
   getById: (id: number) =>
     api.request<ExpectedDelivery>(`/expected-deliveries/${id}`),
 
-  create: (delivery: ExpectedDeliveryCreate, createdBy?: number) => {
-    const qs = createdBy !== undefined ? `?created_by=${createdBy}` : '';
-    return api.request<ExpectedDelivery>(`/expected-deliveries${qs}`, 'POST', delivery);
-  },
+  // The server records the logged-in user as the creator.
+  create: (delivery: ExpectedDeliveryCreate) =>
+    api.request<ExpectedDelivery>('/expected-deliveries', 'POST', delivery),
 
   update: (id: number, delivery: ExpectedDeliveryUpdate) =>
     api.request<ExpectedDelivery>(`/expected-deliveries/${id}`, 'PUT', delivery),

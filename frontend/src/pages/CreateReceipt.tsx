@@ -52,8 +52,6 @@ function getLocationFilter(kind: Kind): string {
   return "";
 }
 
-const ISSUED_BY = 1;
-
 async function createReceiptByKind(
   kind: Kind,
   sourceWarehouseId: number,
@@ -64,20 +62,17 @@ async function createReceiptByKind(
   if (kind === "supplier") {
     const r = await supplierReceiptApi.create(
       { source_warehouse_id: sourceWarehouseId, target_logical_location_id: targetLocationId!, remarks: remarks || null },
-      ISSUED_BY,
     );
     return r.id;
   }
   if (kind === "internal") {
     const r = await internalReceiptApi.create(
       { source_warehouse_id: sourceWarehouseId, target_logical_location_id: targetLocationId! },
-      ISSUED_BY,
     );
     return r.id;
   }
   const r = await externalReceiptApi.create(
     { source_warehouse_id: sourceWarehouseId, receiver: receiver.trim() },
-    ISSUED_BY,
   );
   return r.id;
 }

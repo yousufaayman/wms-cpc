@@ -10,7 +10,6 @@ from backend.schemas import (
     ExternalReceipt,
     ExternalReceiptCreate,
     ExternalReceiptUpdate,
-    ExternalReceiptClose,
 )
 
 router = APIRouter()
@@ -39,11 +38,10 @@ def get_external_receipt(receipt_id: int, db: Session = Depends(get_db)):
 @router.post("/", response_model=ExternalReceipt, status_code=status.HTTP_201_CREATED)
 def create_external_receipt(
     receipt: ExternalReceiptCreate,
-    issued_by: int = Query(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
-    return crud.create_external_receipt(db, receipt=receipt, issued_by=issued_by)
+    return crud.create_external_receipt(db, receipt=receipt, issued_by=current_user.id)
 
 
 @router.put("/{receipt_id}", response_model=ExternalReceipt)
@@ -62,11 +60,10 @@ def update_external_receipt(
 @router.post("/{receipt_id}/close", response_model=ExternalReceipt)
 def close_external_receipt(
     receipt_id: int,
-    body: ExternalReceiptClose,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(require_permission(PERM_CREATE_RECEIPTS)),
 ):
-    receipt = crud.close_external_receipt(db, receipt_id=receipt_id, closed_by=body.closed_by)
+    receipt = crud.close_external_receipt(db, receipt_id=receipt_id, closed_by=current_user.id)
     if not receipt:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="External receipt not found")
     return receipt

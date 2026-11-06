@@ -152,6 +152,7 @@ def update_expected_delivery(
     db: Session,
     delivery_id: int,
     delivery: ExpectedDeliveryUpdate,
+    actor_id: Optional[int] = None,
 ) -> Optional[ExpectedDelivery]:
     db_delivery = db.query(ExpectedDelivery).filter(ExpectedDelivery.id == delivery_id).first()
     if not db_delivery:
@@ -166,9 +167,11 @@ def update_expected_delivery(
     if "status" in updates:
         if updates["status"] in ("received", "cancelled"):
             db_delivery.closed_at = func.current_timestamp()
+            db_delivery.closed_by = actor_id
         else:
             # Reopening — the delivery becomes live again for roll matching
             db_delivery.closed_at = None
+            db_delivery.closed_by = None
     for field, value in updates.items():
         setattr(db_delivery, field, value)
     db.commit()

@@ -379,9 +379,6 @@ class SupplierReceiptUpdate(BaseModel):
     target_logical_location_id: Optional[int] = None
     remarks: Optional[str] = None
 
-class SupplierReceiptClose(BaseModel):
-    closed_by: int
-
 class SupplierReceiptInDB(SupplierReceiptBase):
     id: int
     closed: bool
@@ -410,12 +407,6 @@ class InternalReceiptUpdate(BaseModel):
     source_warehouse_id: Optional[int] = None
     target_logical_location_id: Optional[int] = None
 
-class InternalReceiptConfirm(BaseModel):
-    confirmed_by: int
-
-class InternalReceiptClose(BaseModel):
-    closed_by: int
-
 class InternalReceiptInDB(InternalReceiptBase):
     id: int
     closed: bool
@@ -443,9 +434,6 @@ class ExternalReceiptCreate(ExternalReceiptBase):
 class ExternalReceiptUpdate(BaseModel):
     source_warehouse_id: Optional[int] = None
     receiver: Optional[str] = Field(None, min_length=1, max_length=255)
-
-class ExternalReceiptClose(BaseModel):
-    closed_by: int
 
 class ExternalReceiptInDB(ExternalReceiptBase):
     id: int

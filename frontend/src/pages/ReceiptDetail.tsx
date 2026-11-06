@@ -25,8 +25,6 @@ import { buildMaterialGroups, fmt, type RollSummary, type MaterialGroup } from "
 
 type AnyReceipt = SupplierReceipt | InternalReceipt | ExternalReceipt;
 
-const CURRENT_USER_ID = 1;
-
 function formatDate(ds: string) {
   return new Date(ds).toLocaleDateString("en-US", {
     year: "numeric", month: "long", day: "numeric",
@@ -45,9 +43,9 @@ async function fetchReceiptByKind(kind: ReceiptKind, id: number): Promise<AnyRec
 }
 
 async function closeReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
-  if (kind === "supplier") { await supplierReceiptApi.close(id, CURRENT_USER_ID); return; }
-  if (kind === "internal") { await internalReceiptApi.close(id, CURRENT_USER_ID); return; }
-  await externalReceiptApi.close(id, CURRENT_USER_ID);
+  if (kind === "supplier") { await supplierReceiptApi.close(id); return; }
+  if (kind === "internal") { await internalReceiptApi.close(id); return; }
+  await externalReceiptApi.close(id);
 }
 
 async function openReceiptByKind(kind: ReceiptKind, id: number): Promise<void> {
@@ -414,7 +412,7 @@ const ReceiptDetail = () => {
             {/* Actions — no header, one row */}
             <div className="flex flex-wrap items-center gap-2 px-1">
               {internalReceipt && internalReceipt.status === "issued" && can('confirm_receipts') && (
-                <Button onClick={() => handleAction(() => internalReceiptApi.confirm(receipt.id, CURRENT_USER_ID))} disabled={actionLoading}>
+                <Button onClick={() => handleAction(() => internalReceiptApi.confirm(receipt.id))} disabled={actionLoading}>
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                   {t("confirmReceipt")}
                 </Button>

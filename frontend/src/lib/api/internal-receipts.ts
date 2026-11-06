@@ -46,17 +46,18 @@ export const internalReceiptApi = {
 
   getById: (id: number) => api.request<InternalReceipt>(`/internal-receipts/${id}`),
 
-  create: (receipt: InternalReceiptCreate, issuedBy: number) =>
-    api.request<InternalReceipt>(`/internal-receipts?issued_by=${issuedBy}`, 'POST', receipt),
+  // The server records the logged-in user as issuer/closer/confirmer.
+  create: (receipt: InternalReceiptCreate) =>
+    api.request<InternalReceipt>(`/internal-receipts`, 'POST', receipt),
 
   update: (id: number, receipt: InternalReceiptUpdate) =>
     api.request<InternalReceipt>(`/internal-receipts/${id}`, 'PUT', receipt),
 
-  confirm: (id: number, confirmedBy: number) =>
-    api.request<InternalReceipt>(`/internal-receipts/${id}/confirm`, 'POST', { confirmed_by: confirmedBy }),
+  confirm: (id: number) =>
+    api.request<InternalReceipt>(`/internal-receipts/${id}/confirm`, 'POST'),
 
-  close: (id: number, closedBy: number) =>
-    api.request<InternalReceipt>(`/internal-receipts/${id}/close`, 'POST', { closed_by: closedBy }),
+  close: (id: number) =>
+    api.request<InternalReceipt>(`/internal-receipts/${id}/close`, 'POST'),
 
   open: (id: number) =>
     api.request<InternalReceipt>(`/internal-receipts/${id}/open`, 'POST'),
