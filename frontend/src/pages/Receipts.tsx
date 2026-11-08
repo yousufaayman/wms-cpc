@@ -18,7 +18,7 @@ import {
   internalReceiptApi, type InternalReceipt,
   externalReceiptApi, type ExternalReceipt,
   warehouseApi, type Warehouse,
-  logicalLocationApi, type LogicalLocation,
+  logicalLocationApi, type LogicalLocation, isInternalTarget,
 } from "@/lib/api";
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -189,7 +189,7 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
-  const internalLocations = logicalLocations.filter(l => l.location_type === "internal");
+  const internalLocations = logicalLocations.filter(isInternalTarget);
 
   useEffect(() => {
     setLoading(true);

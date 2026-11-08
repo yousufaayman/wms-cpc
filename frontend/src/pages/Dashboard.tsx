@@ -1,12 +1,11 @@
-import { Suspense, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
-import { warehouseApi, Warehouse } from "@/lib/api";
+import { useWarehouse } from "@/hooks/useWarehouse";
 import { widgetRegistry } from "@/widgets/registry";
 import { WidgetSize } from "@/widgets/types";
 
@@ -19,28 +18,14 @@ const SIZE_CLASS: Record<WidgetSize, string> = {
 };
 
 const Dashboard = () => {
-  const [searchParams] = useSearchParams();
-  const warehouseId = searchParams.get("warehouse");
   const { t } = useTranslation();
   useLanguage();
+  const { warehouse, loading, has } = useWarehouse();
 
-  const [warehouse, setWarehouse] = useState<Warehouse | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (!warehouseId) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    warehouseApi
-      .getById(parseInt(warehouseId))
-      .then(setWarehouse)
-      .catch(() => setWarehouse(null))
-      .finally(() => setLoading(false));
-  }, [warehouseId]);
-
-  const widgets = warehouse ? widgetRegistry[warehouse.type] : [];
+  // A widget tied to a module shows only when this warehouse has that module.
+  const widgets = warehouse
+    ? widgetRegistry[warehouse.type].filter((w) => !w.module || has(w.module))
+    : [];
 
   let content;
   if (loading) {

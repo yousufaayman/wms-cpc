@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen, ClipboardList, TrendingUp, MapPin, type LucideIcon } from "lucide-react";
+import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen, ClipboardList, TrendingUp, MapPin, Boxes, PackagePlus, Tags, Syringe, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import LanguageToggle from "./LanguageToggle";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -27,11 +27,15 @@ interface NavItem {
 const MAIN_NAV: NavItem[] = [
   { path: "/dashboard", module: "dashboard", permission: "operations", label: "dashboard", icon: BarChart3, exact: true },
   { path: "/fabric-inventory", module: "fabric_inventory", label: "fabricInventory", icon: Layers, exact: true },
+  { path: "/accessory-inventory", module: "accessory_inventory", label: "accessoryInventory", icon: Boxes, exact: true },
+  { path: "/receive-packs", module: "receive_packs", permission: "receive_accessories", label: "receivePacks", icon: PackagePlus, exact: true },
+  { path: "/accessory-items", module: "accessory_items", label: "accessoryItems", icon: Tags, exact: true },
   { path: "/receipts", module: "receipts", label: "receipts", icon: FileText },
   { path: "/expected-deliveries", module: "expected_deliveries", permission: "operations", label: "expectedDeliveries", icon: PackageOpen },
   { path: "/material-requests", module: "material_requests", permission: "operations", label: "materialRequests", icon: ClipboardList },
   { path: "/fabric-rolls", module: "fabric_rolls", permission: "ingest_fabric", label: "dyedFabricRolls", icon: Scissors, exact: true },
   { path: "/undyed-fabric-rolls", module: "fabric_rolls", permission: "ingest_fabric", label: "undyedFabricRolls", icon: Scissors, exact: true },
+  { path: "/needle-exchange", module: "needle_exchange", permission: "needle_exchange", label: "needleExchange", icon: Syringe, exact: true },
 ];
 
 const ADMIN_NAV: NavItem[] = [

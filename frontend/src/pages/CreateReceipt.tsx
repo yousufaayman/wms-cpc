@@ -21,7 +21,7 @@ import {
   externalReceiptApi,
   clientApi, type Client,
   warehouseApi, type Warehouse,
-  logicalLocationApi, type LogicalLocation,
+  logicalLocationApi, type LogicalLocation, isInternalTarget,
   fabricRollApi, type FabricRollDetail,
   undyedFabricRollApi, type UndyedFabricRollDetail,
   fabricReceiptItemApi, type ReceiptKind,
@@ -46,10 +46,11 @@ interface ScannedRoll extends RollSummary {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function getLocationFilter(kind: Kind): string {
-  if (kind === "supplier") return "supplier";
-  if (kind === "internal") return "internal";
-  return "";
+/** Which target locations a receipt kind may pick; null = no location (external). */
+function getLocationFilter(kind: Kind): ((l: LogicalLocation) => boolean) | null {
+  if (kind === "supplier") return (l) => l.location_type === "supplier";
+  if (kind === "internal") return isInternalTarget;
+  return null;
 }
 
 async function createReceiptByKind(
@@ -112,10 +113,8 @@ function SetupView({
   remarks, setRemarks,
   onProcess, processing, hasExistingReceipt, t,
 }: Readonly<SetupProps>) {
-  const locationType = getLocationFilter(kind);
-  const filteredLocations = locationType
-    ? locations.filter(l => l.location_type === locationType)
-    : locations;
+  const locationFilter = getLocationFilter(kind);
+  const filteredLocations = locationFilter ? locations.filter(locationFilter) : locations;
 
   const canProcess = sourceWarehouseId !== null &&
     (kind === "external" ? receiver.trim().length > 0 : targetLocationId !== null);

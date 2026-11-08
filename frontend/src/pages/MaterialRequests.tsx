@@ -21,7 +21,7 @@ import {
   materialRequestApi, type MaterialRequest,
   materialRequestFulfillmentApi,
   warehouseApi, type Warehouse,
-  logicalLocationApi, type LogicalLocation,
+  logicalLocationApi, type LogicalLocation, isInternalTarget,
   clientApi, type Client,
   internalReceiptApi, supplierReceiptApi, externalReceiptApi,
   type ReceiptKind,
@@ -169,9 +169,10 @@ export default function MaterialRequests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issueFor, receiptMode, receiptKind, sourceWarehouseId, locations]);
 
-  // internal/supplier receipts target a logical location of the matching type
+  // supplier receipts target suppliers; internal receipts target internal
+  // locations or production lines
   const filteredLocations = locations.filter(l =>
-    receiptKind === "supplier" ? l.location_type === "supplier" : l.location_type === "internal",
+    receiptKind === "supplier" ? l.location_type === "supplier" : isInternalTarget(l),
   );
 
   const canIssue =

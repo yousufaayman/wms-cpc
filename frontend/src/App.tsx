@@ -28,6 +28,7 @@ const ExpectedDeliveryDetail = lazy(() => import("./pages/ExpectedDeliveryDetail
 const MaterialRequests = lazy(() => import("./pages/MaterialRequests"));
 const Analytics = lazy(() => import("./pages/Analytics"));
 const UserManagement = lazy(() => import("./pages/UserManagement"));
+const ComingSoon = lazy(() => import("./pages/ComingSoon"));
 
 const queryClient = new QueryClient();
 
@@ -235,6 +236,63 @@ const App = () => (
                     <Suspense fallback={<LoadingSpinner message="Loading User Management..." />}>
                       <UserManagement />
                     </Suspense>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            {/* Accessory warehouse: placeholders until items 14, 17, 11 and 29 build the real pages */}
+            <Route
+              path="/accessory-inventory"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission anyRole>
+                    <RequireModule module="accessory_inventory">
+                      <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                        <ComingSoon title="accessoryInventory" description="accessoryInventoryComingSoon" />
+                      </Suspense>
+                    </RequireModule>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/receive-packs"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission permission="receive_accessories">
+                    <RequireModule module="receive_packs">
+                      <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                        <ComingSoon title="receivePacks" description="receivePacksComingSoon" />
+                      </Suspense>
+                    </RequireModule>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/accessory-items"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission anyRole>
+                    <RequireModule module="accessory_items">
+                      <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                        <ComingSoon title="accessoryItems" description="accessoryItemsComingSoon" />
+                      </Suspense>
+                    </RequireModule>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/needle-exchange"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission permission="needle_exchange">
+                    <RequireModule module="needle_exchange">
+                      <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                        <ComingSoon title="needleExchange" description="needleExchangeComingSoon" />
+                      </Suspense>
+                    </RequireModule>
                   </RequirePermission>
                 </ProtectedRoute>
               }

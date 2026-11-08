@@ -43,6 +43,7 @@ export {
 // Export logical location types and API
 export {
   logicalLocationApi,
+  isInternalTarget,
   type LogicalLocation,
   type LogicalLocationType,
   type LogicalLocationCreate,

@@ -2,18 +2,22 @@ import { lazy } from "react";
 import { WarehouseType } from "@/lib/api";
 import { WidgetDefinition } from "./types";
 
+// Shared: work in any warehouse type (they filter by warehouse id only).
 const ExpectedDeliveriesCalendarWidget = lazy(
-  () => import("./fabric/ExpectedDeliveriesCalendarWidget"),
+  () => import("./shared/ExpectedDeliveriesCalendarWidget"),
 );
+const OpenReceiptsWidget = lazy(() => import("./shared/OpenReceiptsWidget"));
+// Fabric only.
 const MaterialRequestsWidget = lazy(() => import("./fabric/MaterialRequestsWidget"));
-const OpenReceiptsWidget = lazy(() => import("./fabric/OpenReceiptsWidget"));
 const QuickViewWidget = lazy(() => import("./fabric/QuickViewWidget"));
 const FabricCodeLookupWidget = lazy(() => import("./fabric/FabricCodeLookupWidget"));
 
 /**
  * Dashboard widgets per warehouse type. Types are developed one at a time —
  * an empty list is valid and renders a "no widgets yet" dashboard.
- * To add a widget: create its component under widgets/<type>/ and register it here.
+ * To add a widget: create its component under widgets/<type>/ (or widgets/shared/
+ * if several types use it) and register it here. Set `module` when the widget
+ * belongs to a module that can be switched off in that warehouse type.
  */
 export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
   // Fabric dashboard grid (lg+): 2 columns × 7 rows —
@@ -51,5 +55,23 @@ export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
     },
   ],
   RMG: [],
-  Accessory: [],
+  // Accessory dashboard (lg+): calendar rows 1-4, open receipts rows 5-7, both
+  // full width. Both hide while FEATURE_ACCESSORIES is off. Accessory-specific
+  // widgets (stock, shortages, needles) arrive in item 24.
+  Accessory: [
+    {
+      id: "accessory-expected-deliveries-calendar",
+      component: ExpectedDeliveriesCalendarWidget,
+      size: "full",
+      gridClass: "lg:col-span-2 lg:row-span-4",
+      module: "expected_deliveries",
+    },
+    {
+      id: "accessory-open-receipts",
+      component: OpenReceiptsWidget,
+      size: "full",
+      gridClass: "lg:col-span-2 lg:row-span-3",
+      module: "receipts",
+    },
+  ],
 };
