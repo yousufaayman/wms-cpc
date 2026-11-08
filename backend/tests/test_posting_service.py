@@ -10,6 +10,7 @@ import pytest
 
 from backend import models
 from backend.domains import posting
+from backend.domains.posting.accessory import AccessoryAdapter
 from backend.domains.posting.fabric import FabricAdapter
 
 _seq = itertools.count(1)
@@ -52,9 +53,10 @@ def _scan(client, headers, rid, roll):
 def test_registry_picks_adapter_per_warehouse_type():
     assert isinstance(posting.adapter_for_warehouse_type("Fabric"), FabricAdapter)
     assert isinstance(posting.adapter_for_line_kind("fabric"), FabricAdapter)
-    # No adapter yet: the do-nothing default.
-    for wtype in ("Accessory", "RMG"):
-        assert type(posting.adapter_for_warehouse_type(wtype)) is posting.PostingAdapter
+    assert isinstance(posting.adapter_for_warehouse_type("Accessory"), AccessoryAdapter)
+    assert isinstance(posting.adapter_for_line_kind("accessory"), AccessoryAdapter)
+    # RMG has no adapter: the do-nothing default.
+    assert type(posting.adapter_for_warehouse_type("RMG")) is posting.PostingAdapter
     assert type(posting.adapter_for_line_kind("box")) is posting.PostingAdapter
 
 

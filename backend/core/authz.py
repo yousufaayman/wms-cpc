@@ -61,18 +61,19 @@ PERM_OPERATIONS = "operations"
 # permission, as with fabric. Reclassify, merge-duplicate-items and reversals
 # are admin-only: they get no permission and are checked with ensure_admin.
 #   manage_accessory_items     create/edit items, templates, variants, trim refs
-#   receive_accessories        supplier receipts, split into packs, labels, move packs
-#   confirm_accessory_receipts confirm accessory receipts (posts to the ledger);
+#   receive_accessories        receive packs against expected deliveries, labels, move packs
+#   confirm_accessory_receipts confirm accessory issue receipts (posts to the ledger);
 #                              separate from confirm_receipts so W_Manager can
-#                              confirm accessories while fabric stays admin-only
-#   manage_jo_requirements     JO accessory requirement lines
+#                              confirm accessories while fabric stays admin-only.
+#                              Receiving needs no confirm (D-7)
 #   issue_accessories          issue to JOs, returns from the floor, split/merge packs
 #   needle_exchange            needle exchanges
 #   adjust_accessories         adjustments, write-offs, opening balance (admin only)
+# JO accessory requirements are written by another system; WMS only reads
+# them, so there is no permission to manage them.
 PERM_MANAGE_ACCESSORY_ITEMS = "manage_accessory_items"
 PERM_RECEIVE_ACCESSORIES = "receive_accessories"
 PERM_CONFIRM_ACCESSORY_RECEIPTS = "confirm_accessory_receipts"
-PERM_MANAGE_JO_REQUIREMENTS = "manage_jo_requirements"
 PERM_ISSUE_ACCESSORIES = "issue_accessories"
 PERM_NEEDLE_EXCHANGE = "needle_exchange"
 PERM_ADJUST_ACCESSORIES = "adjust_accessories"
@@ -89,7 +90,6 @@ ROLE_PERMISSIONS = {
         PERM_MANAGE_ACCESSORY_ITEMS,
         PERM_RECEIVE_ACCESSORIES,
         PERM_CONFIRM_ACCESSORY_RECEIPTS,
-        PERM_MANAGE_JO_REQUIREMENTS,
         PERM_ISSUE_ACCESSORIES,
         PERM_NEEDLE_EXCHANGE,
     },
@@ -106,7 +106,6 @@ ROLE_PERMISSIONS = {
         PERM_LOGICAL_LOCATIONS,
         PERM_ANALYTICS,
         PERM_OPERATIONS,
-        PERM_MANAGE_JO_REQUIREMENTS,
     },
     ROLE_VIEWER: {
         PERM_ANALYTICS,
