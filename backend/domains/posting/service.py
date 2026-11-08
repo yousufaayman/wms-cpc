@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from ... import models
+from ...core.warehouse_modules import ensure_receipt_line_kind
 from .registry import adapter_for_line_kind, adapter_for_warehouse_type
 
 LINE_MODELS = {
@@ -39,7 +40,14 @@ def _adapter_for_receipt(db: Session, receipt: Any):
 
 
 def add_line(db: Session, receipt_kind: str, receipt_id: int, line_kind: str, line_in: Any):
-    """Validate, insert and post one receipt line. Raises ValueError if refused."""
+    """Validate, insert and post one receipt line.
+
+    Checks, in order:
+    1. shared by every type: the receipt exists, its warehouse has receipts,
+       and the line is of that warehouse's kind (HTTPException 404/400)
+    2. the warehouse type's own rules, adapter.validate_line (ValueError)
+    """
+    ensure_receipt_line_kind(db, receipt_kind, receipt_id, line_kind)
     adapter = adapter_for_line_kind(line_kind)
     adapter.validate_line(db, receipt_kind, receipt_id, line_in)
     line = LINE_MODELS[line_kind](**line_in.model_dump(), **_receipt_fks(receipt_kind, receipt_id))

@@ -14,3 +14,4 @@ backend/.env
 backend/.env.*
 .env
 .env.*
+backend/tests/

@@ -104,7 +104,8 @@ def _load_from_atlas(atlas: str) -> None:
         f"@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{TEST_DB}?sslmode=disable"
     )
     subprocess.run(
-        [atlas, "migrate", "apply", "--url", url, "--dir", MIGRATIONS_DIR.as_uri()],
+        # file://S:/... (not as_uri()'s file:///S:/..., which Atlas can't open on Windows)
+        [atlas, "migrate", "apply", "--url", url, "--dir", f"file://{MIGRATIONS_DIR.as_posix()}"],
         check=True, capture_output=True, text=True,
     )
 

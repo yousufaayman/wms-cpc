@@ -4,9 +4,10 @@ from typing import List
 from ....database import get_db
 from ....core.deps import require_permission
 from ....core.authz import PERM_CREATE_RECEIPTS
-from ....core.warehouse_modules import ensure_receipt_line_kind
 from .... import crud, schemas, models
 
+# Adding a line goes through the posting service, which also checks the line
+# fits the receipt's warehouse (fabric lines on Fabric receipts, and so on).
 router = APIRouter()
 _REQUIRE_CREATE_RECEIPTS = Depends(require_permission(PERM_CREATE_RECEIPTS))
 
@@ -30,7 +31,6 @@ def list_fabric_items(kind: str, receipt_id: int, skip: int = 0, limit: int = 10
 @router.post("/{kind}/{receipt_id}/fabric-items", response_model=schemas.FabricReceiptItem, status_code=status.HTTP_201_CREATED)
 def add_fabric_item(kind: str, receipt_id: int, item: schemas.FabricReceiptItemCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_CREATE_RECEIPTS):
     _validate_kind(kind)
-    ensure_receipt_line_kind(db, kind, receipt_id, "fabric")
     try:
         return crud.receipt_items.create_fabric_receipt_item(db, kind, receipt_id, item)
     except ValueError as e:
@@ -54,7 +54,6 @@ def list_box_items(kind: str, receipt_id: int, skip: int = 0, limit: int = 100, 
 @router.post("/{kind}/{receipt_id}/box-items", response_model=schemas.BoxReceiptItem, status_code=status.HTTP_201_CREATED)
 def add_box_item(kind: str, receipt_id: int, item: schemas.BoxReceiptItemCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_CREATE_RECEIPTS):
     _validate_kind(kind)
-    ensure_receipt_line_kind(db, kind, receipt_id, "box")
     return crud.receipt_items.create_box_receipt_item(db, kind, receipt_id, item)
 
 
@@ -75,7 +74,6 @@ def list_accessory_items(kind: str, receipt_id: int, skip: int = 0, limit: int =
 @router.post("/{kind}/{receipt_id}/accessory-items", response_model=schemas.AccessoryReceiptItem, status_code=status.HTTP_201_CREATED)
 def add_accessory_item(kind: str, receipt_id: int, item: schemas.AccessoryReceiptItemCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_CREATE_RECEIPTS):
     _validate_kind(kind)
-    ensure_receipt_line_kind(db, kind, receipt_id, "accessory")
     return crud.receipt_items.create_accessory_receipt_item(db, kind, receipt_id, item)
 
 

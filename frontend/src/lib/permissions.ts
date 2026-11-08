@@ -16,7 +16,6 @@ export type Permission =
   | "manage_accessory_items"
   | "receive_accessories"
   | "confirm_accessory_receipts"
-  | "manage_jo_requirements"
   | "issue_accessories"
   | "needle_exchange"
   | "adjust_accessories";
@@ -34,7 +33,6 @@ const ROLE_PERMISSIONS: Record<WmsRole, Set<Permission>> = {
     "manage_accessory_items",
     "receive_accessories",
     "confirm_accessory_receipts",
-    "manage_jo_requirements",
     "issue_accessories",
     "needle_exchange",
   ]),
@@ -51,7 +49,6 @@ const ROLE_PERMISSIONS: Record<WmsRole, Set<Permission>> = {
     "logical_locations",
     "analytics",
     "operations",
-    "manage_jo_requirements",
   ]),
   Viewer: new Set<Permission>([
     "analytics",

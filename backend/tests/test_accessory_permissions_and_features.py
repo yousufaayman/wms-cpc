@@ -10,7 +10,6 @@ EXPECTED = {
     "manage_accessory_items":     {"W_Manager"},
     "receive_accessories":        {"W_Manager", "W_Worker"},
     "confirm_accessory_receipts": {"W_Manager"},
-    "manage_jo_requirements":     {"W_Manager", "gen_ops"},
     "issue_accessories":          {"W_Manager", "W_Worker"},
     "needle_exchange":            {"W_Manager", "W_Worker"},
     "adjust_accessories":         set(),

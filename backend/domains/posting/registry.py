@@ -6,7 +6,7 @@ receipt is confirmed. The posting service (service.py) looks up the right
 adapter and calls it; nothing else should change stock.
 
 A warehouse type with no adapter registered gets `PostingAdapter` itself, which
-accepts every line and changes nothing (RMG today; Accessory until items 3/13).
+accepts every line and changes nothing (RMG today).
 
 Adapters never commit. The service commits once, so a failure anywhere leaves
 nothing half-done.
