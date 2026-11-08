@@ -41,12 +41,43 @@ jobs:
       # The schema comes from the private cpc-db repo. Until the repo secret
       # CPC_DB_READ_TOKEN (read-only access to cpc-db) exists, these steps are
       # skipped and the database tests report "skipped".
+      #
+      # Which cpc-db branch? cpc-db `main` is production, so a schema change
+      # shouldn't have to reach it just to test the app. The first one that
+      # exists wins:
+      #   1. a cpc-db branch named exactly like this PR's branch (a feature
+      #      whose schema change is still an open cpc-db PR)
+      #   2. a cpc-db branch named like this PR's target (`development`:
+      #      schema changes merged for dev but not released to prod yet)
+      #   3. `main` (production). A release PR (development -> main) usually
+      #      lands here, which proves the database was released first.
+      - name: Pick the cpc-db branch
+        id: cpcdb
+        if: env.HAS_CPC_DB_TOKEN == 'true'
+        env:
+          # Branch names come from the PR: pass them as env vars, never inline.
+          HEAD_REF: ${{ github.head_ref }}
+          BASE_REF: ${{ github.base_ref }}
+          TOKEN: ${{ secrets.CPC_DB_READ_TOKEN }}
+        run: |
+          repo="https://x-access-token:${TOKEN}@github.com/yousufaayman/cpc-db.git"
+          ref=main
+          for candidate in "$HEAD_REF" "$BASE_REF"; do
+            if [ -n "$candidate" ] && git ls-remote --exit-code --heads "$repo" "refs/heads/$candidate" >/dev/null; then
+              ref="$candidate"
+              break
+            fi
+          done
+          echo "Testing against cpc-db branch: $ref"
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
       - name: Check out cpc-db (schema history)
         if: env.HAS_CPC_DB_TOKEN == 'true'
         uses: actions/checkout@v4
         with:
           repository: yousufaayman/cpc-db
           token: ${{ secrets.CPC_DB_READ_TOKEN }}
+          ref: ${{ steps.cpcdb.outputs.ref }}
           path: cpc-db
 
       - name: Install Atlas Community
