@@ -1,5 +1,6 @@
 import { ComponentType, LazyExoticComponent } from "react";
 import { WarehouseType } from "@/lib/api";
+import type { WarehouseModule } from "@/lib/warehouseModules";
 
 /** Props every dashboard widget receives — widgets fetch their own data from these. */
 export interface WidgetProps {
@@ -17,4 +18,7 @@ export interface WidgetDefinition {
   size: WidgetSize;
   /** Explicit grid placement classes (col/row spans); overrides the size hint. */
   gridClass?: string;
+  /** The module whose data the widget shows and links to. The dashboard hides
+   *  the widget when the warehouse doesn't have it (e.g. accessories switched off). */
+  module?: WarehouseModule;
 }

@@ -1,7 +1,13 @@
 import { api } from './client';
 
-/** Matches wms.logical_location_type */
-export type LogicalLocationType = 'supplier' | 'internal';
+/** Matches wms.logical_location_type.
+ *  production_line = cutting, sewing lines, packing (where issued stock goes). */
+export type LogicalLocationType = 'supplier' | 'internal' | 'production_line';
+
+/** Can an internal receipt send stock to this location? Internal locations
+ *  and production lines can; suppliers can't (they get supplier receipts). */
+export const isInternalTarget = (l: { location_type?: LogicalLocationType }) =>
+  l.location_type === 'internal' || l.location_type === 'production_line';
 
 // Logical Location types
 export interface LogicalLocation {

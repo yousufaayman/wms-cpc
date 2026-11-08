@@ -33,6 +33,7 @@ class WarehouseType(str, Enum):
 class LogicalLocationType(str, Enum):
     SUPPLIER = "supplier"
     INTERNAL = "internal"
+    PRODUCTION_LINE = "production_line"
 
 class SingleTransactionType(str, Enum):
     EXTERNAL = "external"

@@ -46,7 +46,7 @@ _CK_ONE_RECEIPT = (
 # Create PostgreSQL ENUM types with explicit schema
 warehouse_type_enum = ENUM('Fabric', 'RMG', 'Accessory', name='warehouse_type', schema='wms', create_type=False)
 logical_location_type_enum = ENUM(
-    'supplier', 'internal', name='logical_location_type', schema='wms', create_type=False
+    'supplier', 'internal', 'production_line', name='logical_location_type', schema='wms', create_type=False
 )
 
 class WarehouseType(str, enum.Enum):
@@ -57,6 +57,8 @@ class WarehouseType(str, enum.Enum):
 class LogicalLocationType(str, enum.Enum):
     SUPPLIER = "supplier"
     INTERNAL = "internal"
+    # Cutting, sewing lines, packing: where issued accessories (and needles) go.
+    PRODUCTION_LINE = "production_line"
 
 # Note: System model removed
 

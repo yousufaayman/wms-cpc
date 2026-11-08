@@ -14,6 +14,14 @@ import Sidebar from "@/components/Sidebar";
 import { logicalLocationApi, LogicalLocation, LogicalLocationType } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
+import type { TranslationKey } from "@/lib/translations";
+
+/** Label + badge style for each location type in the table. */
+const TYPE_BADGE: Record<LogicalLocationType, { label: TranslationKey; variant: "secondary" | "outline" | "default" }> = {
+  internal: { label: "internalType", variant: "outline" },
+  production_line: { label: "productionLineType", variant: "default" },
+  supplier: { label: "supplier", variant: "secondary" },
+};
 
 interface LocationFormState {
   name: string;
@@ -224,6 +232,7 @@ const ManageLogicalLocations = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="internal">{t("internalType")}</SelectItem>
+                            <SelectItem value="production_line">{t("productionLineType")}</SelectItem>
                             <SelectItem value="supplier">{t("supplier")}</SelectItem>
                           </SelectContent>
                         </Select>
@@ -306,8 +315,8 @@ const ManageLogicalLocations = () => {
                             {location.name}
                           </TableCell>
                           <TableCell>
-                            <Badge variant={location.location_type === "supplier" ? "secondary" : "outline"}>
-                              {location.location_type === "supplier" ? t("supplier") : t("internalType")}
+                            <Badge variant={TYPE_BADGE[location.location_type ?? "internal"].variant}>
+                              {t(TYPE_BADGE[location.location_type ?? "internal"].label)}
                             </Badge>
                           </TableCell>
                           <TableCell>{location.contact_name || "—"}</TableCell>

@@ -754,6 +754,18 @@ export const translations = {
     moduleNotAvailableTitle: "Not available here",
     moduleNotAvailableInWarehouse: "This page isn't part of {{name}}, or it hasn't been switched on yet.",
     accessoryRequirementsComingSoon: "Fabric requests are handled in the Fabric warehouse. Accessory job-order requirements will appear here in a later update.",
+
+    // Accessory warehouse pages (sidebar + placeholders until each page is built)
+    accessoryInventory: "Accessory Inventory",
+    receivePacks: "Receive Packs",
+    accessoryItems: "Accessory Items",
+    needleExchange: "Needle Exchange",
+    pageComingSoonTitle: "Coming soon",
+    accessoryInventoryComingSoon: "Stock of every pack, by item and rack, will show here.",
+    receivePacksComingSoon: "Accessories arriving against an expected delivery will be received into labelled packs here.",
+    accessoryItemsComingSoon: "Accessory items (codes, client and supplier references, templates) will be managed here.",
+    needleExchangeComingSoon: "Needles given to and returned from production lines will be recorded here.",
+    productionLineType: "Production line",
     checkingAuthentication: "Checking authentication...",
 
     // Languages
@@ -1515,6 +1527,18 @@ export const translations = {
     moduleNotAvailableTitle: "غير متاح هنا",
     moduleNotAvailableInWarehouse: "هذه الصفحة ليست جزءًا من {{name}}، أو لم يتم تفعيلها بعد.",
     accessoryRequirementsComingSoon: "طلبات القماش تُدار من مخزن القماش. احتياجات الإكسسوارات لأوامر الشغل ستظهر هنا في تحديث لاحق.",
+
+    // صفحات مخزن الإكسسوارات
+    accessoryInventory: "مخزون الإكسسوارات",
+    receivePacks: "استلام العبوات",
+    accessoryItems: "أصناف الإكسسوارات",
+    needleExchange: "تبديل الإبر",
+    pageComingSoonTitle: "قريبًا",
+    accessoryInventoryComingSoon: "سيظهر هنا رصيد كل عبوة حسب الصنف والرف.",
+    receivePacksComingSoon: "سيتم هنا استلام الإكسسوارات الواردة على التوريدات المتوقعة في عبوات بملصقات.",
+    accessoryItemsComingSoon: "سيتم هنا إدارة أصناف الإكسسوارات (الأكواد، مراجع العميل والمورد، القوالب).",
+    needleExchangeComingSoon: "سيتم هنا تسجيل الإبر المصروفة لخطوط الإنتاج والمرتجعة منها.",
+    productionLineType: "خط إنتاج",
     checkingAuthentication: "جاري التحقق من الهوية...",
 
     // Languages
