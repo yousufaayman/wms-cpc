@@ -1,7 +1,7 @@
 // ZPL labels for accessory packs. 10cm x 5cm (^PW800 x ^LL400 at 203dpi),
 // printed upright (no rotation, unlike the roll labels).
 //
-// Layout: barcode + UID top left, quantity + unit top right, a rule, then one
+// Layout: barcode + pack id top left, quantity + unit top right, a rule, then one
 // row per detail with the Arabic caption right-aligned in the right column and
 // the (mostly Latin) value on the left.
 //
@@ -24,15 +24,12 @@ import {
 } from './rollLabelTemplates';
 
 /**
- * Pack UID = the pack's id in Base36, at least 5 characters (1 → "00001",
- * 1042 → "000SY"). Same rule as backend/domains/accessories/pack_uid.py
- * (a test checks they match).
+ * What the label's barcode encodes: the pack id + `*ACC`, e.g. "1042*ACC"
+ * (rolls use `<id>*F` / `<id>*K`). Same rule as
+ * backend/domains/accessories/pack_barcode.py (a test checks the suffix).
  */
-export const packUid = (packId: number): string => packId.toString(36).toUpperCase().padStart(5, '0');
-
-/** What the label's barcode encodes: the pack UID + `*ACC` (rolls use `<id>*F` / `<id>*K`). */
 export const PACK_BARCODE_SUFFIX = '*ACC';
-export const packBarcode = (packId: number): string => `${packUid(packId)}${PACK_BARCODE_SUFFIX}`;
+export const packBarcode = (packId: number): string => `${packId}${PACK_BARCODE_SUFFIX}`;
 
 export interface AccessoryPackLabelData {
   /** The pack's id (wms.accessory_packs.id). */
@@ -133,11 +130,11 @@ const row = (y: number, label: string, value: string): string =>
 /** One pack label. `copies` = how many of this label to print. */
 export function generateAccessoryPackLabel(data: AccessoryPackLabelData, copies = 1): string {
   const version = packLabelVersion(data);
-  const uid = packUid(data.packId);
+  const id = String(data.packId);
   const code = packBarcode(data.packId);
   const qty = zplSafe(`${data.quantity} ${data.uomAr}`.trim());
 
-  // Top block: barcode + big UID on the left, quantity on the right.
+  // Top block: barcode + big pack id on the left, quantity on the right.
   const barcodeW = code128Width(code);
   const qtyX = LEFT + barcodeW + 30;
   const qtyW = RIGHT - qtyX;
@@ -145,7 +142,7 @@ export function generateAccessoryPackLabel(data: AccessoryPackLabelData, copies 
   const top = [
     `^BY${BARCODE_MODULE},2,80`,
     `^FO${LEFT},20^BCN,95,N,N,N^FD${code}^FS`,
-    text(LEFT, 122, uid, fitSize(uid, 44, barcodeW)),
+    text(LEFT, 122, id, fitSize(id, 44, barcodeW)),
     caption(25, 'الكمية'),
     text(RIGHT - Math.ceil(textWidthAtSize(qty, qtySize)), 75, qty, qtySize),
     `^FO${LEFT},170^GB${RIGHT - LEFT},4,4^FS`,
