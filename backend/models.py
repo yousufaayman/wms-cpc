@@ -504,23 +504,6 @@ class LogicalLocation(Base):
         return f"<LogicalLocation {self.name}>"
 
 
-# Named counters that only ever go up (D-8: a table, not a Postgres SEQUENCE,
-# so Atlas sees it). One row per counter, e.g. 'accessory_pack_uid'. Only
-# backend/domains/accessories/pack_uid.py writes it, with an upsert.
-class Counter(Base):
-    __tablename__ = "counters"
-    __table_args__ = (
-        CheckConstraint("last_value >= 0", name="ck_counters_last_value_nonneg"),
-        {'schema': 'wms'},
-    )
-
-    name = Column(String(50), primary_key=True)
-    last_value = Column(BigInteger, nullable=False, default=0, server_default="0")
-
-    def __repr__(self):
-        return f"<Counter {self.name}={self.last_value}>"
-
-
 # Supplier Receipt — fabric rolls sent to/from a supplier logical location
 class SupplierReceipt(Base):
     __tablename__ = "supplier_receipts"

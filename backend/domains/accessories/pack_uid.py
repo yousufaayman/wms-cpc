@@ -1,69 +1,49 @@
 """Pack UIDs: the code that identifies every accessory pack.
 
-UID: the pack's number in Base36 (0-9, A-Z), padded to at least 5 characters,
-e.g. ``00001``, ``0000A``, ``4F9K2``. Five characters hold 60,466,175 packs;
-after that the UID simply gets a sixth character.
+A pack's UID is simply its primary key (``wms.accessory_packs.id``, item 12)
+written in Base36 (0-9, A-Z), padded to at least 5 characters: pack 1 =
+``00001``, pack 10 = ``0000A``, pack 1042 = ``000SY``. Five characters cover
+60,466,175 packs; after that the UID simply gets a sixth character. Nothing
+is stored: the UID is computed from the id, so it can't drift, and ids are
+never reused.
 
 Barcode on the label: the UID followed by the terminator ``*ACC``, e.g.
-``4F9K2*ACC``. Same idea as the roll labels (``12*F`` dyed, ``12*K`` undyed):
-the ending says what was scanned, so a pack can never be mistaken for a roll
-or a rack.
+``000SY*ACC``. Same idea as the roll labels (``<roll id>*F`` dyed,
+``<roll id>*K`` undyed): the ending says what was scanned, so a pack can never
+be mistaken for a roll or a rack.
 
-Numbers come from the row ``accessory_pack_uid`` in ``wms.counters`` (D-8),
-bumped with one upsert, so two workers receiving at the same time can't get
-the same number. The bump runs in the caller's transaction: call
-``next_pack_uid`` inside the same transaction that saves the pack. If that
-transaction rolls back, the number was never used anywhere and nothing is lost.
-Once committed, a number is never handed out again.
+The frontend label builder (lib/zpl/accessoryPackLabelTemplates.ts, `packUid`)
+does the same conversion; keep the two in step.
 """
 import re
 
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-
 BARCODE_SUFFIX = "*ACC"
 MIN_LENGTH = 5
-COUNTER_NAME = "accessory_pack_uid"
 
 _DIGITS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 _BARCODE_RE = re.compile(rf"^([0-9A-Z]{{{MIN_LENGTH},}}){re.escape(BARCODE_SUFFIX)}$")
 
 
-def format_pack_uid(number: int) -> str:
-    """Pack number (1, 2, ...) → UID: uppercase Base36, zero-padded to MIN_LENGTH."""
-    if number < 1:
-        raise ValueError("pack numbers start at 1")
+def pack_uid(pack_id: int) -> str:
+    """Pack id → UID: uppercase Base36, zero-padded to MIN_LENGTH."""
+    if pack_id < 1:
+        raise ValueError("pack ids start at 1")
     out = ""
-    while number:
-        number, rem = divmod(number, 36)
+    while pack_id:
+        pack_id, rem = divmod(pack_id, 36)
         out = _DIGITS[rem] + out
     return out.rjust(MIN_LENGTH, "0")
 
 
-def pack_barcode(uid: str) -> str:
-    """UID → what the label's barcode encodes."""
-    return uid + BARCODE_SUFFIX
+def pack_barcode(pack_id: int) -> str:
+    """Pack id → what the label's barcode encodes."""
+    return pack_uid(pack_id) + BARCODE_SUFFIX
 
 
-def parse_pack_barcode(scanned: str) -> str | None:
-    """A scanned barcode → the pack UID, or None if it isn't a pack barcode.
+def parse_pack_barcode(scanned: str) -> int | None:
+    """A scanned barcode → the pack id, or None if it isn't a pack barcode.
 
     Accepts lowercase and surrounding spaces (some scanners send them).
     """
     match = _BARCODE_RE.match(scanned.strip().upper())
-    return match.group(1) if match else None
-
-
-def next_pack_uid(db: Session) -> str:
-    """Reserve the next pack number and return its UID. Does not commit."""
-    number = db.execute(
-        text(
-            """
-            INSERT INTO wms.counters (name, last_value) VALUES (:name, 1)
-            ON CONFLICT (name) DO UPDATE SET last_value = wms.counters.last_value + 1
-            RETURNING last_value
-            """
-        ),
-        {"name": COUNTER_NAME},
-    ).scalar_one()
-    return format_pack_uid(number)
+    return int(match.group(1), 36) if match else None

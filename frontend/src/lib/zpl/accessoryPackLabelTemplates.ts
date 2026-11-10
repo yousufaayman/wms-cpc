@@ -23,13 +23,20 @@ import {
   zplSafe,
 } from './rollLabelTemplates';
 
-/** What the label's barcode encodes: the pack UID + `*ACC` (rolls use `*F` / `*K`). */
+/**
+ * Pack UID = the pack's id in Base36, at least 5 characters (1 → "00001",
+ * 1042 → "000SY"). Same rule as backend/domains/accessories/pack_uid.py
+ * (a test checks they match).
+ */
+export const packUid = (packId: number): string => packId.toString(36).toUpperCase().padStart(5, '0');
+
+/** What the label's barcode encodes: the pack UID + `*ACC` (rolls use `<id>*F` / `<id>*K`). */
 export const PACK_BARCODE_SUFFIX = '*ACC';
-export const packBarcode = (uid: string): string => `${uid}${PACK_BARCODE_SUFFIX}`;
+export const packBarcode = (packId: number): string => `${packUid(packId)}${PACK_BARCODE_SUFFIX}`;
 
 export interface AccessoryPackLabelData {
-  /** Pack UID from the server, e.g. "4F9K2". */
-  uid: string;
+  /** The pack's id (wms.accessory_packs.id). */
+  packId: number;
   quantity: number | string;
   /** Unit name in Arabic, e.g. "قطعة". */
   uomAr: string;
@@ -126,8 +133,8 @@ const row = (y: number, label: string, value: string): string =>
 /** One pack label. `copies` = how many of this label to print. */
 export function generateAccessoryPackLabel(data: AccessoryPackLabelData, copies = 1): string {
   const version = packLabelVersion(data);
-  const uid = zplSafe(data.uid.trim().toUpperCase());
-  const code = packBarcode(uid);
+  const uid = packUid(data.packId);
+  const code = packBarcode(data.packId);
   const qty = zplSafe(`${data.quantity} ${data.uomAr}`.trim());
 
   // Top block: barcode + big UID on the left, quantity on the right.
