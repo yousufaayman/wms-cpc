@@ -44,7 +44,13 @@ def update_uom(db: Session, uom_id: int, payload: UomUpdate) -> Uom:
 
 
 def get_conversions(db: Session) -> List[UomConversion]:
-    return db.query(UomConversion).order_by(UomConversion.id).all()
+    """Global conversions only; an item's own ones are listed on the item."""
+    return (
+        db.query(UomConversion)
+        .filter(UomConversion.accessory_item_id.is_(None))
+        .order_by(UomConversion.id)
+        .all()
+    )
 
 
 def create_conversion(db: Session, payload: UomConversionCreate) -> UomConversion:
@@ -59,6 +65,7 @@ def create_conversion(db: Session, payload: UomConversionCreate) -> UomConversio
             ((UomConversion.from_uom_id == payload.from_uom_id) & (UomConversion.to_uom_id == payload.to_uom_id))
             | ((UomConversion.from_uom_id == payload.to_uom_id) & (UomConversion.to_uom_id == payload.from_uom_id))
         )
+        .filter(UomConversion.accessory_item_id.is_(None))
         .first()
     )
     if existing:
@@ -72,7 +79,8 @@ def create_conversion(db: Session, payload: UomConversionCreate) -> UomConversio
 
 def _get_conversion_or_404(db: Session, conversion_id: int) -> UomConversion:
     conv = db.get(UomConversion, conversion_id)
-    if conv is None:
+    # Item conversions are edited from their item (/accessory-items/{id}/conversions).
+    if conv is None or conv.accessory_item_id is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversion not found")
     return conv
 
