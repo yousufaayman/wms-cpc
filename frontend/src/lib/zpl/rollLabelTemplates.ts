@@ -20,7 +20,7 @@ export interface DyedRollLabelData {
 export type UndyedRollLabelData = Omit<DyedRollLabelData, "color" | "fabricCode">;
 
 // ^FD field data must not contain ZPL control characters or line breaks.
-const zplSafe = (value: string): string => value.replace(/[\^~\\\r\n]+/g, " ");
+export const zplSafe = (value: string): string => value.replace(/[\^~\\\r\n]+/g, " ");
 
 // TrueType font on the printer assigned to slot 1 (^CW1 → ^A1). Bitmap fonts
 // can't draw Arabic, so this file must already be uploaded to the printer.
@@ -38,7 +38,7 @@ const FONT_LINK =
 // and ^PA0,1,1,1 (default glyph off, bidirectional/RTL layout on, character
 // shaping on, OpenType on) so the printer itself joins Arabic letters and
 // orders mixed Arabic/Latin lines.
-const LABEL_TEXT_SETUP = `^CI28\n${FONT_LINK}^CW1,${LABEL_FONT}\n^PA0,1,1,1`;
+export const LABEL_TEXT_SETUP = `^CI28\n${FONT_LINK}^CW1,${LABEL_FONT}\n^PA0,1,1,1`;
 
 const field = (value: number | string | null | undefined): string => {
   if (value == null || value === "") return "-";
@@ -54,8 +54,8 @@ const fo = (x: number, y: number, w: number): string => `^FO${y},${Math.max(0, L
 
 // ^BC without a start code uses Code 128 subset B: start + data + check (11
 // modules each) + stop (13 modules).
-const BARCODE_MODULE = 2; // ^BY module width
-const code128Width = (data: string): number => (11 * (data.length + 2) + 13) * BARCODE_MODULE;
+export const BARCODE_MODULE = 2; // ^BY module width
+export const code128Width = (data: string): number => (11 * (data.length + 2) + 13) * BARCODE_MODULE;
 
 const barcode = (x: number, y: number, data: string, height: number): string =>
   `${fo(x, y, code128Width(data))}^BCB,${height},N,N,N^FD${data}^FS`;
@@ -66,13 +66,13 @@ const rule = (y: number, thickness: number): string =>
 
 // ZPL cannot measure text, so measure it in the browser with an Arial-metric
 // font (the Zebra TrueType fonts are Helvetica-compatible) and scale the size to just fit.
-const MIN_FONT = 12;
+export const MIN_FONT = 12;
 const FIT_MARGIN = 0.98; // small safety margin for printer/browser metric drift
 const FALLBACK_GLYPH_RATIO = 0.5; // avg glyph width / height when no canvas is available
 const MEASURE_SIZE = 100;
 
 let measureCtx: CanvasRenderingContext2D | null | undefined;
-const textWidthAtSize = (text: string, size: number): number => {
+export const textWidthAtSize = (text: string, size: number): number => {
   if (measureCtx === undefined) {
     try {
       measureCtx = document.createElement("canvas").getContext("2d");
