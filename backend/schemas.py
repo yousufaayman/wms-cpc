@@ -286,6 +286,42 @@ def _blank_to_none(v):
         return v or None
     return v
 
+class AccessoryItemRefIn(BaseModel):
+    """A client's or supplier's code for the item: set exactly one of client_id / supplier_id."""
+    client_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    ref_code: str = Field(..., min_length=1, max_length=100)
+    ref_description: Optional[str] = Field(None, max_length=255)
+
+    _norm_code = field_validator("ref_code", mode="before")(_strip)
+    _norm_desc = field_validator("ref_description", mode="before")(_blank_to_none)
+
+    @model_validator(mode="after")
+    def _one_party(self):
+        if (self.client_id is None) == (self.supplier_id is None):
+            raise ValueError("Set either client_id or supplier_id")
+        return self
+
+class AccessoryItemRefUpdate(BaseModel):
+    """Fix a typo in the code or description; the party can't change."""
+    ref_code: Optional[str] = Field(None, min_length=1, max_length=100)
+    ref_description: Optional[str] = Field(None, max_length=255)
+
+    _norm_code = field_validator("ref_code", mode="before")(_strip)
+    _norm_desc = field_validator("ref_description", mode="before")(_blank_to_none)
+
+class AccessoryItemRef(BaseModel):
+    id: int
+    accessory_item_id: int
+    client_id: Optional[int] = None
+    supplier_id: Optional[int] = None
+    ref_code: str
+    ref_description: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 class AccessoryItemCreate(BaseModel):
     category_id: int
     client_id: Optional[int] = None  # None = generic
@@ -293,6 +329,8 @@ class AccessoryItemCreate(BaseModel):
     color: Optional[str] = Field(None, max_length=100)
     size: Optional[str] = Field(None, max_length=50)
     base_uom_id: int
+    # A new item needs at least one client or supplier code (item 9).
+    refs: List[AccessoryItemRefIn] = Field(..., min_length=1)
 
     _norm_desc = field_validator("description", mode="before")(_strip)
     _norm_opt = field_validator("color", "size", mode="before")(_blank_to_none)
@@ -321,6 +359,7 @@ class AccessoryItem(BaseModel):
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
+    refs: List[AccessoryItemRef] = []
 
     class Config:
         from_attributes = True

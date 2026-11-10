@@ -5,6 +5,9 @@ Anyone with a WMS role can read; creating and editing needs
 `manage_accessory_items`. The whole router is off (404) while
 FEATURE_ACCESSORIES is off (see api.py). Items are never deleted: send
 `active: false` to switch one off.
+
+References (item 9): each item carries client/supplier codes. A new item needs
+at least one; `/refs/lookup` tells a form whether a code is already taken.
 """
 from typing import List, Optional
 
@@ -18,6 +21,9 @@ from backend.schemas import (
     AccessoryItem,
     AccessoryItemCreate,
     AccessoryItemPage,
+    AccessoryItemRef,
+    AccessoryItemRefIn,
+    AccessoryItemRefUpdate,
     AccessoryItemUpdate,
     UomConversion,
     UomConversionCreate,
@@ -43,6 +49,19 @@ def list_items(
         generic_only=generic_only, active_only=active_only, limit=limit, offset=offset,
     )
     return {"items": items, "total": total}
+
+
+@router.get("/refs/lookup", response_model=Optional[AccessoryItem])
+def lookup_ref(
+    code: str,
+    client_id: Optional[int] = None,
+    supplier_id: Optional[int] = None,
+    db: Session = Depends(get_db),
+):
+    """The item that already carries this client's / supplier's code, or null.
+    Codes are compared ignoring case, spaces and - . / _"""
+    ref = crud.find_ref(db, code, client_id=client_id, supplier_id=supplier_id)
+    return ref.item if ref else None
 
 
 @router.get("/{item_id}", response_model=AccessoryItem)
@@ -77,3 +96,25 @@ def delete_item_conversion(
     item_id: int, conversion_id: int, db: Session = Depends(get_db), _user=Depends(_can_manage)
 ):
     crud.delete_item_conversion(db, item_id, conversion_id)
+
+
+@router.get("/{item_id}/refs", response_model=List[AccessoryItemRef])
+def list_refs(item_id: int, db: Session = Depends(get_db)):
+    return crud.list_refs(db, item_id)
+
+
+@router.post("/{item_id}/refs", response_model=AccessoryItemRef, status_code=status.HTTP_201_CREATED)
+def add_ref(item_id: int, payload: AccessoryItemRefIn, db: Session = Depends(get_db), user=Depends(_can_manage)):
+    return crud.add_ref(db, item_id, payload, user_id=user.id)
+
+
+@router.patch("/{item_id}/refs/{ref_id}", response_model=AccessoryItemRef)
+def update_ref(
+    item_id: int, ref_id: int, payload: AccessoryItemRefUpdate, db: Session = Depends(get_db), _user=Depends(_can_manage)
+):
+    return crud.update_ref(db, item_id, ref_id, payload)
+
+
+@router.delete("/{item_id}/refs/{ref_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_ref(item_id: int, ref_id: int, db: Session = Depends(get_db), _user=Depends(_can_manage)):
+    crud.delete_ref(db, item_id, ref_id)

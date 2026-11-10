@@ -10,6 +10,7 @@ structure-only test DB too. Covers:
 3. Per-item conversions: one side must be the base unit, they win over the
    global pair in `uom.convert`, base unit locked while they exist.
 """
+import itertools
 from decimal import Decimal
 
 import pytest
@@ -19,6 +20,7 @@ from backend.core.config import settings
 from backend.domains.accessories import uom as uom_conv
 
 ITEMS = "/api/v1/accessory-items/"
+_ref_numbers = itertools.count(1)
 
 
 @pytest.fixture(autouse=True)
@@ -47,6 +49,13 @@ def _client(db, name, code):
     return c
 
 
+def _supplier(db, name):
+    s = models.LogicalLocation(name=name, location_type="supplier")
+    db.add(s)
+    db.flush()
+    return s
+
+
 @pytest.fixture
 def setup(db):
     pcs = _uom(db, "QPC")
@@ -55,11 +64,16 @@ def setup(db):
     cat = _category(db, "QEL", pcs)
     thr = _category(db, "QTH", cone)
     client = _client(db, "Test Client Q1", "qa")
-    return {"pcs": pcs, "cone": cone, "m": mtr, "cat": cat, "thr": thr, "client": client}
+    supplier = _supplier(db, "Test Supplier Q1")
+    return {"pcs": pcs, "cone": cone, "m": mtr, "cat": cat, "thr": thr, "client": client, "supplier": supplier}
 
 
 def _create(client, h, s, **over):
-    body = {"category_id": s["cat"].id, "client_id": None, "description": "Elastic 2 cm", "base_uom_id": s["pcs"].id}
+    """Create an item; by default with one unique supplier reference (item 9 needs one)."""
+    body = {
+        "category_id": s["cat"].id, "client_id": None, "description": "Elastic 2 cm", "base_uom_id": s["pcs"].id,
+        "refs": [{"supplier_id": s["supplier"].id, "ref_code": f"T-{next(_ref_numbers)}"}],
+    }
     body.update(over)
     return client.post(ITEMS, json=body, headers=h)
 

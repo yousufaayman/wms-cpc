@@ -1,16 +1,18 @@
 /**
- * Accessory Items (item 8): every accessory/trim we stock, with its code.
+ * Accessory Items (items 8 + 9): every accessory/trim we stock, with its code
+ * and the client's / supplier's own codes for it ("references").
  *
- * - A searchable list (code, description, color, size) with category / client
- *   filters and "show inactive".
+ * - A searchable list (our code, client/supplier code, description, color,
+ *   size) with category / client filters and "show inactive".
  * - New item: pick the category (pre-fills the base unit and whether it's for a
- *   client), then a client or "Generic", description, color, size. The server
- *   makes the code (UR-ELS-0007) on save.
- * - Edit item: description, color, size, base unit, active. Category and client
- *   are part of the code, so they're shown read-only. The item's own unit
- *   conversions (1 CONE = 5000 M for one thread) are managed here too.
+ *   client), then a client or "Generic", description, color, size, and at least
+ *   one reference. While typing a reference the page asks the server whether
+ *   that party's code is already on another item, and offers to open it.
+ *   The server makes our code (UR-ELS-0007) on save.
+ * - Edit item: description, color, size, base unit, active; references (add /
+ *   delete, the last one stays); the item's own unit conversions. Category and
+ *   client are part of the code, so they're read-only.
  * Anyone with a WMS role can look; creating/editing needs `manage_accessory_items`.
- * Item 11 adds search by client/supplier reference codes.
  */
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,13 +23,16 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import {
-  accessoryCategoryApi, accessoryItemApi, clientApi, uomApi,
-  type AccessoryCategory, type AccessoryItem, type Client, type Uom, type UomConversion,
+  accessoryCategoryApi, accessoryItemApi, clientApi, logicalLocationApi, uomApi,
+  type AccessoryCategory, type AccessoryItem, type AccessoryItemRef, type Client, type LogicalLocation,
+  type Uom, type UomConversion,
 } from "@/lib/api";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useToast } from "@/hooks/use-toast";
@@ -49,6 +54,13 @@ type Form = {
 
 const BLANK: Form = { category_id: "", client_id: "", description: "", color: "", size: "", base_uom_id: "", active: true };
 
+/** One reference being typed. `party` is "c:<client id>" or "s:<supplier id>". */
+type RefRow = { party: string; code: string; description: string; takenBy: AccessoryItem | null };
+const BLANK_REF: RefRow = { party: "", code: "", description: "", takenBy: null };
+
+const partyParams = (party: string): { client_id?: number; supplier_id?: number } =>
+  party.startsWith("c:") ? { client_id: Number(party.slice(2)) } : { supplier_id: Number(party.slice(2)) };
+
 const AccessoryItems = () => {
   const { t, language } = useTranslation();
   const { toast } = useToast();
@@ -59,6 +71,7 @@ const AccessoryItems = () => {
   const [categories, setCategories] = useState<AccessoryCategory[]>([]);
   const [uoms, setUoms] = useState<Uom[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
+  const [suppliers, setSuppliers] = useState<LogicalLocation[]>([]);
 
   // List + filters
   const [items, setItems] = useState<AccessoryItem[]>([]);
@@ -76,13 +89,20 @@ const AccessoryItems = () => {
   const [saving, setSaving] = useState(false);
   const [conversions, setConversions] = useState<UomConversion[]>([]);
   const [convForm, setConvForm] = useState({ uom_id: "", factor: "" });
+  const [refRows, setRefRows] = useState<RefRow[]>([BLANK_REF]); // new item
+  const [newRef, setNewRef] = useState<RefRow>(BLANK_REF); // adding to an existing item
 
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const uomById = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms]);
   const clientById = useMemo(() => new Map(clients.map((c) => [c.id, c])), [clients]);
+  const supplierById = useMemo(() => new Map(suppliers.map((s) => [s.id, s])), [suppliers]);
 
   const categoryName = (c: AccessoryCategory) => `${c.code} · ${language === "ar" ? c.name_ar : c.name_en}`;
   const uomCode = (id: number) => uomById.get(id)?.code ?? `#${id}`;
+  const refParty = (r: AccessoryItemRef) =>
+    r.client_id != null
+      ? clientById.get(r.client_id)?.name ?? `#${r.client_id}`
+      : supplierById.get(r.supplier_id ?? -1)?.name ?? `#${r.supplier_id}`;
 
   const fail = (error: unknown) =>
     toast({
@@ -90,13 +110,23 @@ const AccessoryItems = () => {
       description: error instanceof Error ? error.message : t("accSaveFailed"),
       variant: "destructive",
     });
+  const warn = (key: Parameters<typeof t>[0], params?: Record<string, string>) =>
+    toast({ title: t("error"), description: t(key, params), variant: "destructive" });
 
   useEffect(() => {
-    Promise.all([accessoryCategoryApi.getAll(), uomApi.getAll(), clientApi.getAll()])
-      .then(([cats, units, cls]) => {
+    Promise.all([
+      accessoryCategoryApi.getAll(),
+      uomApi.getAll(),
+      clientApi.getAll(),
+      logicalLocationApi.getAll({ limit: 1000 }),
+    ])
+      .then(([cats, units, cls, locations]) => {
         setCategories(cats);
         setUoms(units);
         setClients([...cls].sort((a, b) => a.name.localeCompare(b.name)));
+        setSuppliers(
+          locations.filter((l) => l.location_type === "supplier").sort((a, b) => a.name.localeCompare(b.name)),
+        );
       })
       .catch(fail);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -137,10 +167,21 @@ const AccessoryItems = () => {
     }
   };
 
+  /** Re-read the open item (after a reference changed) and the list. */
+  const refreshEditing = async (itemId: number) => {
+    try {
+      setEditing(await accessoryItemApi.get(itemId));
+      loadItems();
+    } catch (error) {
+      fail(error);
+    }
+  };
+
   const openNew = () => {
     setEditing(null);
     setForm(BLANK);
     setConversions([]);
+    setRefRows([BLANK_REF]);
     setDialogOpen(true);
   };
 
@@ -156,6 +197,7 @@ const AccessoryItems = () => {
       active: item.active,
     });
     setConvForm({ uom_id: "", factor: "" });
+    setNewRef(BLANK_REF);
     setConversions([]);
     loadConversions(item.id);
     setDialogOpen(true);
@@ -172,15 +214,44 @@ const AccessoryItems = () => {
     });
   };
 
+  // ── References on a new item ──────────────────────────────────────────────
+
+  const setRefRow = (index: number, changes: Partial<RefRow>) =>
+    setRefRows((rows) => rows.map((row, i) => (i === index ? { ...row, ...changes } : row)));
+
+  /** Is this party's code already on another item? Asked when the code or party changes. */
+  const checkTaken = async (index: number, row: RefRow) => {
+    if (!row.party || !row.code.trim()) {
+      setRefRow(index, { takenBy: null });
+      return;
+    }
+    try {
+      setRefRow(index, { takenBy: await accessoryItemApi.lookupRef(row.code.trim(), partyParams(row.party)) });
+    } catch {
+      // The server checks again on save.
+    }
+  };
+
+  /** What's missing in the form, as a message key, or null. */
+  const formProblem = (filledRefs: RefRow[]): Parameters<typeof t>[0] | null => {
+    if (!form.category_id) return "accPickCategory";
+    if (!form.client_id) return "accPickClient";
+    if (!form.description.trim()) return "accDescriptionRequired";
+    if (!form.base_uom_id) return "accPickDefaultUnit";
+    if (!editing && (filledRefs.length === 0 || filledRefs.some((r) => !r.party))) return "accRefRequired";
+    return null;
+  };
+
   const save = async () => {
-    const problem =
-      !form.category_id ? "accPickCategory"
-      : !form.client_id ? "accPickClient"
-      : !form.description.trim() ? "accDescriptionRequired"
-      : !form.base_uom_id ? "accPickDefaultUnit"
-      : null;
+    const filledRefs = refRows.filter((r) => r.code.trim());
+    const problem = formProblem(filledRefs);
     if (problem) {
-      toast({ title: t("error"), description: t(problem), variant: "destructive" });
+      warn(problem);
+      return;
+    }
+    const taken = !editing && filledRefs.find((r) => r.takenBy);
+    if (taken && taken.takenBy) {
+      warn("accRefTaken", { code: taken.takenBy.code });
       return;
     }
     setSaving(true);
@@ -199,6 +270,11 @@ const AccessoryItems = () => {
           ...common,
           category_id: Number(form.category_id),
           client_id: form.client_id === GENERIC ? null : Number(form.client_id),
+          refs: filledRefs.map((r) => ({
+            ...partyParams(r.party),
+            ref_code: r.code.trim(),
+            ref_description: r.description.trim() || null,
+          })),
         });
         toast({ title: t("success"), description: t("accItemCreated", { code: created.code }) });
       }
@@ -211,16 +287,48 @@ const AccessoryItems = () => {
     }
   };
 
-  // Item conversions are always written as 1 <other unit> = factor × <base unit>.
+  // ── References on an existing item ────────────────────────────────────────
+
+  const addRef = async () => {
+    if (!editing) return;
+    if (!newRef.party || !newRef.code.trim()) {
+      warn("accRefRequired");
+      return;
+    }
+    try {
+      await accessoryItemApi.addRef(editing.id, {
+        ...partyParams(newRef.party),
+        ref_code: newRef.code.trim(),
+        ref_description: newRef.description.trim() || null,
+      });
+      setNewRef(BLANK_REF);
+      refreshEditing(editing.id);
+    } catch (error) {
+      fail(error);
+    }
+  };
+
+  const removeRef = async (ref: AccessoryItemRef) => {
+    if (!editing) return;
+    try {
+      await accessoryItemApi.deleteRef(editing.id, ref.id);
+      refreshEditing(editing.id);
+    } catch (error) {
+      fail(error);
+    }
+  };
+
+  // ── Item conversions (always 1 <other unit> = factor × <base unit>) ──────
+
   const addConversion = async () => {
     if (!editing) return;
     const factor = Number(convForm.factor);
     if (!convForm.uom_id) {
-      toast({ title: t("error"), description: t("accSelectUnit"), variant: "destructive" });
+      warn("accSelectUnit");
       return;
     }
     if (!(factor > 0)) {
-      toast({ title: t("error"), description: t("accFactorPositive"), variant: "destructive" });
+      warn("accFactorPositive");
       return;
     }
     try {
@@ -251,6 +359,29 @@ const AccessoryItems = () => {
   const activeCategories = categories.filter((c) => c.active);
   const activeUoms = uoms.filter((u) => u.active);
   const readOnly = !canManage;
+  // A client-specific item only takes its own client's codes.
+  const itemClientId = form.client_id && form.client_id !== GENERIC ? Number(form.client_id) : null;
+  const refClients = itemClientId == null ? clients : clients.filter((c) => c.id === itemClientId);
+
+  const partySelect = (value: string, onChange: (v: string) => void) => (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="w-44"><SelectValue placeholder={t("accRefParty")} /></SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          <SelectLabel>{t("accClients")}</SelectLabel>
+          {refClients.map((c) => (
+            <SelectItem key={`c${c.id}`} value={`c:${c.id}`}>{c.name}</SelectItem>
+          ))}
+        </SelectGroup>
+        <SelectGroup>
+          <SelectLabel>{t("accSuppliers")}</SelectLabel>
+          {suppliers.map((s) => (
+            <SelectItem key={`s${s.id}`} value={`s:${s.id}`}>{s.name}</SelectItem>
+          ))}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
 
   return (
     <PageTransition>
@@ -273,7 +404,7 @@ const AccessoryItems = () => {
             <Card>
               <CardContent className="pt-6 space-y-4">
                 <div className="flex flex-wrap items-center gap-3">
-                  <Input className="max-w-sm" placeholder={t("accItemSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
+                  <Input className="max-w-md" placeholder={t("accItemSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
                   <Select value={categoryFilter} onValueChange={setCategoryFilter}>
                     <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -310,6 +441,7 @@ const AccessoryItems = () => {
                         <TableRow>
                           <TableHead>{t("accItemCode")}</TableHead>
                           <TableHead>{t("accDescription")}</TableHead>
+                          <TableHead>{t("accRefs")}</TableHead>
                           <TableHead>{t("accCategory")}</TableHead>
                           <TableHead>{t("client")}</TableHead>
                           <TableHead>{t("color")}</TableHead>
@@ -326,6 +458,14 @@ const AccessoryItems = () => {
                             <TableRow key={item.id}>
                               <TableCell className="font-mono font-medium" dir="ltr">{item.code}</TableCell>
                               <TableCell>{item.description}</TableCell>
+                              <TableCell className="text-sm">
+                                {item.refs.length === 0 ? "—" : item.refs.map((r) => (
+                                  <div key={r.id}>
+                                    <span className="text-muted-foreground">{refParty(r)}: </span>
+                                    <span className="font-mono" dir="ltr">{r.ref_code}</span>
+                                  </div>
+                                ))}
+                              </TableCell>
                               <TableCell>{cat ? categoryName(cat) : `#${item.category_id}`}</TableCell>
                               <TableCell>{clientLabel(item.client_id)}</TableCell>
                               <TableCell>{item.color ?? "—"}</TableCell>
@@ -356,7 +496,7 @@ const AccessoryItems = () => {
           </div>
 
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
                   {editing ? `${t("accEditItem")} · ${editing.code}` : t("accNewItem")}
@@ -365,31 +505,32 @@ const AccessoryItems = () => {
               <div className="space-y-4">
                 {!editing && <p className="text-sm text-muted-foreground">{t("accCodeOnSave")}</p>}
 
-                <div className="space-y-2">
-                  <Label>{t("accCategory")}</Label>
-                  <Select value={form.category_id} onValueChange={pickCategory} disabled={!!editing}>
-                    <SelectTrigger><SelectValue placeholder={t("accPickCategory")} /></SelectTrigger>
-                    <SelectContent>
-                      {(editing ? categories : activeCategories).map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{categoryName(c)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>{t("accCategory")}</Label>
+                    <Select value={form.category_id} onValueChange={pickCategory} disabled={!!editing}>
+                      <SelectTrigger><SelectValue placeholder={t("accPickCategory")} /></SelectTrigger>
+                      <SelectContent>
+                        {(editing ? categories : activeCategories).map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>{categoryName(c)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>{t("client")}</Label>
+                    <Select value={form.client_id} onValueChange={(v) => setForm({ ...form, client_id: v })} disabled={!!editing}>
+                      <SelectTrigger><SelectValue placeholder={t("accPickClient")} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={GENERIC}>{t("accGeneric")}</SelectItem>
+                        {clients.map((c) => (
+                          <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>{t("client")}</Label>
-                  <Select value={form.client_id} onValueChange={(v) => setForm({ ...form, client_id: v })} disabled={!!editing}>
-                    <SelectTrigger><SelectValue placeholder={t("accPickClient")} /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={GENERIC}>{t("accGeneric")}</SelectItem>
-                      {clients.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {editing && <p className="text-xs text-muted-foreground">{t("accCodeFieldsFixed")}</p>}
-                </div>
+                {editing && <p className="text-xs text-muted-foreground">{t("accCodeFieldsFixed")}</p>}
 
                 <div className="space-y-2">
                   <Label htmlFor="description">{t("accDescription")}</Label>
@@ -397,7 +538,7 @@ const AccessoryItems = () => {
                     onChange={(e) => setForm({ ...form, description: e.target.value })} />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="color">{t("color")}</Label>
                     <Input id="color" maxLength={100} value={form.color} disabled={readOnly}
@@ -408,19 +549,18 @@ const AccessoryItems = () => {
                     <Input id="size" maxLength={50} value={form.size} disabled={readOnly}
                       onChange={(e) => setForm({ ...form, size: e.target.value })} />
                   </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>{t("accBaseUnit")}</Label>
-                  <Select value={form.base_uom_id} onValueChange={(v) => setForm({ ...form, base_uom_id: v })}
-                    disabled={readOnly || conversions.length > 0}>
-                    <SelectTrigger><SelectValue placeholder={t("accSelectUnit")} /></SelectTrigger>
-                    <SelectContent>
-                      {(readOnly ? uoms : activeUoms).map((u) => (
-                        <SelectItem key={u.id} value={String(u.id)}>{`${u.code} · ${u.name_en} · ${u.name_ar}`}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-2">
+                    <Label>{t("accBaseUnit")}</Label>
+                    <Select value={form.base_uom_id} onValueChange={(v) => setForm({ ...form, base_uom_id: v })}
+                      disabled={readOnly || conversions.length > 0}>
+                      <SelectTrigger><SelectValue placeholder={t("accSelectUnit")} /></SelectTrigger>
+                      <SelectContent>
+                        {(readOnly ? uoms : activeUoms).map((u) => (
+                          <SelectItem key={u.id} value={String(u.id)}>{`${u.code} · ${u.name_en} · ${u.name_ar}`}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {editing && (
@@ -430,6 +570,85 @@ const AccessoryItems = () => {
                       onCheckedChange={(v) => setForm({ ...form, active: v })} />
                   </div>
                 )}
+
+                {/* References: the client's / supplier's own codes */}
+                <div className="space-y-3 border-t pt-4">
+                  <div>
+                    <h3 className="font-medium">{t("accRefs")}</h3>
+                    {itemClientId != null && <p className="text-xs text-muted-foreground">{t("accRefOwnClientOnly")}</p>}
+                  </div>
+
+                  {!editing ? (
+                    <>
+                      {refRows.map((row, index) => (
+                        <div key={index} className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            {partySelect(row.party, (v) => {
+                              const next = { ...row, party: v };
+                              setRefRow(index, { party: v });
+                              checkTaken(index, next);
+                            })}
+                            <Input className="w-36 font-mono" dir="ltr" placeholder={t("accRefCode")} maxLength={100}
+                              value={row.code} onChange={(e) => setRefRow(index, { code: e.target.value, takenBy: null })}
+                              onBlur={() => checkTaken(index, row)} />
+                            <Input className="flex-1" placeholder={t("accRefDescription")} maxLength={255}
+                              value={row.description} onChange={(e) => setRefRow(index, { description: e.target.value })} />
+                            <Button variant="outline" size="sm" title={t("accDeleteRef")} disabled={refRows.length <= 1}
+                              onClick={() => setRefRows((rows) => rows.filter((_, i) => i !== index))}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                          {row.takenBy && (
+                            <div className="flex items-center gap-2 text-sm text-destructive">
+                              <span>{t("accRefTaken", { code: row.takenBy.code })}</span>
+                              <Button variant="link" size="sm" className="h-auto p-0"
+                                onClick={() => row.takenBy && openEdit(row.takenBy)}>
+                                {t("accOpenItem")}
+                              </Button>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <Button variant="outline" size="sm" onClick={() => setRefRows((rows) => [...rows, BLANK_REF])}>
+                        <Plus className="mr-2 h-4 w-4" />{t("accAddRef")}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      {editing.refs.length === 0 && (
+                        <p className="text-sm text-muted-foreground">{t("accNoRefs")}</p>
+                      )}
+                      {editing.refs.map((r) => (
+                        <div key={r.id} className="flex items-center justify-between gap-2">
+                          <div className="text-sm">
+                            <span className="text-muted-foreground">{refParty(r)}: </span>
+                            <span className="font-mono" dir="ltr">{r.ref_code}</span>
+                            {r.ref_description && <span className="text-muted-foreground"> · {r.ref_description}</span>}
+                          </div>
+                          {canManage && (
+                            <Button variant="outline" size="sm" onClick={() => removeRef(r)}
+                              disabled={editing.refs.length <= 1}
+                              title={editing.refs.length <= 1 ? t("accRefLastOne") : t("accDeleteRef")}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      ))}
+                      {canManage && (
+                        <div className="flex items-center gap-2">
+                          {partySelect(newRef.party, (v) => setNewRef({ ...newRef, party: v }))}
+                          <Input className="w-36 font-mono" dir="ltr" placeholder={t("accRefCode")} maxLength={100}
+                            value={newRef.code} onChange={(e) => setNewRef({ ...newRef, code: e.target.value })} />
+                          <Input className="flex-1" placeholder={t("accRefDescription")} maxLength={255}
+                            value={newRef.description} onChange={(e) => setNewRef({ ...newRef, description: e.target.value })} />
+                          <Button variant="outline" size="sm" onClick={addRef} title={t("accAddRef")}>
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
                 {editing && (
                   <div className="space-y-3 border-t pt-4">
