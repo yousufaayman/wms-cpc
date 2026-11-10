@@ -217,6 +217,7 @@ class ClientFabricCode(Base):
 # Accessory item master: units, unit conversions, trim categories (item 7).
 # Stock is always kept in an item's base unit; conversions are only used where
 # people type or read quantities (receiving, issuing).
+# New tables use bigint ids and timestamptz (cpc-db lint rules, 2026-11-10).
 _FK_UOMS = "core.uoms.id"
 
 
@@ -227,13 +228,13 @@ class Uom(Base):
         {"schema": "core"},
     )
 
-    id = Column(Integer, primary_key=True)
+    id = Column(BigInteger, primary_key=True)
     code = Column(String(10), unique=True, nullable=False)
     name_en = Column(String(50), nullable=False)
     name_ar = Column(String(50), nullable=False)  # printed on pack labels
     allows_decimals = Column(Boolean, nullable=False, server_default="false")
     active = Column(Boolean, nullable=False, server_default="true")
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     def __repr__(self):
         return f"<Uom {self.code}>"
@@ -251,11 +252,11 @@ class UomConversion(Base):
         {"schema": "core"},
     )
 
-    id = Column(Integer, primary_key=True)
-    from_uom_id = Column(Integer, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
-    to_uom_id = Column(Integer, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    id = Column(BigInteger, primary_key=True)
+    from_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    to_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
     factor = Column(NUMERIC(14, 6), nullable=False)
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     from_uom = relationship("Uom", foreign_keys=[from_uom_id])
     to_uom = relationship("Uom", foreign_keys=[to_uom_id])
@@ -274,14 +275,14 @@ class AccessoryCategory(Base):
         {"schema": "core"},
     )
 
-    id = Column(Integer, primary_key=True)
+    id = Column(BigInteger, primary_key=True)
     code = Column(String(5), unique=True, nullable=False)
     name_en = Column(String(100), nullable=False)
     name_ar = Column(String(100), nullable=False)
-    default_uom_id = Column(Integer, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    default_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
     default_client_specific = Column(Boolean, nullable=False, server_default="false")
     active = Column(Boolean, nullable=False, server_default="true")
-    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     default_uom = relationship("Uom", foreign_keys=[default_uom_id])
 
