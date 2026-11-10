@@ -359,7 +359,7 @@ class AccessorySeq(Base):
     category_id = Column(
         BigInteger, ForeignKey("core.accessory_categories.id", ondelete=_ON_DELETE_RESTRICT), primary_key=True
     )
-    last_seq = Column(Integer, nullable=False)
+    last_seq = Column(BigInteger, nullable=False)
 
 
 # Job Order Material Request — fabric a job order needs, fulfilled from stock
