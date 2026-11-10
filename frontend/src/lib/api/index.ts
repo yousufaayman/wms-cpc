@@ -51,6 +51,20 @@ export {
   type LogicalLocationFilters
 } from './logical-locations';
 
+// Accessory units, conversions, categories (item 7)
+export {
+  uomApi,
+  accessoryCategoryApi,
+  type Uom,
+  type UomCreate,
+  type UomUpdate,
+  type UomConversion,
+  type UomConversionCreate,
+  type AccessoryCategory,
+  type AccessoryCategoryCreate,
+  type AccessoryCategoryUpdate
+} from './accessory-setup';
+
 // Export supplier receipt types and API
 export {
   supplierReceiptApi,

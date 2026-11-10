@@ -17,6 +17,7 @@ import { LanguageProvider } from "./contexts/LanguageContext";
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ManageWarehouseRacks = lazy(() => import("./pages/ManageWarehouseRacks"));
 const ManageLogicalLocations = lazy(() => import("./pages/ManageLogicalLocations"));
+const AccessorySetup = lazy(() => import("./pages/AccessorySetup"));
 const Receipts = lazy(() => import("./pages/Receipts"));
 const ReceiptDetail = lazy(() => import("./pages/ReceiptDetail"));
 const CreateReceipt = lazy(() => import("./pages/CreateReceipt"));
@@ -68,6 +69,20 @@ const App = () => (
                     <RequireModule module="warehouse_racks">
                       <Suspense fallback={<LoadingSpinner message="Loading Manage Racks..." />}>
                         <ManageWarehouseRacks />
+                      </Suspense>
+                    </RequireModule>
+                  </RequirePermission>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/accessory-setup"
+              element={
+                <ProtectedRoute>
+                  <RequirePermission permission="manage_accessory_items">
+                    <RequireModule module="accessory_items">
+                      <Suspense fallback={<LoadingSpinner message="Loading..." />}>
+                        <AccessorySetup />
                       </Suspense>
                     </RequireModule>
                   </RequirePermission>
