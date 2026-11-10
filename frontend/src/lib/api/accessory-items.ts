@@ -13,7 +13,51 @@ import type { UomConversion } from './accessory-setup';
  * item needs at least one. A code is unique per client / per supplier, compared
  * without case, spaces or - . / _ (so "ab 01" = "AB-01"), but supplier A's 01
  * and supplier B's 01 are different references.
+ *
+ * Templates + variants (item 10): an item with variable lines (`fields`, e.g.
+ * Price, PO number) is a template and is never stocked. Each variant is one
+ * combination of values (+ color, size), coded `<template code>-001`, and takes
+ * category, client, base unit and conversions from its template. The same
+ * combination can exist only once (`checkVariant` finds it). A variant's own
+ * references are optional: the template's apply.
  */
+
+export type FieldType = 'text' | 'number' | 'money' | 'date';
+
+/** One variable line of a template. `field_key` never changes. */
+export interface AccessoryItemField {
+  id: number;
+  accessory_item_id: number;
+  field_key: string;
+  label_en: string;
+  label_ar: string;
+  field_type: FieldType;
+  required: boolean;
+  print_order: number;
+}
+
+export type AccessoryItemFieldCreate = Omit<AccessoryItemField, 'id' | 'accessory_item_id' | 'field_key'>;
+export type AccessoryItemFieldUpdate = Partial<AccessoryItemFieldCreate>;
+
+/** A variant's value with its line's labels, in print order. */
+export interface AccessoryValueLine {
+  field_key: string;
+  label_en: string;
+  label_ar: string;
+  value: string;
+}
+
+/** "Price: 34.99 · PO number: 45127" in the page's language. */
+export const valueSummary = (lines: AccessoryValueLine[], language: string) =>
+  lines.map((l) => `${language === 'ar' ? l.label_ar : l.label_en}: ${l.value}`).join(' · ');
+
+export interface AccessoryVariantCreate {
+  values: Record<string, string | null>;
+  color?: string | null;
+  size?: string | null;
+  description?: string | null; // default: the template's
+  refs?: AccessoryItemRefCreate[]; // optional
+}
 
 export interface AccessoryItemRef {
   id: number;
@@ -49,6 +93,12 @@ export interface AccessoryItem {
   created_at: string;
   updated_at: string | null;
   refs: AccessoryItemRef[];
+  is_template: boolean;
+  fields: AccessoryItemField[]; // a template's lines
+  parent_template_id: number | null; // set = this is a variant
+  template_code: string | null;
+  variable_values: Record<string, string> | null;
+  value_lines: AccessoryValueLine[];
 }
 
 export interface AccessoryItemCreate {
@@ -62,7 +112,11 @@ export interface AccessoryItemCreate {
 }
 
 /** Category and client aren't editable. Send color/size as null to clear them. */
-export type AccessoryItemUpdate = Partial<Pick<AccessoryItem, 'description' | 'color' | 'size' | 'base_uom_id' | 'active'>>;
+export type AccessoryItemUpdate = Partial<Pick<AccessoryItem, 'description' | 'color' | 'size' | 'base_uom_id' | 'active'>> & {
+  variable_values?: Record<string, string | null>; // variants only: the full new set
+};
+
+export type AccessoryItemKind = 'plain' | 'template' | 'variant';
 
 export interface AccessoryItemQuery {
   q?: string; // part of our code, a client/supplier code, description, color or size
@@ -70,6 +124,8 @@ export interface AccessoryItemQuery {
   client_id?: number;
   generic_only?: boolean;
   active_only?: boolean; // server default: true
+  kind?: AccessoryItemKind;
+  template_id?: number;
   limit?: number;
   offset?: number;
 }
@@ -117,4 +173,18 @@ export const accessoryItemApi = {
   updateRef: (id: number, refId: number, changes: AccessoryItemRefUpdate) =>
     api.request<AccessoryItemRef>(`/accessory-items/${id}/refs/${refId}`, 'PATCH', changes),
   deleteRef: (id: number, refId: number) => api.request<void>(`/accessory-items/${id}/refs/${refId}`, 'DELETE'),
+
+  addField: (id: number, field: AccessoryItemFieldCreate) =>
+    api.request<AccessoryItemField>(`/accessory-items/${id}/fields`, 'POST', field),
+  updateField: (id: number, fieldId: number, changes: AccessoryItemFieldUpdate) =>
+    api.request<AccessoryItemField>(`/accessory-items/${id}/fields/${fieldId}`, 'PATCH', changes),
+  deleteField: (id: number, fieldId: number) =>
+    api.request<void>(`/accessory-items/${id}/fields/${fieldId}`, 'DELETE'),
+
+  getVariants: (id: number) => api.request<AccessoryItem[]>(`/accessory-items/${id}/variants`),
+  /** The variant that already has this combination, or null. Saves nothing. */
+  checkVariant: (id: number, variant: AccessoryVariantCreate) =>
+    api.request<AccessoryItem | null>(`/accessory-items/${id}/variants/check`, 'POST', variant),
+  createVariant: (id: number, variant: AccessoryVariantCreate) =>
+    api.request<AccessoryItem>(`/accessory-items/${id}/variants`, 'POST', variant),
 };

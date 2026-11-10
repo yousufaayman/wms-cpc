@@ -9,13 +9,14 @@ works both ways: PCS → DOZ uses 1 / 12. Only direct pairs convert; there is
 no chaining through a third unit, so every allowed pair is visible in the
 Units & Categories page. An item can also have its own conversions (meters
 per cone of one thread); those win over a global pair for that item.
+A variant (item 10) has no conversions of its own: it uses its template's.
 """
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from backend.models import UomConversion
+from backend.models import AccessoryItem, UomConversion
 
 # Ledger quantities are NUMERIC(14,4).
 QTY_PLACES = Decimal("0.0001")
@@ -29,11 +30,13 @@ def find_factor(
     db: Session, from_uom_id: int, to_uom_id: int, item_id: Optional[int] = None
 ) -> Optional[Decimal]:
     """How many `to` units one `from` unit is, or None if the pair isn't defined.
-    With `item_id`, that item's own conversion is used first, then a global one."""
+    With `item_id`, that item's own conversion is used first (its template's,
+    for a variant), then a global one."""
     if from_uom_id == to_uom_id:
         return Decimal(1)
     if item_id is not None:
-        factor = _factor_from(db, from_uom_id, to_uom_id, item_id)
+        parent_id = db.query(AccessoryItem.parent_template_id).filter(AccessoryItem.id == item_id).scalar()
+        factor = _factor_from(db, from_uom_id, to_uom_id, parent_id or item_id)
         if factor is not None:
             return factor
     return _factor_from(db, from_uom_id, to_uom_id, None)
