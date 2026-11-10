@@ -8,8 +8,14 @@ FEATURE_ACCESSORIES is off (see api.py). Items are never deleted: send
 
 References (item 9): each item carries client/supplier codes. A new item needs
 at least one; `/refs/lookup` tells a form whether a code is already taken.
+
+Templates + variants (item 10): `/{id}/fields` are a template's variable lines
+(adding the first one makes the item a template); `/{id}/variants` lists and
+creates its variants; `/{id}/variants/check` tells the form whether a
+combination already exists. A variant is edited with the normal PATCH
+(`variable_values`, color, size).
 """
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -20,11 +26,15 @@ from backend.crud import accessory_items as crud
 from backend.schemas import (
     AccessoryItem,
     AccessoryItemCreate,
+    AccessoryItemField,
+    AccessoryItemFieldCreate,
+    AccessoryItemFieldUpdate,
     AccessoryItemPage,
     AccessoryItemRef,
     AccessoryItemRefIn,
     AccessoryItemRefUpdate,
     AccessoryItemUpdate,
+    AccessoryVariantCreate,
     UomConversion,
     UomConversionCreate,
 )
@@ -40,13 +50,16 @@ def list_items(
     client_id: Optional[int] = None,
     generic_only: bool = False,
     active_only: bool = True,
+    kind: Optional[Literal["plain", "template", "variant"]] = None,
+    template_id: Optional[int] = None,
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     items, total = crud.list_items(
         db, q=q, category_id=category_id, client_id=client_id,
-        generic_only=generic_only, active_only=active_only, limit=limit, offset=offset,
+        generic_only=generic_only, active_only=active_only, kind=kind, template_id=template_id,
+        limit=limit, offset=offset,
     )
     return {"items": items, "total": total}
 
@@ -118,3 +131,43 @@ def update_ref(
 @router.delete("/{item_id}/refs/{ref_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_ref(item_id: int, ref_id: int, db: Session = Depends(get_db), _user=Depends(_can_manage)):
     crud.delete_ref(db, item_id, ref_id)
+
+
+@router.get("/{item_id}/fields", response_model=List[AccessoryItemField])
+def list_fields(item_id: int, db: Session = Depends(get_db)):
+    return crud.list_fields(db, item_id)
+
+
+@router.post("/{item_id}/fields", response_model=AccessoryItemField, status_code=status.HTTP_201_CREATED)
+def add_field(item_id: int, payload: AccessoryItemFieldCreate, db: Session = Depends(get_db), _user=Depends(_can_manage)):
+    return crud.add_field(db, item_id, payload)
+
+
+@router.patch("/{item_id}/fields/{field_id}", response_model=AccessoryItemField)
+def update_field(
+    item_id: int, field_id: int, payload: AccessoryItemFieldUpdate, db: Session = Depends(get_db), _user=Depends(_can_manage)
+):
+    return crud.update_field(db, item_id, field_id, payload)
+
+
+@router.delete("/{item_id}/fields/{field_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_field(item_id: int, field_id: int, db: Session = Depends(get_db), _user=Depends(_can_manage)):
+    crud.delete_field(db, item_id, field_id)
+
+
+@router.get("/{item_id}/variants", response_model=List[AccessoryItem])
+def list_variants(item_id: int, active_only: bool = False, db: Session = Depends(get_db)):
+    return crud.list_variants(db, item_id, active_only=active_only)
+
+
+@router.post("/{item_id}/variants/check", response_model=Optional[AccessoryItem])
+def check_variant(item_id: int, payload: AccessoryVariantCreate, db: Session = Depends(get_db)):
+    """The variant that already has this combination, or null. Saves nothing."""
+    return crud.check_variant(db, item_id, payload)
+
+
+@router.post("/{item_id}/variants", response_model=AccessoryItem, status_code=status.HTTP_201_CREATED)
+def create_variant(
+    item_id: int, payload: AccessoryVariantCreate, db: Session = Depends(get_db), user=Depends(_can_manage)
+):
+    return crud.create_variant(db, item_id, payload, user_id=user.id)

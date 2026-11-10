@@ -314,6 +314,17 @@ class AccessoryItem(Base):
     __tablename__ = "accessory_items"
     __table_args__ = (
         CheckConstraint("btrim(description) <> ''", name="ck_accessory_items_description"),
+        # Item 10: a variant has all three, any other item none of them.
+        CheckConstraint(
+            "((parent_template_id IS NULL) = (variant_key IS NULL)) "
+            "AND ((parent_template_id IS NULL) = (variable_values IS NULL))",
+            name="ck_accessory_items_variant",
+        ),
+        Index("ix_accessory_items_parent_template", "parent_template_id"),
+        Index(
+            "uq_accessory_items_variant", "parent_template_id", "variant_key",
+            unique=True, postgresql_where=text("parent_template_id IS NOT NULL"),
+        ),
         {"schema": "core"},
     )
 
@@ -336,6 +347,16 @@ class AccessoryItem(Base):
     created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=True)
+    # Item 10 (templates + variants). An item with variable lines (`fields`) is
+    # a template: never stocked. A variant points at its template and holds one
+    # combination of values, e.g. {"price": "34.99", "po_number": "45127"}.
+    # `variant_key` = color + size + values in comparison form
+    # (`domains/accessories/variants.py`), unique per template.
+    parent_template_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=True
+    )
+    variable_values = Column(JSONB, nullable=True)
+    variant_key = Column(String(1000), nullable=True)
 
     category = relationship("AccessoryCategory", foreign_keys=[category_id])
     client = relationship("Client", foreign_keys=[client_id])
@@ -343,9 +364,69 @@ class AccessoryItem(Base):
     refs = relationship(
         "AccessoryItemRef", back_populates="item", order_by="AccessoryItemRef.id", lazy="selectin"
     )
+    fields = relationship(
+        "AccessoryItemField", back_populates="item",
+        order_by="[AccessoryItemField.print_order, AccessoryItemField.id]", lazy="selectin",
+    )
+    parent_template = relationship(
+        "AccessoryItem", remote_side=[id], foreign_keys=[parent_template_id], lazy="selectin"
+    )
+
+    @property
+    def is_template(self) -> bool:
+        return bool(self.fields)
+
+    @property
+    def template_code(self):
+        return self.parent_template.code if self.parent_template is not None else None
+
+    @property
+    def value_lines(self):
+        """A variant's values in its template's print order, with the line labels."""
+        if self.parent_template is None:
+            return []
+        values = self.variable_values or {}
+        return [
+            {"field_key": f.field_key, "label_en": f.label_en, "label_ar": f.label_ar, "value": values[f.field_key]}
+            for f in self.parent_template.fields
+            if f.field_key in values
+        ]
 
     def __repr__(self):
         return f"<AccessoryItem {self.code}>"
+
+
+class AccessoryItemField(Base):
+    """One variable line of a template (item 10), e.g. "Price" (money) or
+    "PO number" (text). `field_key` is made from the English label and never
+    changes: variants store their values under it."""
+    __tablename__ = "accessory_item_fields"
+    __table_args__ = (
+        CheckConstraint("field_key ~ '^[a-z][a-z0-9_]*$'", name="ck_accessory_item_fields_key"),
+        CheckConstraint("btrim(label_en) <> '' AND btrim(label_ar) <> ''", name="ck_accessory_item_fields_labels"),
+        CheckConstraint(
+            "field_type IN ('text', 'number', 'money', 'date')", name="ck_accessory_item_fields_type"
+        ),
+        Index("uq_accessory_item_fields_key", "accessory_item_id", "field_key", unique=True),
+        {"schema": "core"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    accessory_item_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    field_key = Column(String(40), nullable=False)
+    label_en = Column(String(100), nullable=False)
+    label_ar = Column(String(100), nullable=False)
+    field_type = Column(String(10), nullable=False)
+    required = Column(Boolean, nullable=False, server_default="false")
+    print_order = Column(Integer, nullable=False, server_default="0")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    item = relationship("AccessoryItem", back_populates="fields")
+
+    def __repr__(self):
+        return f"<AccessoryItemField {self.field_key} item={self.accessory_item_id}>"
 
 
 class AccessoryItemRef(Base):

@@ -67,6 +67,7 @@ export {
 
 export {
   accessoryItemApi,
+  valueSummary,
   type AccessoryItem,
   type AccessoryItemCreate,
   type AccessoryItemUpdate,
@@ -75,7 +76,14 @@ export {
   type ItemConversionCreate,
   type AccessoryItemRef,
   type AccessoryItemRefCreate,
-  type AccessoryItemRefUpdate
+  type AccessoryItemRefUpdate,
+  type AccessoryItemField,
+  type AccessoryItemFieldCreate,
+  type AccessoryItemFieldUpdate,
+  type AccessoryItemKind,
+  type AccessoryValueLine,
+  type AccessoryVariantCreate,
+  type FieldType
 } from './accessory-items';
 
 // Export supplier receipt types and API

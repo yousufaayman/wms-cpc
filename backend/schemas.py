@@ -342,9 +342,64 @@ class AccessoryItemUpdate(BaseModel):
     size: Optional[str] = Field(None, max_length=50)
     base_uom_id: Optional[int] = None
     active: Optional[bool] = None
+    # Variants only: the full new set of values (blank = leave a line empty).
+    variable_values: Optional[Dict[str, Optional[str]]] = None
 
     _norm_desc = field_validator("description", mode="before")(_strip)
     _norm_opt = field_validator("color", "size", mode="before")(_blank_to_none)
+
+# Templates + variants (item 10)
+FieldType = Literal["text", "number", "money", "date"]
+
+class AccessoryItemFieldCreate(BaseModel):
+    """A variable line on a template. The key is made from the English label."""
+    label_en: str = Field(..., min_length=1, max_length=100)
+    label_ar: str = Field(..., min_length=1, max_length=100)
+    field_type: FieldType
+    required: bool = False
+    print_order: int = 0
+
+    _norm = field_validator("label_en", "label_ar", mode="before")(_strip)
+
+class AccessoryItemFieldUpdate(BaseModel):
+    label_en: Optional[str] = Field(None, min_length=1, max_length=100)
+    label_ar: Optional[str] = Field(None, min_length=1, max_length=100)
+    field_type: Optional[FieldType] = None
+    required: Optional[bool] = None
+    print_order: Optional[int] = None
+
+    _norm = field_validator("label_en", "label_ar", mode="before")(_strip)
+
+class AccessoryItemField(BaseModel):
+    id: int
+    accessory_item_id: int
+    field_key: str
+    label_en: str
+    label_ar: str
+    field_type: str
+    required: bool
+    print_order: int
+
+    class Config:
+        from_attributes = True
+
+class AccessoryValueLine(BaseModel):
+    field_key: str
+    label_en: str
+    label_ar: str
+    value: str
+
+class AccessoryVariantCreate(BaseModel):
+    """One combination of values for a template. Category, client, base unit
+    and (unless given) description come from the template; references are
+    optional (the template's apply)."""
+    values: Dict[str, Optional[str]] = {}
+    color: Optional[str] = Field(None, max_length=100)
+    size: Optional[str] = Field(None, max_length=50)
+    description: Optional[str] = Field(None, max_length=255)
+    refs: List[AccessoryItemRefIn] = []
+
+    _norm_opt = field_validator("color", "size", "description", mode="before")(_blank_to_none)
 
 class AccessoryItem(BaseModel):
     id: int
@@ -360,6 +415,13 @@ class AccessoryItem(BaseModel):
     created_at: datetime
     updated_at: Optional[datetime] = None
     refs: List[AccessoryItemRef] = []
+    # Item 10
+    is_template: bool = False
+    fields: List[AccessoryItemField] = []  # a template's variable lines
+    parent_template_id: Optional[int] = None
+    template_code: Optional[str] = None
+    variable_values: Optional[Dict[str, str]] = None
+    value_lines: List[AccessoryValueLine] = []  # a variant's values, labelled, in print order
 
     class Config:
         from_attributes = True
