@@ -340,9 +340,55 @@ class AccessoryItem(Base):
     category = relationship("AccessoryCategory", foreign_keys=[category_id])
     client = relationship("Client", foreign_keys=[client_id])
     base_uom = relationship("Uom", foreign_keys=[base_uom_id])
+    refs = relationship(
+        "AccessoryItemRef", back_populates="item", order_by="AccessoryItemRef.id", lazy="selectin"
+    )
 
     def __repr__(self):
         return f"<AccessoryItem {self.code}>"
+
+
+class AccessoryItemRef(Base):
+    """A client's or supplier's own code for one of our items (item 9), e.g.
+    supplier A calls GEN-THR-0001 `01`. Exactly one of client_id / supplier_id
+    is set. A code is unique per party, compared in its normalized form
+    (`domains/accessories/normalize.py`: no case, spaces or - . / _), so
+    supplier A's `01` and supplier B's `01` are different references."""
+    __tablename__ = "accessory_item_refs"
+    __table_args__ = (
+        CheckConstraint("(client_id IS NULL) <> (supplier_id IS NULL)", name="ck_accessory_item_refs_one_party"),
+        CheckConstraint("btrim(ref_code) <> '' AND ref_code_norm <> ''", name="ck_accessory_item_refs_code"),
+        Index("ix_accessory_item_refs_item", "accessory_item_id"),
+        Index(
+            "uq_accessory_item_refs_client_code", "client_id", "ref_code_norm",
+            unique=True, postgresql_where=text("client_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_accessory_item_refs_supplier_code", "supplier_id", "ref_code_norm",
+            unique=True, postgresql_where=text("supplier_id IS NOT NULL"),
+        ),
+        {"schema": "core"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    accessory_item_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    client_id = Column(
+        Integer, ForeignKey(_FK_CLIENTS, onupdate="CASCADE", ondelete=_ON_DELETE_RESTRICT), nullable=True
+    )
+    # A supplier = a logical location of type supplier.
+    supplier_id = Column(Integer, ForeignKey("wms.logical_locations.id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    ref_code = Column(String(100), nullable=False)  # exactly as they write it
+    ref_code_norm = Column(String(100), nullable=False)  # for duplicate checks and search
+    ref_description = Column(String(255), nullable=True)
+    created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    item = relationship("AccessoryItem", back_populates="refs")
+
+    def __repr__(self):
+        return f"<AccessoryItemRef {self.ref_code} item={self.accessory_item_id}>"
 
 
 class AccessorySeq(Base):

@@ -8,7 +8,32 @@ import type { UomConversion } from './accessory-setup';
  * = switch the item off and create a new one). Items are switched off, never
  * deleted. Reading is open to every WMS role; create/edit needs
  * `manage_accessory_items`. 404 while FEATURE_ACCESSORIES is off.
+ *
+ * References (item 9): the client's / supplier's own codes for an item. A new
+ * item needs at least one. A code is unique per client / per supplier, compared
+ * without case, spaces or - . / _ (so "ab 01" = "AB-01"), but supplier A's 01
+ * and supplier B's 01 are different references.
  */
+
+export interface AccessoryItemRef {
+  id: number;
+  accessory_item_id: number;
+  client_id: number | null; // exactly one of client_id / supplier_id is set
+  supplier_id: number | null; // a supplier logical location
+  ref_code: string; // as they write it
+  ref_description: string | null;
+  created_at: string;
+}
+
+/** A reference to add: set exactly one of client_id / supplier_id. */
+export interface AccessoryItemRefCreate {
+  client_id?: number | null;
+  supplier_id?: number | null;
+  ref_code: string;
+  ref_description?: string | null;
+}
+
+export type AccessoryItemRefUpdate = Partial<Pick<AccessoryItemRef, 'ref_code' | 'ref_description'>>;
 
 export interface AccessoryItem {
   id: number;
@@ -23,6 +48,7 @@ export interface AccessoryItem {
   created_by: number;
   created_at: string;
   updated_at: string | null;
+  refs: AccessoryItemRef[];
 }
 
 export interface AccessoryItemCreate {
@@ -32,13 +58,14 @@ export interface AccessoryItemCreate {
   color?: string | null;
   size?: string | null;
   base_uom_id: number;
+  refs: AccessoryItemRefCreate[]; // at least one
 }
 
 /** Category and client aren't editable. Send color/size as null to clear them. */
 export type AccessoryItemUpdate = Partial<Pick<AccessoryItem, 'description' | 'color' | 'size' | 'base_uom_id' | 'active'>>;
 
 export interface AccessoryItemQuery {
-  q?: string; // part of the code, description, color or size
+  q?: string; // part of our code, a client/supplier code, description, color or size
   category_id?: number;
   client_id?: number;
   generic_only?: boolean;
@@ -59,7 +86,7 @@ export interface ItemConversionCreate {
   factor: number;
 }
 
-const toQuery = (params: AccessoryItemQuery) => {
+const toQuery = (params: Record<string, string | number | boolean | undefined>) => {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== '') search.set(key, String(value));
@@ -70,7 +97,7 @@ const toQuery = (params: AccessoryItemQuery) => {
 
 export const accessoryItemApi = {
   search: (params: AccessoryItemQuery = {}) =>
-    api.request<AccessoryItemPage>(`/accessory-items/${toQuery(params)}`),
+    api.request<AccessoryItemPage>(`/accessory-items/${toQuery({ ...params })}`),
   get: (id: number) => api.request<AccessoryItem>(`/accessory-items/${id}`),
   create: (item: AccessoryItemCreate) => api.request<AccessoryItem>('/accessory-items/', 'POST', item),
   update: (id: number, changes: AccessoryItemUpdate) =>
@@ -81,4 +108,13 @@ export const accessoryItemApi = {
     api.request<UomConversion>(`/accessory-items/${id}/conversions`, 'POST', conv),
   deleteConversion: (id: number, conversionId: number) =>
     api.request<void>(`/accessory-items/${id}/conversions/${conversionId}`, 'DELETE'),
+
+  /** The item that already carries this client's / supplier's code, or null. */
+  lookupRef: (code: string, party: { client_id?: number; supplier_id?: number }) =>
+    api.request<AccessoryItem | null>(`/accessory-items/refs/lookup${toQuery({ code, ...party })}`),
+  addRef: (id: number, ref: AccessoryItemRefCreate) =>
+    api.request<AccessoryItemRef>(`/accessory-items/${id}/refs`, 'POST', ref),
+  updateRef: (id: number, refId: number, changes: AccessoryItemRefUpdate) =>
+    api.request<AccessoryItemRef>(`/accessory-items/${id}/refs/${refId}`, 'PATCH', changes),
+  deleteRef: (id: number, refId: number) => api.request<void>(`/accessory-items/${id}/refs/${refId}`, 'DELETE'),
 };

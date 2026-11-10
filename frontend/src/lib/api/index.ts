@@ -72,7 +72,10 @@ export {
   type AccessoryItemUpdate,
   type AccessoryItemQuery,
   type AccessoryItemPage,
-  type ItemConversionCreate
+  type ItemConversionCreate,
+  type AccessoryItemRef,
+  type AccessoryItemRefCreate,
+  type AccessoryItemRefUpdate
 } from './accessory-items';
 
 // Export supplier receipt types and API
