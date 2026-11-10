@@ -60,6 +60,10 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
           TOKEN: ${{ secrets.CPC_DB_READ_TOKEN }}
         run: |
+          # Run outside the wms checkout: actions/checkout stores the job's own
+          # GITHUB_TOKEN as an auth header in that repo's git config, which
+          # overrides the token below ("Repository not found" -> always main).
+          cd "$RUNNER_TEMP"
           repo="https://x-access-token:${TOKEN}@github.com/yousufaayman/cpc-db.git"
           ref=main
           for candidate in "$HEAD_REF" "$BASE_REF"; do
