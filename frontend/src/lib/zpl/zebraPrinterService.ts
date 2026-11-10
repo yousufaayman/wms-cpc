@@ -1,4 +1,5 @@
 import { RackLabelData, generateRackLabel, generateMultipleRackLabels } from './labelTemplates';
+import { AccessoryPackLabelData, generateAccessoryPackLabels } from './accessoryPackLabelTemplates';
 
 // Thin wrapper around the Zebra Browser Print global (loaded via the
 // <script> tags in index.html — see BrowserPrint-*.min.js in /public).
@@ -65,6 +66,18 @@ export class ZebraPrinterService {
       return await this.sendToDevice(device, generateMultipleRackLabels(racks));
     } catch (error) {
       console.error('Error printing multiple rack labels:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Print accessory pack labels (one per pack) to the given device in a single print job.
+   */
+  async printAccessoryPackLabels(packs: AccessoryPackLabelData[], device: BrowserPrint.Device): Promise<boolean> {
+    try {
+      return await this.sendToDevice(device, generateAccessoryPackLabels(packs));
+    } catch (error) {
+      console.error('Error printing accessory pack labels:', error);
       return false;
     }
   }
