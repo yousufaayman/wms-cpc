@@ -18,6 +18,7 @@ const Dashboard = lazy(() => import("./pages/Dashboard"));
 const ManageWarehouseRacks = lazy(() => import("./pages/ManageWarehouseRacks"));
 const ManageLogicalLocations = lazy(() => import("./pages/ManageLogicalLocations"));
 const AccessorySetup = lazy(() => import("./pages/AccessorySetup"));
+const AccessoryItems = lazy(() => import("./pages/AccessoryItems"));
 const Receipts = lazy(() => import("./pages/Receipts"));
 const ReceiptDetail = lazy(() => import("./pages/ReceiptDetail"));
 const CreateReceipt = lazy(() => import("./pages/CreateReceipt"));
@@ -291,7 +292,7 @@ const App = () => (
                   <RequirePermission anyRole>
                     <RequireModule module="accessory_items">
                       <Suspense fallback={<LoadingSpinner message="Loading..." />}>
-                        <ComingSoon title="accessoryItems" description="accessoryItemsComingSoon" />
+                        <AccessoryItems />
                       </Suspense>
                     </RequireModule>
                   </RequirePermission>

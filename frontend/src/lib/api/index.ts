@@ -65,6 +65,16 @@ export {
   type AccessoryCategoryUpdate
 } from './accessory-setup';
 
+export {
+  accessoryItemApi,
+  type AccessoryItem,
+  type AccessoryItemCreate,
+  type AccessoryItemUpdate,
+  type AccessoryItemQuery,
+  type AccessoryItemPage,
+  type ItemConversionCreate
+} from './accessory-items';
+
 // Export supplier receipt types and API
 export {
   supplierReceiptApi,

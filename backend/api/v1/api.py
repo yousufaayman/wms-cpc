@@ -30,6 +30,7 @@ from .endpoints import (
     material_request_fulfillments,
     uoms,
     accessory_categories,
+    accessory_items,
 )
 
 api_router = APIRouter()
@@ -70,3 +71,4 @@ api_router.include_router(analytics.router, prefix="/analytics", tags=["analytic
 _ACCESSORIES = _WT_OR_ADMIN + [Depends(require_feature("accessories"))]
 api_router.include_router(uoms.router, prefix="/uoms", tags=["uoms"], dependencies=_ACCESSORIES)
 api_router.include_router(accessory_categories.router, prefix="/accessory-categories", tags=["accessory-categories"], dependencies=_ACCESSORIES)
+api_router.include_router(accessory_items.router, prefix="/accessory-items", tags=["accessory-items"], dependencies=_ACCESSORIES)

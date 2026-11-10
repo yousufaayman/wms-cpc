@@ -10,6 +10,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     CheckConstraint,
+    Index,
+    text,
 )
 from sqlalchemy.dialects.postgresql import NUMERIC, ENUM, JSONB
 from sqlalchemy.orm import relationship, synonym
@@ -69,6 +71,8 @@ class Client(Base):
 
     client_id = Column(Integer, primary_key=True, index=True)
     client_name = Column(String(100), unique=True, nullable=False)
+    # Short prefix (UR, CO...) used in fabric and accessory item codes.
+    client_code = Column(String(32), nullable=False)
 
     id = synonym("client_id")
     name = synonym("client_name")
@@ -242,11 +246,19 @@ class Uom(Base):
 
 class UomConversion(Base):
     """1 `from_uom` = `factor` × `to_uom` (e.g. 1 DOZ = 12 PCS). Stored one way;
-    the other direction is 1 / factor. Global for now; per-item conversions
-    (meters per cone) arrive with accessory items in item 8."""
+    the other direction is 1 / factor. `accessory_item_id` NULL = a global
+    conversion; set = that item only (1 CONE = 5000 M for one thread), which
+    wins over a global pair."""
     __tablename__ = "uom_conversions"
     __table_args__ = (
-        UniqueConstraint("from_uom_id", "to_uom_id", name="uq_uom_conversions_pair"),
+        Index(
+            "uq_uom_conversions_global_pair", "from_uom_id", "to_uom_id",
+            unique=True, postgresql_where=text("accessory_item_id IS NULL"),
+        ),
+        Index(
+            "uq_uom_conversions_item_pair", "accessory_item_id", "from_uom_id", "to_uom_id",
+            unique=True, postgresql_where=text("accessory_item_id IS NOT NULL"),
+        ),
         CheckConstraint("factor > 0", name="ck_uom_conversions_factor"),
         CheckConstraint("from_uom_id <> to_uom_id", name="ck_uom_conversions_distinct"),
         {"schema": "core"},
@@ -256,6 +268,9 @@ class UomConversion(Base):
     from_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
     to_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
     factor = Column(NUMERIC(14, 6), nullable=False)
+    accessory_item_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=True
+    )
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     from_uom = relationship("Uom", foreign_keys=[from_uom_id])
@@ -288,6 +303,63 @@ class AccessoryCategory(Base):
 
     def __repr__(self):
         return f"<AccessoryCategory {self.code}>"
+
+
+class AccessoryItem(Base):
+    """One accessory/trim we stock (item 8). `code` = [client code | GEN]-[category]-[number],
+    e.g. `UR-ELS-0007`, generated on create (`domains/accessories/item_codes.py`)
+    and never changed or reused. Category and client are part of the code, so
+    they're fixed after creation: a wrong one = switch the item off, make a new
+    one. Items are switched off (`active`), never deleted."""
+    __tablename__ = "accessory_items"
+    __table_args__ = (
+        CheckConstraint("btrim(description) <> ''", name="ck_accessory_items_description"),
+        {"schema": "core"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    code = Column(String(30), nullable=False, unique=True)
+    category_id = Column(
+        BigInteger, ForeignKey("core.accessory_categories.id", ondelete=_ON_DELETE_RESTRICT),
+        nullable=False, index=True,
+    )
+    # NULL = generic (any client may use it).
+    client_id = Column(
+        Integer, ForeignKey(_FK_CLIENTS, onupdate="CASCADE", ondelete=_ON_DELETE_RESTRICT),
+        nullable=True, index=True,
+    )
+    description = Column(String(255), nullable=False)
+    color = Column(String(100), nullable=True)
+    size = Column(String(50), nullable=True)
+    base_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    active = Column(Boolean, nullable=False, server_default="true")
+    created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    category = relationship("AccessoryCategory", foreign_keys=[category_id])
+    client = relationship("Client", foreign_keys=[client_id])
+    base_uom = relationship("Uom", foreign_keys=[base_uom_id])
+
+    def __repr__(self):
+        return f"<AccessoryItem {self.code}>"
+
+
+class AccessorySeq(Base):
+    """Last number used per code prefix (client code or GEN) + category.
+    Keyed by the prefix text, not the client, so two clients that share a
+    client code can never produce the same item code."""
+    __tablename__ = "accessory_seq"
+    __table_args__ = (
+        CheckConstraint("last_seq >= 1", name="ck_accessory_seq_last_seq"),
+        {"schema": "core"},
+    )
+
+    prefix = Column(String(32), primary_key=True)
+    category_id = Column(
+        BigInteger, ForeignKey("core.accessory_categories.id", ondelete=_ON_DELETE_RESTRICT), primary_key=True
+    )
+    last_seq = Column(BigInteger, nullable=False)
 
 
 # Job Order Material Request — fabric a job order needs, fulfilled from stock

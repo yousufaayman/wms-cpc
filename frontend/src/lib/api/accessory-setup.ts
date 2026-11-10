@@ -34,9 +34,10 @@ export interface UomConversion {
   from_uom_id: number;
   to_uom_id: number;
   factor: number;
+  accessory_item_id?: number | null; // null = global; set = that item's own
 }
 
-export type UomConversionCreate = Omit<UomConversion, 'id'>;
+export type UomConversionCreate = Omit<UomConversion, 'id' | 'accessory_item_id'>;
 
 export interface AccessoryCategory {
   id: number;
