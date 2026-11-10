@@ -193,6 +193,90 @@ class SizeInDB(SizeBase):
 class Size(SizeInDB):
     pass
 
+# Accessory units, conversions, categories (item 7). Codes are stored upper-case
+# and can't be changed after creation (category codes are part of item codes).
+def _upper_code(v: str) -> str:
+    return v.strip().upper() if isinstance(v, str) else v
+
+def _strip(v):
+    return v.strip() if isinstance(v, str) else v
+
+class UomCreate(BaseModel):
+    code: str = Field(..., pattern=r"^[A-Z0-9]{1,10}$")
+    name_en: str = Field(..., min_length=1, max_length=50)
+    name_ar: str = Field(..., min_length=1, max_length=50)
+    allows_decimals: bool = False
+
+    _norm_code = field_validator("code", mode="before")(_upper_code)
+    _norm_names = field_validator("name_en", "name_ar", mode="before")(_strip)
+
+class UomUpdate(BaseModel):
+    name_en: Optional[str] = Field(None, min_length=1, max_length=50)
+    name_ar: Optional[str] = Field(None, min_length=1, max_length=50)
+    allows_decimals: Optional[bool] = None
+    active: Optional[bool] = None
+
+    _norm_names = field_validator("name_en", "name_ar", mode="before")(_strip)
+
+class Uom(BaseModel):
+    id: int
+    code: str
+    name_en: str
+    name_ar: str
+    allows_decimals: bool
+    active: bool
+
+    class Config:
+        from_attributes = True
+
+class UomConversionCreate(BaseModel):
+    from_uom_id: int
+    to_uom_id: int
+    factor: float = Field(..., gt=0, lt=100_000_000)
+
+class UomConversionUpdate(BaseModel):
+    factor: float = Field(..., gt=0, lt=100_000_000)
+
+class UomConversion(BaseModel):
+    id: int
+    from_uom_id: int
+    to_uom_id: int
+    factor: float
+
+    class Config:
+        from_attributes = True
+
+class AccessoryCategoryCreate(BaseModel):
+    code: str = Field(..., pattern=r"^[A-Z]{2,5}$")
+    name_en: str = Field(..., min_length=1, max_length=100)
+    name_ar: str = Field(..., min_length=1, max_length=100)
+    default_uom_id: int
+    default_client_specific: bool = False
+
+    _norm_code = field_validator("code", mode="before")(_upper_code)
+    _norm_names = field_validator("name_en", "name_ar", mode="before")(_strip)
+
+class AccessoryCategoryUpdate(BaseModel):
+    name_en: Optional[str] = Field(None, min_length=1, max_length=100)
+    name_ar: Optional[str] = Field(None, min_length=1, max_length=100)
+    default_uom_id: Optional[int] = None
+    default_client_specific: Optional[bool] = None
+    active: Optional[bool] = None
+
+    _norm_names = field_validator("name_en", "name_ar", mode="before")(_strip)
+
+class AccessoryCategory(BaseModel):
+    id: int
+    code: str
+    name_en: str
+    name_ar: str
+    default_uom_id: int
+    default_client_specific: bool
+    active: bool
+
+    class Config:
+        from_attributes = True
+
 # Box schemas
 class BoxBase(BaseModel):
     rack_id: Optional[int] = None

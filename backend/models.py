@@ -214,6 +214,82 @@ class ClientFabricCode(Base):
         return f"<ClientFabricCode {self.fabric_code} client={self.client_id}>"
 
 
+# Accessory item master: units, unit conversions, trim categories (item 7).
+# Stock is always kept in an item's base unit; conversions are only used where
+# people type or read quantities (receiving, issuing).
+# New tables use bigint ids and timestamptz (cpc-db lint rules, 2026-11-10).
+_FK_UOMS = "core.uoms.id"
+
+
+class Uom(Base):
+    __tablename__ = "uoms"
+    __table_args__ = (
+        CheckConstraint("code ~ '^[A-Z0-9]{1,10}$'", name="ck_uoms_code"),
+        {"schema": "core"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    code = Column(String(10), unique=True, nullable=False)
+    name_en = Column(String(50), nullable=False)
+    name_ar = Column(String(50), nullable=False)  # printed on pack labels
+    allows_decimals = Column(Boolean, nullable=False, server_default="false")
+    active = Column(Boolean, nullable=False, server_default="true")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    def __repr__(self):
+        return f"<Uom {self.code}>"
+
+
+class UomConversion(Base):
+    """1 `from_uom` = `factor` × `to_uom` (e.g. 1 DOZ = 12 PCS). Stored one way;
+    the other direction is 1 / factor. Global for now; per-item conversions
+    (meters per cone) arrive with accessory items in item 8."""
+    __tablename__ = "uom_conversions"
+    __table_args__ = (
+        UniqueConstraint("from_uom_id", "to_uom_id", name="uq_uom_conversions_pair"),
+        CheckConstraint("factor > 0", name="ck_uom_conversions_factor"),
+        CheckConstraint("from_uom_id <> to_uom_id", name="ck_uom_conversions_distinct"),
+        {"schema": "core"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    from_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    to_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    factor = Column(NUMERIC(14, 6), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    from_uom = relationship("Uom", foreign_keys=[from_uom_id])
+    to_uom = relationship("Uom", foreign_keys=[to_uom_id])
+
+    def __repr__(self):
+        return f"<UomConversion {self.from_uom_id}->{self.to_uom_id} x{self.factor}>"
+
+
+class AccessoryCategory(Base):
+    """Trim type (BTN, ZIP, LBL...). The code goes into item codes
+    (`UA-ELS-0007`), so it never changes once created. Default UOM and
+    client-specific flag only pre-fill the item form."""
+    __tablename__ = "accessory_categories"
+    __table_args__ = (
+        CheckConstraint("code ~ '^[A-Z]{2,5}$'", name="ck_accessory_categories_code"),
+        {"schema": "core"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    code = Column(String(5), unique=True, nullable=False)
+    name_en = Column(String(100), nullable=False)
+    name_ar = Column(String(100), nullable=False)
+    default_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    default_client_specific = Column(Boolean, nullable=False, server_default="false")
+    active = Column(Boolean, nullable=False, server_default="true")
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    default_uom = relationship("Uom", foreign_keys=[default_uom_id])
+
+    def __repr__(self):
+        return f"<AccessoryCategory {self.code}>"
+
+
 # Job Order Material Request — fabric a job order needs, fulfilled from stock
 class JobOrderMaterialRequest(Base):
     __tablename__ = "job_order_material_requests"

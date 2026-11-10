@@ -1,6 +1,6 @@
 import { useNavigate, useLocation } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen, ClipboardList, TrendingUp, MapPin, Boxes, PackagePlus, Tags, Syringe, type LucideIcon } from "lucide-react";
+import { ArrowLeft, LogOut, Warehouse as WarehouseIcon, Layout, BarChart3, ChevronLeft, ChevronRight, FileText, Scissors, Layers, PackageOpen, ClipboardList, TrendingUp, MapPin, Boxes, PackagePlus, Tags, Syringe, Ruler, type LucideIcon } from "lucide-react";
 import { useState } from "react";
 import LanguageToggle from "./LanguageToggle";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -40,6 +40,7 @@ const MAIN_NAV: NavItem[] = [
 
 const ADMIN_NAV: NavItem[] = [
   { path: "/manage-racks", module: "warehouse_racks", permission: "warehouse_racks", label: "manageWarehouseRacks", icon: Layout, exact: true },
+  { path: "/accessory-setup", module: "accessory_items", permission: "manage_accessory_items", label: "unitsAndCategories", icon: Ruler, exact: true },
   { path: "/manage-logical-locations", module: "logical_locations", permission: "logical_locations", label: "manageLogicalLocations", icon: MapPin, exact: true },
   { path: "/analytics", module: "analytics", permission: "analytics", label: "analytics", icon: TrendingUp, exact: true },
 ];

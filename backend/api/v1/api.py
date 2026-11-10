@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends
 
-from backend.core.deps import get_current_wt_or_admin
+from backend.core.deps import get_current_wt_or_admin, require_feature
 
 from .endpoints import (
     analytics,
@@ -28,6 +28,8 @@ from .endpoints import (
     features,
     material_requests,
     material_request_fulfillments,
+    uoms,
+    accessory_categories,
 )
 
 api_router = APIRouter()
@@ -63,3 +65,8 @@ api_router.include_router(material_requests.router, prefix="/job-order-material-
 api_router.include_router(material_request_fulfillments.router, prefix="/material-request-fulfillments", tags=["material-request-fulfillments"], dependencies=_WT_OR_ADMIN)
 api_router.include_router(features.router, prefix="/features", tags=["features"], dependencies=_WT_OR_ADMIN)
 api_router.include_router(analytics.router, prefix="/analytics", tags=["analytics"], dependencies=_WT_OR_ADMIN)
+
+# Accessory routers: also 404 while FEATURE_ACCESSORIES is off.
+_ACCESSORIES = _WT_OR_ADMIN + [Depends(require_feature("accessories"))]
+api_router.include_router(uoms.router, prefix="/uoms", tags=["uoms"], dependencies=_ACCESSORIES)
+api_router.include_router(accessory_categories.router, prefix="/accessory-categories", tags=["accessory-categories"], dependencies=_ACCESSORIES)
