@@ -12,6 +12,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Feature PRs go into development. A PR into main (= deploys to prod) may
+  # only come from development (a release) or a hotfix/* branch. GitHub's
+  # "Create a pull request" link printed by `git push` (pull/new/<branch>)
+  # targets main, which is how feature PRs kept landing there.
+  target-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Feature PRs must target development
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [ "$BASE_REF" = "main" ] && [ "$HEAD_REF" != "development" ] && [ "${HEAD_REF#hotfix/}" = "$HEAD_REF" ]; then
+            echo "::error::This PR targets main (production). Feature branches go into development."
+            echo "Fix: on the PR page click Edit next to the title, change the base to development,"
+            echo "then close and reopen the PR so these checks run again."
+            exit 1
+          fi
+          echo "OK: $HEAD_REF -> $BASE_REF"
+
   backend:
     runs-on: ubuntu-latest
     timeout-minutes: 15
