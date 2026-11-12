@@ -480,7 +480,7 @@ const AccessoryItems = () => {
   ];
   const partySelect = (value: string, onChange: (v: string) => void) => (
     <div className="w-44 shrink-0">
-      <Combobox<string> items={partyItems} value={value || null} onSelect={onChange} placeholder={t("accRefParty")} />
+      <Combobox items={partyItems} value={value || null} onSelect={onChange} placeholder={t("accRefParty")} />
     </div>
   );
   const unitItems: ComboItem[] = (readOnly ? uoms : activeUoms)
