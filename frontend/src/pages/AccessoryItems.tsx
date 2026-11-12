@@ -20,7 +20,9 @@
  *   (`components/accessory-items/TemplateSections.tsx`). Opening a variant
  *   shows its values for editing; its unit and conversions come from the
  *   template and its own references are optional. A Kind filter and badges
- *   tell plain items, templates and variants apart.
+ *   tell plain items, templates and variants apart. A plain item can also
+ *   take color / size variants with no lines (item 11: one client code in
+ *   black, olive, white); it then becomes a base item, never stocked.
  * - Look-alike warning (item 11): while the form has the same category, client,
  *   description, color and size as another item (ignoring case and spaces),
  *   it says so and offers to open it. Saving is still allowed (user decision).
@@ -224,6 +226,7 @@ const AccessoryItems = () => {
       setEditing(item);
       loadFamily(item);
       loadItems();
+      loadTemplates();
     } catch (error) {
       fail(error);
     }
@@ -506,7 +509,9 @@ const AccessoryItems = () => {
                             <TableRow key={item.id}>
                               <TableCell>
                                 <div className="font-mono font-medium" dir="ltr">{item.code}</div>
-                                {item.is_template && <Badge variant="secondary">{t("accTemplate")}</Badge>}
+                                {item.is_template && (
+                                  <Badge variant="secondary">{item.fields.length > 0 ? t("accTemplate") : t("accVariants")}</Badge>
+                                )}
                                 {item.template_code && (
                                   <div className="text-xs text-muted-foreground">
                                     {t("accVariantOf", { code: item.template_code })}
@@ -750,7 +755,8 @@ const AccessoryItems = () => {
                     onChanged={() => refreshEditing(editing.id)} onError={fail} />
                 )}
 
-                {editing && editing.is_template && (
+                {/* A plain item can take color / size variants too (item 11): it becomes a base item. */}
+                {editing && !isVariant && (editing.is_template || canManage) && (
                   <VariantsSection template={editing} variants={variants} canManage={canManage}
                     onChanged={() => refreshEditing(editing.id)} onOpen={openEdit} onError={fail} />
                 )}

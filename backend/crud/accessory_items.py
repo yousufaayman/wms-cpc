@@ -18,6 +18,11 @@ Rules checked here, raised as HTTP errors:
   from its template; the same template + color + size + values can exist
   only once (`domains/accessories/variants.py`). Variants don't need
   references of their own: the template's apply.
+- base items (item 11): a plain item without stock can take color / size
+  variants with no lines at all (one client button code in black, olive,
+  white). "Template" in this file = base item: has lines or has variants.
+  Every variant needs a color, a size or a line value; the last line of a
+  base can go only while each variant still has a color or a size.
 """
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
@@ -150,8 +155,10 @@ def _ref_filter(f: AccessoryItemSearch):
 
 _KINDS = {
     "variant": lambda: AccessoryItem.parent_template_id.isnot(None),
-    "template": lambda: AccessoryItem.fields.any(),
-    "plain": lambda: and_(AccessoryItem.parent_template_id.is_(None), ~AccessoryItem.fields.any()),
+    "template": lambda: or_(AccessoryItem.fields.any(), AccessoryItem.has_variants),
+    "plain": lambda: and_(
+        AccessoryItem.parent_template_id.is_(None), ~AccessoryItem.fields.any(), ~AccessoryItem.has_variants
+    ),
 }
 
 
@@ -530,8 +537,8 @@ def delete_field(db: Session, item_id: int, field_id: int) -> None:
     row = _field_or_404(db, item_id, field_id)
     if _variants_using(db, item_id, row.field_key).first() is not None:
         raise _bad("This line is used by variants and can't be deleted")
-    if len(row.item.fields) <= 1 and _has_variants(db, item_id):
-        raise _bad("A template with variants needs at least one line")
+    if len(row.item.fields) <= 1 and any(not v.color and not v.size for v in list_variants(db, item_id)):
+        raise _bad("A variant without color or size needs at least one line")
     db.delete(row)
     db.commit()
 
@@ -539,15 +546,23 @@ def delete_field(db: Session, item_id: int, field_id: int) -> None:
 # ── Variants (item 10) ──────────────────────────────────────────────────────
 
 def _template_or_400(db: Session, template_id: int) -> AccessoryItem:
+    """The base item for a new variant. A plain item becomes a base with its
+    first variant (item 11), but only while it has never held stock."""
     template = get_item_or_404(db, template_id)
-    if not template.is_template:
-        raise _bad(f"{template.code} has no variable lines, so it has no variants")
+    if template.parent_template_id is not None:
+        raise _bad(f"{template.code} is a variant: add the variant to {template.template_code}")
+    if not template.is_template and has_stock(db, template.id):
+        raise _bad(f"{template.code} has stock, so it can't get variants")
     return template
 
 
 def _clean(template: AccessoryItem, values, color, size) -> Tuple[dict, str]:
     try:
         cleaned = variants.clean_values(template.fields, values)
+        if not cleaned and not normalize_code(color) and not normalize_code(size):
+            raise variants.BadValues(
+                "A color, a size or a line value is needed" if template.fields else "A color or a size is needed"
+            )
         return cleaned, variants.variant_key(template.fields, cleaned, color, size)
     except variants.BadValues as exc:
         raise _bad(str(exc)) from exc

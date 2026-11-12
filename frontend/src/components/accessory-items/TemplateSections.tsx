@@ -5,8 +5,10 @@
  *   Adding the first line makes a plain item a template. Labels and order can
  *   always change; a line that a variant uses can't change type or be deleted;
  *   once variants exist, new lines must be optional.
- * - `VariantsSection`: a template's variants (one combination of values each),
- *   with an "Add variant" form that warns, while typing, when the combination
+ * - `VariantsSection`: a base item's variants (one combination of values,
+ *   color and size each). On an item without lines it adds colors / sizes
+ *   ("Add color / size", item 11), which turns a plain item into a base item.
+ *   The "Add variant" form that warns, while typing, when the combination
  *   already exists and offers to open that variant.
  * - `ValueInputs`: one input per line, typed (number, money, date, text);
  *   also used by the page to edit a variant's values.
@@ -240,10 +242,14 @@ export const VariantsSection = ({
     size: f.size.trim() || null,
   });
   const missingRequired = template.fields.some((f) => f.required && !(form.values[f.field_key] ?? "").trim());
+  // A variant must differ from its base: a color, a size or a line value.
+  const empty = !form.color.trim() && !form.size.trim() && !Object.values(form.values).some((v) => v.trim());
+  const colorsOnly = template.fields.length === 0;
+  const addLabel = colorsOnly ? t("accAddColorSize") : t("accAddVariant");
 
   /** Ask the server whether this combination exists (when a field loses focus). */
   const check = async () => {
-    if (missingRequired) {
+    if (missingRequired || empty) {
       setTakenBy(null);
       return;
     }
@@ -293,7 +299,7 @@ export const VariantsSection = ({
 
       {canManage && template.active && (
         <div className="space-y-3 rounded-md border p-3">
-          <h4 className="text-sm font-medium">{t("accAddVariant")}</h4>
+          <h4 className="text-sm font-medium">{addLabel}</h4>
           <ValueInputs fields={template.fields} values={form.values} onBlur={check}
             onChange={(values) => { setForm({ ...form, values }); setTakenBy(null); }} />
           <div className="grid grid-cols-2 gap-3">
@@ -316,9 +322,10 @@ export const VariantsSection = ({
               </Button>
             </div>
           )}
-          <div className="flex justify-end">
-            <Button size="sm" onClick={add} disabled={saving || missingRequired || !!takenBy}>
-              <Plus className="mr-1 h-4 w-4" />{t("accAddVariant")}
+          <div className="flex items-center justify-end gap-3">
+            {colorsOnly && empty && <span className="text-xs text-muted-foreground">{t("accColorOrSize")}</span>}
+            <Button size="sm" onClick={add} disabled={saving || missingRequired || empty || !!takenBy}>
+              <Plus className="mr-1 h-4 w-4" />{addLabel}
             </Button>
           </div>
         </div>

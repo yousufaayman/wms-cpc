@@ -11,10 +11,11 @@ from sqlalchemy import (
     UniqueConstraint,
     CheckConstraint,
     Index,
+    exists,
     text,
 )
 from sqlalchemy.dialects.postgresql import NUMERIC, ENUM, JSONB
-from sqlalchemy.orm import relationship, synonym
+from sqlalchemy.orm import column_property, relationship, synonym
 from sqlalchemy.sql import func
 from sqlalchemy.ext.declarative import declarative_base
 from typing import TYPE_CHECKING
@@ -374,7 +375,9 @@ class AccessoryItem(Base):
 
     @property
     def is_template(self) -> bool:
-        return bool(self.fields)
+        """A base item: has variable lines (a ticket template) or variants (e.g.
+        one client button code in black, olive, white; item 11). Never stocked."""
+        return bool(self.fields) or bool(self.has_variants)
 
     @property
     def template_code(self):
@@ -394,6 +397,14 @@ class AccessoryItem(Base):
 
     def __repr__(self):
         return f"<AccessoryItem {self.code}>"
+
+
+# Does any variant point at this item? Loaded with the row (one EXISTS), so
+# `is_template` needs no extra query.
+_variant = AccessoryItem.__table__.alias("variant")
+AccessoryItem.has_variants = column_property(
+    exists().where(_variant.c.parent_template_id == AccessoryItem.__table__.c.id).correlate_except(_variant)
+)
 
 
 class AccessoryItemField(Base):
