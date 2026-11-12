@@ -417,6 +417,7 @@ class AccessoryItem(BaseModel):
     refs: List[AccessoryItemRef] = []
     # Item 10
     is_template: bool = False
+    variant_count: int = 0
     fields: List[AccessoryItemField] = []  # a template's variable lines
     parent_template_id: Optional[int] = None
     template_code: Optional[str] = None
@@ -452,6 +453,9 @@ class AccessoryItemSearch(BaseModel):
     kind: Optional[Literal["plain", "template", "variant"]] = None
     template_id: Optional[int] = None
     sort: Literal["code", "newest"] = "code"
+    # Variants folded under their base: list only plain items and bases; a
+    # base is listed when it or one of its variants matches (item 11).
+    group_variants: bool = False
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
 

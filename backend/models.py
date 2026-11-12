@@ -12,6 +12,7 @@ from sqlalchemy import (
     CheckConstraint,
     Index,
     exists,
+    select,
     text,
 )
 from sqlalchemy.dialects.postgresql import NUMERIC, ENUM, JSONB
@@ -399,11 +400,17 @@ class AccessoryItem(Base):
         return f"<AccessoryItem {self.code}>"
 
 
-# Does any variant point at this item? Loaded with the row (one EXISTS), so
-# `is_template` needs no extra query.
+# Does any variant point at this item, and how many? Loaded with the row, so
+# `is_template` and the list's "3 variants" button need no extra query.
 _variant = AccessoryItem.__table__.alias("variant")
 AccessoryItem.has_variants = column_property(
     exists().where(_variant.c.parent_template_id == AccessoryItem.__table__.c.id).correlate_except(_variant)
+)
+AccessoryItem.variant_count = column_property(
+    select(func.count(_variant.c.id))
+    .where(_variant.c.parent_template_id == AccessoryItem.__table__.c.id)
+    .correlate_except(_variant)
+    .scalar_subquery()
 )
 
 

@@ -155,3 +155,27 @@ def test_base_color_set_later_refused_if_variants_would_clash(client, auth_heade
     assert r.status_code == 409 and "would become the same" in r.json()["detail"]
     cleared = client.patch(f"{ITEMS}{base['id']}", headers=h, json={"color": None})
     assert cleared.status_code == 200
+
+
+# ── 4. Folded list: variants under their base (user request) ────────────────
+
+def test_grouped_list_shows_bases_with_counts(client, auth_headers, setup):
+    h = auth_headers(role="W_Manager")
+    base = _button(client, h, setup)
+    black, olive, white = _colors(client, h, base["id"], "Black", "Olive", "White")
+    plain = _create(client, h, setup, description="Elastic olive 2 cm").json()
+
+    def rows(**params):
+        r = client.get(ITEMS, headers=h, params={"group_variants": True, **params})
+        assert r.status_code == 200, r.text
+        return {i["code"]: i["variant_count"] for i in r.json()["items"]}
+
+    listed = rows()
+    assert listed[base["code"]] == 3 and plain["code"] in listed
+    assert not {black["code"], olive["code"], white["code"]} & set(listed)
+    # Only a variant matches "olive" for the button: its base is listed (closed), plus the plain elastic.
+    assert rows(q="olive") == {base["code"]: 3, plain["code"]: 0}
+    assert rows(q="olive", kind="plain") == {plain["code"]: 0}
+    # Kind = Variants and a chosen template stay flat lists of variants.
+    assert set(rows(kind="variant")) >= {black["code"], olive["code"], white["code"]}
+    assert set(rows(template_id=base["id"])) == {black["code"], olive["code"], white["code"]}

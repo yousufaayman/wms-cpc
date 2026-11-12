@@ -170,7 +170,7 @@ def _equals(column, value):
     return column == value if value is not None else None
 
 
-def _search_conditions(f: AccessoryItemSearch) -> list:
+def _search_conditions(f: AccessoryItemSearch, with_kind: bool = True) -> list:
     """Every filter given in `f`, as SQL conditions (all must match)."""
     conditions = [
         _quick_search(f.q) if _text(f.q) else None,
@@ -181,7 +181,7 @@ def _search_conditions(f: AccessoryItemSearch) -> list:
         _ref_filter(f),
         _equals(AccessoryItem.base_uom_id, f.base_uom_id),
         _any_value_contains(f.line_value.strip()) if _text(f.line_value) else None,
-        _KINDS[f.kind]() if f.kind in _KINDS else None,
+        _KINDS[f.kind]() if with_kind and f.kind in _KINDS else None,
         _equals(AccessoryItem.parent_template_id, f.template_id),
         _equals(AccessoryItem.category_id, f.category_id),
         AccessoryItem.client_id.is_(None) if f.generic_only else _equals(AccessoryItem.client_id, f.client_id),
@@ -195,7 +195,23 @@ def _search_conditions(f: AccessoryItemSearch) -> list:
 def list_items(db: Session, f: AccessoryItemSearch) -> Tuple[List[AccessoryItem], int]:
     """Quick search + advanced filters (see `AccessoryItemSearch`); every filter
     given must match. Text filters are "contains", ignoring case."""
-    query = db.query(AccessoryItem).filter(*_search_conditions(f))
+    if f.group_variants and f.kind != "variant" and f.template_id is None:
+        # Folded: plain items and bases only. A base is listed when it matches
+        # or one of its variants does ("olive" lists the button's base).
+        matched = select(AccessoryItem.id, AccessoryItem.parent_template_id).where(
+            *_search_conditions(f, with_kind=False)
+        ).subquery()
+        query = db.query(AccessoryItem).filter(
+            AccessoryItem.parent_template_id.is_(None),
+            or_(
+                AccessoryItem.id.in_(select(matched.c.id)),
+                AccessoryItem.id.in_(select(matched.c.parent_template_id).where(matched.c.parent_template_id.isnot(None))),
+            ),
+            *([_KINDS[f.kind]()] if f.kind in _KINDS else []),
+            *([AccessoryItem.active.is_(True)] if f.active_only else []),
+        )
+    else:
+        query = db.query(AccessoryItem).filter(*_search_conditions(f))
     total = query.count()
     if f.sort == "newest":
         order = (AccessoryItem.created_at.desc(), AccessoryItem.id.desc())

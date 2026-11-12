@@ -144,6 +144,8 @@ export function toItemQuery(f: ItemFilters, pageSize: number): AccessoryItemQuer
     kind: f.kind === ALL ? undefined : f.kind,
     active_only: !f.inactive,
     sort: f.sort === "code" ? undefined : f.sort,
+    // Variants fold under their base, except when looking at variants on purpose.
+    group_variants: f.kind !== "variant" && f.template === ALL ? true : undefined,
     limit: pageSize,
     offset: (f.page - 1) * pageSize,
   };

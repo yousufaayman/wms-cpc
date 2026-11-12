@@ -95,6 +95,7 @@ export interface AccessoryItem {
   refs: AccessoryItemRef[];
   is_template: boolean;
   fields: AccessoryItemField[]; // a template's lines
+  variant_count: number; // a base item's variants (item 11)
   parent_template_id: number | null; // set = this is a variant
   template_code: string | null;
   variable_values: Record<string, string> | null;
@@ -138,6 +139,7 @@ export interface AccessoryItemQuery {
   kind?: AccessoryItemKind;
   template_id?: number;
   sort?: 'code' | 'newest';
+  group_variants?: boolean; // fold variants under their base (a base is listed when one of its variants matches)
   limit?: number;
   offset?: number;
 }
@@ -212,7 +214,8 @@ export const accessoryItemApi = {
   deleteField: (id: number, fieldId: number) =>
     api.request<void>(`/accessory-items/${id}/fields/${fieldId}`, 'DELETE'),
 
-  getVariants: (id: number) => api.request<AccessoryItem[]>(`/accessory-items/${id}/variants`),
+  getVariants: (id: number, activeOnly = false) =>
+    api.request<AccessoryItem[]>(`/accessory-items/${id}/variants${toQuery({ active_only: activeOnly || undefined })}`),
   /** The variant that already has this combination, or null. Saves nothing. */
   checkVariant: (id: number, variant: AccessoryVariantCreate) =>
     api.request<AccessoryItem | null>(`/accessory-items/${id}/variants/check`, 'POST', variant),
