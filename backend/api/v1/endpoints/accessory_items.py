@@ -6,6 +6,11 @@ Anyone with a WMS role can read; creating and editing needs
 FEATURE_ACCESSORIES is off (see api.py). Items are never deleted: send
 `active: false` to switch one off.
 
+Search (item 11): the list takes a quick search `q` (each word found
+somewhere) plus advanced filters that all must match (see
+`schemas.AccessoryItemSearch`), paging and sort. `/similar` lists look-alike
+items for the New item warning.
+
 References (item 9): each item carries client/supplier codes. A new item needs
 at least one; `/refs/lookup` tells a form whether a code is already taken.
 
@@ -15,7 +20,7 @@ creates its variants; `/{id}/variants/check` tells the form whether a
 combination already exists. A variant is edited with the normal PATCH
 (`variable_values`, color, size).
 """
-from typing import List, Literal, Optional
+from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
@@ -33,6 +38,7 @@ from backend.schemas import (
     AccessoryItemRef,
     AccessoryItemRefIn,
     AccessoryItemRefUpdate,
+    AccessoryItemSearch,
     AccessoryItemUpdate,
     AccessoryVariantCreate,
     UomConversion,
@@ -44,24 +50,27 @@ _can_manage = require_permission(PERM_MANAGE_ACCESSORY_ITEMS)
 
 
 @router.get("/", response_model=AccessoryItemPage)
-def list_items(
-    q: Optional[str] = Query(None, description="Part of the code, description, color or size"),
-    category_id: Optional[int] = None,
+def list_items(search: Annotated[AccessoryItemSearch, Query()], db: Session = Depends(get_db)):
+    """Quick search + advanced filters + paging; see `AccessoryItemSearch`.
+    A template line filter is `?line=po_number:451` (repeat for several)."""
+    items, total = crud.list_items(db, search)
+    return {"items": items, "total": total}
+
+
+@router.get("/similar", response_model=List[AccessoryItem])
+def similar_items(
+    category_id: int,
+    description: str,
     client_id: Optional[int] = None,
-    generic_only: bool = False,
-    active_only: bool = True,
-    kind: Optional[Literal["plain", "template", "variant"]] = None,
-    template_id: Optional[int] = None,
-    limit: int = Query(50, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    color: Optional[str] = None,
+    size: Optional[str] = None,
+    exclude_id: Optional[int] = None,
     db: Session = Depends(get_db),
 ):
-    items, total = crud.list_items(
-        db, q=q, category_id=category_id, client_id=client_id,
-        generic_only=generic_only, active_only=active_only, kind=kind, template_id=template_id,
-        limit=limit, offset=offset,
-    )
-    return {"items": items, "total": total}
+    """Items that look like the same trim (same category + client, same
+    description / color / size ignoring case, spaces and - . / _). The form
+    only warns: look-alikes can still be saved."""
+    return crud.find_similar(db, category_id, client_id, description, color, size, exclude_id)
 
 
 @router.get("/refs/lookup", response_model=Optional[AccessoryItem])

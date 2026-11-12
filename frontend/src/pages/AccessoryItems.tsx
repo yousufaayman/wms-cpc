@@ -2,8 +2,11 @@
  * Accessory Items (items 8 + 9): every accessory/trim we stock, with its code
  * and the client's / supplier's own codes for it ("references").
  *
- * - A searchable list (our code, client/supplier code, description, color,
- *   size) with category / client filters and "show inactive".
+ * - A searchable list, 50 per page (item 11). The quick search finds every
+ *   word somewhere (code, client/supplier code, description, color, size,
+ *   line value); "Advanced search" combines fields (e.g. color AND size, a
+ *   template's line values). Filters are kept in the page link. See
+ *   `components/accessory-items/ItemFilters.tsx`.
  * - New item: pick the category (pre-fills the base unit and whether it's for a
  *   client), then a client or "Generic", description, color, size, and at least
  *   one reference. While typing a reference the page asks the server whether
@@ -18,6 +21,9 @@
  *   shows its values for editing; its unit and conversions come from the
  *   template and its own references are optional. A Kind filter and badges
  *   tell plain items, templates and variants apart.
+ * - Look-alike warning (item 11): while the form has the same category, client,
+ *   description, color and size as another item (ignoring case and spaces),
+ *   it says so and offers to open it. Saving is still allowed (user decision).
  * Anyone with a WMS role can look; creating/editing needs `manage_accessory_items`.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -38,18 +44,19 @@ import Sidebar from "@/components/Sidebar";
 import {
   accessoryCategoryApi, accessoryItemApi, clientApi, logicalLocationApi, uomApi,
   type AccessoryCategory, type AccessoryItem, type AccessoryItemRef, type Client, type LogicalLocation,
-  type AccessoryItemKind, type Uom, type UomConversion, valueSummary,
+  type Uom, type UomConversion, valueSummary,
 } from "@/lib/api";
 import {
   ValueInputs, VariableLinesSection, VariantsSection,
 } from "@/components/accessory-items/TemplateSections";
+import {
+  ALL, GENERIC, ItemFilterBar, ItemPager, toItemQuery, useItemFilters,
+} from "@/components/accessory-items/ItemFilters";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 
-const PAGE_SIZE = 200;
-const ALL = "all";
-const GENERIC = "generic";
+const PAGE_SIZE = 50;
 
 type Form = {
   category_id: string;
@@ -89,11 +96,11 @@ const AccessoryItems = () => {
   const [items, setItems] = useState<AccessoryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState(ALL);
-  const [clientFilter, setClientFilter] = useState(ALL);
-  const [showInactive, setShowInactive] = useState(false);
-  const [kindFilter, setKindFilter] = useState<AccessoryItemKind | typeof ALL>(ALL);
+  const { filters, update: updateFilters, clear: clearFilters, advanced } = useItemFilters();
+  const [advancedOpen, setAdvancedOpen] = useState(advanced > 0);
+  const [templates, setTemplates] = useState<AccessoryItem[]>([]); // for the Template filter
+  const query = useMemo(() => toItemQuery(filters, PAGE_SIZE), [filters]);
+  const queryKey = JSON.stringify(query);
 
   // Dialog
   const [editing, setEditing] = useState<AccessoryItem | null>(null);
@@ -106,6 +113,7 @@ const AccessoryItems = () => {
   const [newRef, setNewRef] = useState<RefRow>(BLANK_REF); // adding to an existing item
   const [variants, setVariants] = useState<AccessoryItem[]>([]); // of the open template
   const [template, setTemplate] = useState<AccessoryItem | null>(null); // of the open variant
+  const [similar, setSimilar] = useState<AccessoryItem[]>([]); // look-alikes of the form
 
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const uomById = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms]);
@@ -144,21 +152,19 @@ const AccessoryItems = () => {
         );
       })
       .catch(fail);
+    loadTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadTemplates = () =>
+    accessoryItemApi.search({ kind: "template", active_only: false, limit: 500 })
+      .then((page) => setTemplates(page.items))
+      .catch(fail);
 
   const loadItems = async () => {
     try {
       setLoading(true);
-      const page = await accessoryItemApi.search({
-        q: q.trim() || undefined,
-        category_id: categoryFilter === ALL ? undefined : Number(categoryFilter),
-        client_id: clientFilter === ALL || clientFilter === GENERIC ? undefined : Number(clientFilter),
-        generic_only: clientFilter === GENERIC || undefined,
-        active_only: !showInactive,
-        kind: kindFilter === ALL ? undefined : kindFilter,
-        limit: PAGE_SIZE,
-      });
+      const page = await accessoryItemApi.search(query);
       setItems(page.items);
       setTotal(page.total);
     } catch (error) {
@@ -173,7 +179,25 @@ const AccessoryItems = () => {
     const timer = setTimeout(loadItems, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, categoryFilter, clientFilter, showInactive, kindFilter]);
+  }, [queryKey]);
+
+  // Look-alikes of what the form says (not for variants: their check is the combination).
+  const isVariantForm = editing?.parent_template_id != null;
+  useEffect(() => {
+    setSimilar([]);
+    if (!dialogOpen || isVariantForm || !form.category_id || !form.client_id || !form.description.trim()) return;
+    const timer = setTimeout(() => {
+      accessoryItemApi.similar({
+        category_id: Number(form.category_id),
+        client_id: form.client_id === GENERIC ? undefined : Number(form.client_id),
+        description: form.description.trim(),
+        color: form.color.trim() || undefined,
+        size: form.size.trim() || undefined,
+        exclude_id: editing?.id,
+      }).then(setSimilar).catch(() => setSimilar([])); // only a warning
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [dialogOpen, isVariantForm, editing?.id, form.category_id, form.client_id, form.description, form.color, form.size]);
 
   const loadConversions = async (itemId: number) => {
     try {
@@ -322,6 +346,7 @@ const AccessoryItems = () => {
       }
       setDialogOpen(false);
       loadItems();
+      loadTemplates();
     } catch (error) {
       fail(error);
     } finally {
@@ -401,7 +426,7 @@ const AccessoryItems = () => {
   const activeCategories = categories.filter((c) => c.active);
   const activeUoms = uoms.filter((u) => u.active);
   const readOnly = !canManage;
-  const isVariant = editing?.parent_template_id != null;
+  const isVariant = isVariantForm;
   // A client-specific item only takes its own client's codes.
   const itemClientId = form.client_id && form.client_id !== GENERIC ? Number(form.client_id) : null;
   const refClients = itemClientId == null ? clients : clients.filter((c) => c.id === itemClientId);
@@ -446,41 +471,12 @@ const AccessoryItems = () => {
 
             <Card>
               <CardContent className="pt-6 space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Input className="max-w-md" placeholder={t("accItemSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>{t("accAllCategories")}</SelectItem>
-                      {categories.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{categoryName(c)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={clientFilter} onValueChange={setClientFilter}>
-                    <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>{t("accAllClients")}</SelectItem>
-                      <SelectItem value={GENERIC}>{t("accGenericOnly")}</SelectItem>
-                      {clients.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as AccessoryItemKind | typeof ALL)}>
-                    <SelectTrigger className="w-40" title={t("accKind")}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>{`${t("accKind")}: ${t("accKindAll")}`}</SelectItem>
-                      <SelectItem value="plain">{t("accKindPlain")}</SelectItem>
-                      <SelectItem value="template">{t("accKindTemplates")}</SelectItem>
-                      <SelectItem value="variant">{t("accKindVariants")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <div className="flex items-center gap-2">
-                    <Switch id="inactive" checked={showInactive} onCheckedChange={setShowInactive} />
-                    <Label htmlFor="inactive">{t("accShowInactive")}</Label>
-                  </div>
-                </div>
+                <ItemFilterBar
+                  filters={filters} update={updateFilters} clear={clearFilters} advanced={advanced}
+                  open={advancedOpen} setOpen={setAdvancedOpen}
+                  categories={categories} categoryName={categoryName} clients={clients} suppliers={suppliers}
+                  uoms={uoms} templates={templates}
+                />
 
                 {loading ? (
                   <div className="text-center py-8">{t("loading")}</div>
@@ -555,9 +551,8 @@ const AccessoryItems = () => {
                         })}
                       </TableBody>
                     </Table>
-                    {total > items.length && (
-                      <p className="text-sm text-muted-foreground">{t("accShowingOf", { shown: items.length, total })}</p>
-                    )}
+                    <ItemPager page={filters.page} pageSize={PAGE_SIZE} total={total}
+                      onPage={(page) => updateFilters({ page })} />
                   </>
                 )}
               </CardContent>
@@ -649,6 +644,18 @@ const AccessoryItems = () => {
                     </Select>
                   </div>
                 </div>
+                {similar.length > 0 && (
+                  <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                    {similar.map((item) => (
+                      <div key={item.id} className="flex items-center gap-2">
+                        <span>{t("accSimilarItem", { code: item.code })}</span>
+                        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openEdit(item)}>
+                          {t("accOpenItem")}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {editing && (
                   <div className="flex items-center justify-between">

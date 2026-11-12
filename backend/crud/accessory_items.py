@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from typing import List, Optional, Tuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, literal, or_, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -46,6 +46,7 @@ from backend.schemas import (
     AccessoryItemFieldUpdate,
     AccessoryItemRefIn,
     AccessoryItemRefUpdate,
+    AccessoryItemSearch,
     AccessoryItemUpdate,
     AccessoryVariantCreate,
     UomConversionCreate,
@@ -73,57 +74,158 @@ def ensure_stockable(item: AccessoryItem) -> None:
         raise _bad(f"The template {item.parent_template.code} is switched off")
 
 
-def list_items(
-    db: Session,
-    q: Optional[str] = None,
-    category_id: Optional[int] = None,
-    client_id: Optional[int] = None,
-    generic_only: bool = False,
-    active_only: bool = True,
-    kind: Optional[str] = None,
-    template_id: Optional[int] = None,
-    limit: int = 50,
-    offset: int = 0,
-) -> Tuple[List[AccessoryItem], int]:
-    query = db.query(AccessoryItem)
-    if q and q.strip():
-        like = f"%{q.strip()}%"
-        norm = normalize_code(q)
-        ref_match = AccessoryItemRef.ref_code.ilike(like)
-        if norm:  # "ab 01" also finds AB-01
-            ref_match = or_(ref_match, AccessoryItemRef.ref_code_norm.contains(norm))
-        conditions = [
-            AccessoryItem.code.ilike(like),
-            AccessoryItem.description.ilike(like),
-            AccessoryItem.color.ilike(like),
-            AccessoryItem.size.ilike(like),
-            AccessoryItem.refs.any(ref_match),
-            # A template's references find its variants too.
-            AccessoryItem.parent_template.has(AccessoryItem.refs.any(ref_match)),
-        ]
-        # A variant's values: "45127" finds the variant with that PO.
-        values = func.jsonb_each_text(AccessoryItem.variable_values).table_valued("key", "value").render_derived()
-        conditions.append(select(literal(1)).select_from(values).where(values.c.value.ilike(like)).exists())
-        query = query.filter(or_(*conditions))
-    if kind == "variant":
-        query = query.filter(AccessoryItem.parent_template_id.isnot(None))
-    elif kind == "template":
-        query = query.filter(AccessoryItem.fields.any())
-    elif kind == "plain":
-        query = query.filter(AccessoryItem.parent_template_id.is_(None), ~AccessoryItem.fields.any())
-    if template_id is not None:
-        query = query.filter(AccessoryItem.parent_template_id == template_id)
-    if category_id is not None:
-        query = query.filter(AccessoryItem.category_id == category_id)
-    if generic_only:
-        query = query.filter(AccessoryItem.client_id.is_(None))
-    elif client_id is not None:
-        query = query.filter(AccessoryItem.client_id == client_id)
-    if active_only:
-        query = query.filter(AccessoryItem.active.is_(True))
+def _like(text: str) -> str:
+    """`text` as an ILIKE "contains" pattern, with % and _ taken literally."""
+    escaped = text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{escaped}%"
+
+
+def _has_ref(ref_match):
+    """The item, or (for a variant) its template, has a reference matching
+    `ref_match`: a template's references apply to its variants."""
+    return or_(
+        AccessoryItem.refs.any(ref_match),
+        AccessoryItem.parent_template.has(AccessoryItem.refs.any(ref_match)),
+    )
+
+
+def _ref_code_match(text: str):
+    """A reference code containing `text` as typed, or ignoring case, spaces and
+    - . / _ ("ab 01" finds AB-01)."""
+    match = AccessoryItemRef.ref_code.ilike(_like(text), escape="\\")
+    norm = normalize_code(text)
+    if norm:
+        match = or_(match, AccessoryItemRef.ref_code_norm.contains(norm, autoescape=True))
+    return match
+
+
+def _any_value_contains(text: str):
+    """Any of a variant's line values contains `text` ("45127" finds the PO)."""
+    values = func.jsonb_each_text(AccessoryItem.variable_values).table_valued("key", "value").render_derived()
+    return select(literal(1)).select_from(values).where(values.c.value.ilike(_like(text), escape="\\")).exists()
+
+
+def _word_matches(word: str):
+    """One word of the quick search, found in any field."""
+    like = _like(word)
+    return or_(
+        AccessoryItem.code.ilike(like, escape="\\"),
+        AccessoryItem.description.ilike(like, escape="\\"),
+        AccessoryItem.color.ilike(like, escape="\\"),
+        AccessoryItem.size.ilike(like, escape="\\"),
+        _has_ref(_ref_code_match(word)),
+        _any_value_contains(word),
+    )
+
+
+def _text(value: Optional[str]) -> Optional[str]:
+    return value.strip() if value and value.strip() else None
+
+
+def _contains(column, text: Optional[str]):
+    return column.ilike(_like(text.strip()), escape="\\") if _text(text) else None
+
+
+def _quick_search(q: str):
+    """Each word must be found somewhere; with several words the whole text,
+    normalized, may also be one reference code ("ab 01" → AB-01)."""
+    words = and_(*[_word_matches(w) for w in q.split()])
+    norm = normalize_code(q)
+    if len(q.split()) > 1 and norm:
+        return or_(words, _has_ref(AccessoryItemRef.ref_code_norm.contains(norm, autoescape=True)))
+    return words
+
+
+def _ref_filter(f: AccessoryItemSearch):
+    """Code and/or party of a reference, on the same reference row. A party
+    alone = items carrying any code from it."""
+    conditions = [
+        _ref_code_match(f.ref_code.strip()) if _text(f.ref_code) else None,
+        AccessoryItemRef.client_id == f.ref_client_id if f.ref_client_id is not None else None,
+        AccessoryItemRef.supplier_id == f.ref_supplier_id if f.ref_supplier_id is not None else None,
+    ]
+    conditions = [c for c in conditions if c is not None]
+    return _has_ref(and_(*conditions)) if conditions else None
+
+
+_KINDS = {
+    "variant": lambda: AccessoryItem.parent_template_id.isnot(None),
+    "template": lambda: AccessoryItem.fields.any(),
+    "plain": lambda: and_(AccessoryItem.parent_template_id.is_(None), ~AccessoryItem.fields.any()),
+}
+
+
+def _equals(column, value):
+    return column == value if value is not None else None
+
+
+def _search_conditions(f: AccessoryItemSearch) -> list:
+    """Every filter given in `f`, as SQL conditions (all must match)."""
+    conditions = [
+        _quick_search(f.q) if _text(f.q) else None,
+        _contains(AccessoryItem.code, f.code),
+        _contains(AccessoryItem.description, f.description),
+        _contains(AccessoryItem.color, f.color),
+        _contains(AccessoryItem.size, f.size),
+        _ref_filter(f),
+        _equals(AccessoryItem.base_uom_id, f.base_uom_id),
+        _any_value_contains(f.line_value.strip()) if _text(f.line_value) else None,
+        _KINDS[f.kind]() if f.kind in _KINDS else None,
+        _equals(AccessoryItem.parent_template_id, f.template_id),
+        _equals(AccessoryItem.category_id, f.category_id),
+        AccessoryItem.client_id.is_(None) if f.generic_only else _equals(AccessoryItem.client_id, f.client_id),
+        AccessoryItem.active.is_(True) if f.active_only else None,
+    ]
+    # One line of a template: {"po_number": "451"} → that value contains 451.
+    conditions += [_contains(AccessoryItem.variable_values[key].astext, text) for key, text in f.lines.items()]
+    return [c for c in conditions if c is not None]
+
+
+def list_items(db: Session, f: AccessoryItemSearch) -> Tuple[List[AccessoryItem], int]:
+    """Quick search + advanced filters (see `AccessoryItemSearch`); every filter
+    given must match. Text filters are "contains", ignoring case."""
+    query = db.query(AccessoryItem).filter(*_search_conditions(f))
     total = query.count()
-    items = query.order_by(AccessoryItem.code).offset(offset).limit(limit).all()
+    if f.sort == "newest":
+        order = (AccessoryItem.created_at.desc(), AccessoryItem.id.desc())
+    else:
+        order = (AccessoryItem.code,)
+    items = query.order_by(*order).offset(f.offset).limit(f.limit).all()
     return items, total
+
+
+def _norm_sql(column):
+    """SQL twin of `normalize_code`: capitals, no spaces or - . / _"""
+    return func.upper(func.regexp_replace(func.coalesce(column, ""), r"[\s\-./_]+", "", "g"))
+
+
+def find_similar(
+    db: Session,
+    category_id: int,
+    client_id: Optional[int],
+    description: str,
+    color: Optional[str] = None,
+    size: Optional[str] = None,
+    exclude_id: Optional[int] = None,
+) -> List[AccessoryItem]:
+    """Items that look like the same trim: same category and client, and the
+    same description, color and size ignoring case, spaces and - . / _
+    (Tab 1 risk "item duplication"). Only a warning on the form: the user
+    decided look-alikes may still be saved (item 11). Variants are left out:
+    their own check is the template + values combination."""
+    if not normalize_code(description):
+        return []
+    query = db.query(AccessoryItem).filter(
+        AccessoryItem.category_id == category_id,
+        AccessoryItem.client_id.is_(None) if client_id is None else AccessoryItem.client_id == client_id,
+        AccessoryItem.parent_template_id.is_(None),
+        _norm_sql(AccessoryItem.description) == normalize_code(description),
+        _norm_sql(AccessoryItem.color) == normalize_code(color),
+        _norm_sql(AccessoryItem.size) == normalize_code(size),
+    )
+    if exclude_id is not None:
+        query = query.filter(AccessoryItem.id != exclude_id)
+    return query.order_by(AccessoryItem.code).limit(5).all()
 
 
 def get_item_or_404(db: Session, item_id: int) -> AccessoryItem:
