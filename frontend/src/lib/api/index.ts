@@ -72,6 +72,7 @@ export {
   type AccessoryItemCreate,
   type AccessoryItemUpdate,
   type AccessoryItemQuery,
+  type SimilarItemQuery,
   type AccessoryItemPage,
   type ItemConversionCreate,
   type AccessoryItemRef,

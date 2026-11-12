@@ -2,8 +2,11 @@
  * Accessory Items (items 8 + 9): every accessory/trim we stock, with its code
  * and the client's / supplier's own codes for it ("references").
  *
- * - A searchable list (our code, client/supplier code, description, color,
- *   size) with category / client filters and "show inactive".
+ * - A searchable list, 50 per page (item 11). The quick search finds every
+ *   word somewhere (code, client/supplier code, description, color, size,
+ *   line value); "Advanced search" combines fields (e.g. color AND size, a
+ *   template's line values). Filters are kept in the page link. See
+ *   `components/accessory-items/ItemFilters.tsx`.
  * - New item: pick the category (pre-fills the base unit and whether it's for a
  *   client), then a client or "Generic", description, color, size, and at least
  *   one reference. While typing a reference the page asks the server whether
@@ -17,7 +20,18 @@
  *   (`components/accessory-items/TemplateSections.tsx`). Opening a variant
  *   shows its values for editing; its unit and conversions come from the
  *   template and its own references are optional. A Kind filter and badges
- *   tell plain items, templates and variants apart.
+ *   tell plain items, templates and variants apart. A plain item can also
+ *   take color / size variants with no lines (item 11: one client code in
+ *   black, olive, white); it then becomes a base item, never stocked.
+ * - Variants are folded under their base item (item 11): a base row has a
+ *   small "▸ 3 variants" button that opens them underneath. A search that
+ *   only matches a variant lists its base (closed). Kind = Variants, or a
+ *   chosen template, still lists variants on their own.
+ * - Base unit and Client / supplier are searchable lists (`Combobox`); a
+ *   client-specific item's references start on that client.
+ * - Look-alike warning (item 11): while the form has the same category, client,
+ *   description, color and size as another item (ignoring case and spaces),
+ *   it says so and offers to open it. Saving is still allowed (user decision).
  * Anyone with a WMS role can look; creating/editing needs `manage_accessory_items`.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -30,26 +44,28 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
-  Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { Combobox, type ComboItem } from "@/components/Combobox";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import {
   accessoryCategoryApi, accessoryItemApi, clientApi, logicalLocationApi, uomApi,
   type AccessoryCategory, type AccessoryItem, type AccessoryItemRef, type Client, type LogicalLocation,
-  type AccessoryItemKind, type Uom, type UomConversion, valueSummary,
+  type Uom, type UomConversion, valueSummary,
 } from "@/lib/api";
 import {
   ValueInputs, VariableLinesSection, VariantsSection,
 } from "@/components/accessory-items/TemplateSections";
+import {
+  ALL, GENERIC, ItemFilterBar, ItemPager, toItemQuery, useItemFilters,
+} from "@/components/accessory-items/ItemFilters";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 
-const PAGE_SIZE = 200;
-const ALL = "all";
-const GENERIC = "generic";
+const PAGE_SIZE = 50;
 
 type Form = {
   category_id: string;
@@ -70,6 +86,10 @@ const BLANK: Form = {
 type RefRow = { party: string; code: string; description: string; takenBy: AccessoryItem | null };
 const BLANK_REF: RefRow = { party: "", code: "", description: "", takenBy: null };
 
+/** A new reference row; on a client-specific item it starts on that client. */
+const blankRef = (clientId: number | null | undefined): RefRow =>
+  ({ ...BLANK_REF, party: clientId != null ? `c:${clientId}` : "" });
+
 const partyParams = (party: string): { client_id?: number; supplier_id?: number } =>
   party.startsWith("c:") ? { client_id: Number(party.slice(2)) } : { supplier_id: Number(party.slice(2)) };
 
@@ -89,11 +109,11 @@ const AccessoryItems = () => {
   const [items, setItems] = useState<AccessoryItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [q, setQ] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState(ALL);
-  const [clientFilter, setClientFilter] = useState(ALL);
-  const [showInactive, setShowInactive] = useState(false);
-  const [kindFilter, setKindFilter] = useState<AccessoryItemKind | typeof ALL>(ALL);
+  const { filters, update: updateFilters, clear: clearFilters, advanced } = useItemFilters();
+  const [advancedOpen, setAdvancedOpen] = useState(advanced > 0);
+  const [templates, setTemplates] = useState<AccessoryItem[]>([]); // for the Template filter
+  const query = useMemo(() => toItemQuery(filters, PAGE_SIZE), [filters]);
+  const queryKey = JSON.stringify(query);
 
   // Dialog
   const [editing, setEditing] = useState<AccessoryItem | null>(null);
@@ -106,6 +126,8 @@ const AccessoryItems = () => {
   const [newRef, setNewRef] = useState<RefRow>(BLANK_REF); // adding to an existing item
   const [variants, setVariants] = useState<AccessoryItem[]>([]); // of the open template
   const [template, setTemplate] = useState<AccessoryItem | null>(null); // of the open variant
+  const [similar, setSimilar] = useState<AccessoryItem[]>([]); // look-alikes of the form
+  const [openBases, setOpenBases] = useState<Record<number, AccessoryItem[]>>({}); // base id → its variants, when opened
 
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const uomById = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms]);
@@ -144,23 +166,26 @@ const AccessoryItems = () => {
         );
       })
       .catch(fail);
+    loadTemplates();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const loadTemplates = () =>
+    accessoryItemApi.search({ kind: "template", active_only: false, limit: 500 })
+      .then((page) => setTemplates(page.items))
+      .catch(fail);
 
   const loadItems = async () => {
     try {
       setLoading(true);
-      const page = await accessoryItemApi.search({
-        q: q.trim() || undefined,
-        category_id: categoryFilter === ALL ? undefined : Number(categoryFilter),
-        client_id: clientFilter === ALL || clientFilter === GENERIC ? undefined : Number(clientFilter),
-        generic_only: clientFilter === GENERIC || undefined,
-        active_only: !showInactive,
-        kind: kindFilter === ALL ? undefined : kindFilter,
-        limit: PAGE_SIZE,
-      });
+      const page = await accessoryItemApi.search(query);
       setItems(page.items);
       setTotal(page.total);
+      // Re-read the variants of bases that are open and still listed.
+      const listed = new Set(page.items.map((i) => i.id));
+      const stillOpen = Object.keys(openBases).map(Number).filter((id) => listed.has(id));
+      const fresh = await Promise.all(stillOpen.map((id) => accessoryItemApi.getVariants(id, !filters.inactive)));
+      setOpenBases(Object.fromEntries(stillOpen.map((id, i) => [id, fresh[i]])));
     } catch (error) {
       fail(error);
     } finally {
@@ -173,7 +198,40 @@ const AccessoryItems = () => {
     const timer = setTimeout(loadItems, 300);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, categoryFilter, clientFilter, showInactive, kindFilter]);
+  }, [queryKey]);
+
+  // Look-alikes of what the form says (not for variants: their check is the combination).
+  const isVariantForm = editing?.parent_template_id != null;
+  useEffect(() => {
+    setSimilar([]);
+    if (!dialogOpen || isVariantForm || !form.category_id || !form.client_id || !form.description.trim()) return;
+    const timer = setTimeout(() => {
+      accessoryItemApi.similar({
+        category_id: Number(form.category_id),
+        client_id: form.client_id === GENERIC ? undefined : Number(form.client_id),
+        description: form.description.trim(),
+        color: form.color.trim() || undefined,
+        size: form.size.trim() || undefined,
+        exclude_id: editing?.id,
+      }).then(setSimilar).catch(() => setSimilar([])); // only a warning
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [dialogOpen, isVariantForm, editing?.id, form.category_id, form.client_id, form.description, form.color, form.size]);
+
+  /** Open / close the variants under a base row. */
+  const toggleBase = async (base: AccessoryItem) => {
+    if (openBases[base.id]) {
+      const { [base.id]: _closed, ...rest } = openBases;
+      setOpenBases(rest);
+      return;
+    }
+    try {
+      const list = await accessoryItemApi.getVariants(base.id, !filters.inactive);
+      setOpenBases((open) => ({ ...open, [base.id]: list }));
+    } catch (error) {
+      fail(error);
+    }
+  };
 
   const loadConversions = async (itemId: number) => {
     try {
@@ -200,6 +258,7 @@ const AccessoryItems = () => {
       setEditing(item);
       loadFamily(item);
       loadItems();
+      loadTemplates();
     } catch (error) {
       fail(error);
     }
@@ -209,7 +268,7 @@ const AccessoryItems = () => {
     setEditing(null);
     setForm(BLANK);
     setConversions([]);
-    setRefRows([BLANK_REF]);
+    setRefRows([blankRef(null)]);
     setVariants([]);
     setTemplate(null);
     setDialogOpen(true);
@@ -228,7 +287,7 @@ const AccessoryItems = () => {
       values: { ...(item.variable_values ?? {}) },
     });
     setConvForm({ uom_id: "", factor: "" });
-    setNewRef(BLANK_REF);
+    setNewRef(blankRef(item.client_id));
     setConversions([]);
     setVariants([]);
     setTemplate(null);
@@ -236,6 +295,14 @@ const AccessoryItems = () => {
     loadFamily(item);
     setDialogOpen(true);
   };
+
+  // New item: once a client is picked, empty references (or another client's) switch to it.
+  useEffect(() => {
+    if (editing || !form.client_id || form.client_id === GENERIC) return;
+    const own = `c:${form.client_id}`;
+    setRefRows((rows) => rows.map((row) =>
+      !row.party || (row.party.startsWith("c:") && row.party !== own) ? { ...row, party: own, takenBy: null } : row));
+  }, [editing, form.client_id]);
 
   // The category pre-fills the base unit and generic/client (both can be changed).
   const pickCategory = (value: string) => {
@@ -322,6 +389,7 @@ const AccessoryItems = () => {
       }
       setDialogOpen(false);
       loadItems();
+      loadTemplates();
     } catch (error) {
       fail(error);
     } finally {
@@ -343,7 +411,7 @@ const AccessoryItems = () => {
         ref_code: newRef.code.trim(),
         ref_description: newRef.description.trim() || null,
       });
-      setNewRef(BLANK_REF);
+      setNewRef(blankRef(editing.client_id));
       refreshEditing(editing.id);
     } catch (error) {
       fail(error);
@@ -401,30 +469,78 @@ const AccessoryItems = () => {
   const activeCategories = categories.filter((c) => c.active);
   const activeUoms = uoms.filter((u) => u.active);
   const readOnly = !canManage;
-  const isVariant = editing?.parent_template_id != null;
+  const isVariant = isVariantForm;
   // A client-specific item only takes its own client's codes.
   const itemClientId = form.client_id && form.client_id !== GENERIC ? Number(form.client_id) : null;
   const refClients = itemClientId == null ? clients : clients.filter((c) => c.id === itemClientId);
 
+  const partyItems: ComboItem<string>[] = [
+    ...refClients.map((c) => ({ id: `c:${c.id}`, label: c.name, group: t("accClients") })),
+    ...suppliers.map((x) => ({ id: `s:${x.id}`, label: x.name, group: t("accSuppliers") })),
+  ];
   const partySelect = (value: string, onChange: (v: string) => void) => (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="w-44"><SelectValue placeholder={t("accRefParty")} /></SelectTrigger>
-      <SelectContent>
-        <SelectGroup>
-          <SelectLabel>{t("accClients")}</SelectLabel>
-          {refClients.map((c) => (
-            <SelectItem key={`c${c.id}`} value={`c:${c.id}`}>{c.name}</SelectItem>
-          ))}
-        </SelectGroup>
-        <SelectGroup>
-          <SelectLabel>{t("accSuppliers")}</SelectLabel>
-          {suppliers.map((s) => (
-            <SelectItem key={`s${s.id}`} value={`s:${s.id}`}>{s.name}</SelectItem>
-          ))}
-        </SelectGroup>
-      </SelectContent>
-    </Select>
+    <div className="w-44 shrink-0">
+      <Combobox items={partyItems} value={value || null} onSelect={onChange} placeholder={t("accRefParty")} />
+    </div>
   );
+  const unitItems: ComboItem[] = (readOnly ? uoms : activeUoms)
+    .map((u) => ({ id: u.id, label: `${u.code} · ${u.name_en} · ${u.name_ar}` }));
+
+  /** One list row; `nested` = a variant shown under its open base. */
+  const itemRow = (item: AccessoryItem, nested = false) => {
+    const cat = categoryById.get(item.category_id);
+    const open = !!openBases[item.id];
+    return (
+      <TableRow key={item.id} className={nested ? "bg-muted/40" : undefined}>
+        <TableCell className={nested ? "ps-8" : undefined}>
+          <div className="font-mono font-medium" dir="ltr">{item.code}</div>
+          {item.is_template && item.fields.length > 0 && <Badge variant="secondary">{t("accTemplate")}</Badge>}
+          {!nested && item.variant_count > 0 && (
+            <Button variant="ghost" size="sm" className="h-6 px-1 text-xs" onClick={() => toggleBase(item)}>
+              {open ? <ChevronDown className="me-1 h-3 w-3" /> : <ChevronRight className="me-1 h-3 w-3 rtl:rotate-180" />}
+              {t("accVariantCount", { n: item.variant_count })}
+            </Button>
+          )}
+          {item.template_code && !nested && (
+            <div className="text-xs text-muted-foreground">{t("accVariantOf", { code: item.template_code })}</div>
+          )}
+        </TableCell>
+        <TableCell>
+          {item.description}
+          {item.value_lines.length > 0 && (
+            <div className="text-xs text-muted-foreground">{valueSummary(item.value_lines, language)}</div>
+          )}
+        </TableCell>
+        <TableCell className="text-sm">
+          {item.refs.length === 0 ? (
+            item.template_code
+              ? <span className="text-xs text-muted-foreground">{t("accRefsFromTemplate")}</span>
+              : "—"
+          ) : item.refs.map((r) => (
+            <div key={r.id}>
+              <span className="text-muted-foreground">{refParty(r)}: </span>
+              <span className="font-mono" dir="ltr">{r.ref_code}</span>
+            </div>
+          ))}
+        </TableCell>
+        <TableCell>{cat ? categoryName(cat) : `#${item.category_id}`}</TableCell>
+        <TableCell>{clientLabel(item.client_id)}</TableCell>
+        <TableCell>{item.color ?? "—"}</TableCell>
+        <TableCell>{item.size ?? "—"}</TableCell>
+        <TableCell>{uomCode(item.base_uom_id)}</TableCell>
+        <TableCell>
+          <Badge variant={item.active ? "outline" : "secondary"}>
+            {item.active ? t("accActive") : t("accInactive")}
+          </Badge>
+        </TableCell>
+        <TableCell className="text-right">
+          <Button variant="outline" size="sm" onClick={() => openEdit(item)} title={t("accEdit")}>
+            <Pencil className="h-4 w-4" />
+          </Button>
+        </TableCell>
+      </TableRow>
+    );
+  };
 
   return (
     <PageTransition>
@@ -446,41 +562,12 @@ const AccessoryItems = () => {
 
             <Card>
               <CardContent className="pt-6 space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <Input className="max-w-md" placeholder={t("accItemSearch")} value={q} onChange={(e) => setQ(e.target.value)} />
-                  <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                    <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>{t("accAllCategories")}</SelectItem>
-                      {categories.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{categoryName(c)}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={clientFilter} onValueChange={setClientFilter}>
-                    <SelectTrigger className="w-56"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>{t("accAllClients")}</SelectItem>
-                      <SelectItem value={GENERIC}>{t("accGenericOnly")}</SelectItem>
-                      {clients.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={kindFilter} onValueChange={(v) => setKindFilter(v as AccessoryItemKind | typeof ALL)}>
-                    <SelectTrigger className="w-40" title={t("accKind")}><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value={ALL}>{`${t("accKind")}: ${t("accKindAll")}`}</SelectItem>
-                      <SelectItem value="plain">{t("accKindPlain")}</SelectItem>
-                      <SelectItem value="template">{t("accKindTemplates")}</SelectItem>
-                      <SelectItem value="variant">{t("accKindVariants")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <div className="flex items-center gap-2">
-                    <Switch id="inactive" checked={showInactive} onCheckedChange={setShowInactive} />
-                    <Label htmlFor="inactive">{t("accShowInactive")}</Label>
-                  </div>
-                </div>
+                <ItemFilterBar
+                  filters={filters} update={updateFilters} clear={clearFilters} advanced={advanced}
+                  open={advancedOpen} setOpen={setAdvancedOpen}
+                  categories={categories} categoryName={categoryName} clients={clients} suppliers={suppliers}
+                  uoms={uoms} templates={templates}
+                />
 
                 {loading ? (
                   <div className="text-center py-8">{t("loading")}</div>
@@ -504,60 +591,14 @@ const AccessoryItems = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {items.map((item) => {
-                          const cat = categoryById.get(item.category_id);
-                          return (
-                            <TableRow key={item.id}>
-                              <TableCell>
-                                <div className="font-mono font-medium" dir="ltr">{item.code}</div>
-                                {item.is_template && <Badge variant="secondary">{t("accTemplate")}</Badge>}
-                                {item.template_code && (
-                                  <div className="text-xs text-muted-foreground">
-                                    {t("accVariantOf", { code: item.template_code })}
-                                  </div>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {item.description}
-                                {item.value_lines.length > 0 && (
-                                  <div className="text-xs text-muted-foreground">{valueSummary(item.value_lines, language)}</div>
-                                )}
-                              </TableCell>
-                              <TableCell className="text-sm">
-                                {item.refs.length === 0 ? (
-                                  item.template_code
-                                    ? <span className="text-xs text-muted-foreground">{t("accRefsFromTemplate")}</span>
-                                    : "—"
-                                ) : item.refs.map((r) => (
-                                  <div key={r.id}>
-                                    <span className="text-muted-foreground">{refParty(r)}: </span>
-                                    <span className="font-mono" dir="ltr">{r.ref_code}</span>
-                                  </div>
-                                ))}
-                              </TableCell>
-                              <TableCell>{cat ? categoryName(cat) : `#${item.category_id}`}</TableCell>
-                              <TableCell>{clientLabel(item.client_id)}</TableCell>
-                              <TableCell>{item.color ?? "—"}</TableCell>
-                              <TableCell>{item.size ?? "—"}</TableCell>
-                              <TableCell>{uomCode(item.base_uom_id)}</TableCell>
-                              <TableCell>
-                                <Badge variant={item.active ? "outline" : "secondary"}>
-                                  {item.active ? t("accActive") : t("accInactive")}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <Button variant="outline" size="sm" onClick={() => openEdit(item)} title={t("accEdit")}>
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          );
-                        })}
+                        {items.flatMap((item) => [
+                          itemRow(item),
+                          ...(openBases[item.id] ?? []).map((v) => itemRow(v, true)),
+                        ])}
                       </TableBody>
                     </Table>
-                    {total > items.length && (
-                      <p className="text-sm text-muted-foreground">{t("accShowingOf", { shown: items.length, total })}</p>
-                    )}
+                    <ItemPager page={filters.page} pageSize={PAGE_SIZE} total={total}
+                      onPage={(page) => updateFilters({ page })} />
                   </>
                 )}
               </CardContent>
@@ -628,27 +669,33 @@ const AccessoryItems = () => {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="color">{t("color")}</Label>
-                    <Input id="color" maxLength={100} value={form.color} disabled={readOnly}
+                    <Input id="color" maxLength={100} value={form.color} disabled={readOnly || (isVariant && !!template?.color)}
                       onChange={(e) => setForm({ ...form, color: e.target.value })} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="size">{t("accSize")}</Label>
-                    <Input id="size" maxLength={50} value={form.size} disabled={readOnly}
+                    <Input id="size" maxLength={50} value={form.size} disabled={readOnly || (isVariant && !!template?.size)}
                       onChange={(e) => setForm({ ...form, size: e.target.value })} />
                   </div>
                   <div className="space-y-2">
                     <Label>{t("accBaseUnit")}</Label>
-                    <Select value={form.base_uom_id} onValueChange={(v) => setForm({ ...form, base_uom_id: v })}
-                      disabled={readOnly || conversions.length > 0 || isVariant || variants.length > 0}>
-                      <SelectTrigger><SelectValue placeholder={t("accSelectUnit")} /></SelectTrigger>
-                      <SelectContent>
-                        {(readOnly ? uoms : activeUoms).map((u) => (
-                          <SelectItem key={u.id} value={String(u.id)}>{`${u.code} · ${u.name_en} · ${u.name_ar}`}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                    <Combobox items={unitItems} value={form.base_uom_id ? Number(form.base_uom_id) : null}
+                      onSelect={(id) => setForm({ ...form, base_uom_id: String(id) })} placeholder={t("accSelectUnit")}
+                      disabled={readOnly || conversions.length > 0 || isVariant || variants.length > 0} />
                   </div>
                 </div>
+                {similar.length > 0 && (
+                  <div className="space-y-1 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200">
+                    {similar.map((item) => (
+                      <div key={item.id} className="flex items-center gap-2">
+                        <span>{t("accSimilarItem", { code: item.code })}</span>
+                        <Button variant="link" size="sm" className="h-auto p-0" onClick={() => openEdit(item)}>
+                          {t("accOpenItem")}
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {editing && (
                   <div className="flex items-center justify-between">
@@ -697,7 +744,7 @@ const AccessoryItems = () => {
                           )}
                         </div>
                       ))}
-                      <Button variant="outline" size="sm" onClick={() => setRefRows((rows) => [...rows, BLANK_REF])}>
+                      <Button variant="outline" size="sm" onClick={() => setRefRows((rows) => [...rows, blankRef(itemClientId)])}>
                         <Plus className="mr-2 h-4 w-4" />{t("accAddRef")}
                       </Button>
                     </>
@@ -743,7 +790,8 @@ const AccessoryItems = () => {
                     onChanged={() => refreshEditing(editing.id)} onError={fail} />
                 )}
 
-                {editing && editing.is_template && (
+                {/* A plain item can take color / size variants too (item 11): it becomes a base item. */}
+                {editing && !isVariant && (editing.is_template || canManage) && (
                   <VariantsSection template={editing} variants={variants} canManage={canManage}
                     onChanged={() => refreshEditing(editing.id)} onOpen={openEdit} onError={fail} />
                 )}

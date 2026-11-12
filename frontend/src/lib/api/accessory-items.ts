@@ -95,6 +95,7 @@ export interface AccessoryItem {
   refs: AccessoryItemRef[];
   is_template: boolean;
   fields: AccessoryItemField[]; // a template's lines
+  variant_count: number; // a base item's variants (item 11)
   parent_template_id: number | null; // set = this is a variant
   template_code: string | null;
   variable_values: Record<string, string> | null;
@@ -118,16 +119,39 @@ export type AccessoryItemUpdate = Partial<Pick<AccessoryItem, 'description' | 'c
 
 export type AccessoryItemKind = 'plain' | 'template' | 'variant';
 
+/** List filters (item 11); every one given must match. Text filters are "contains", ignoring case. */
 export interface AccessoryItemQuery {
-  q?: string; // part of our code, a client/supplier code, description, color or size
+  q?: string; // quick search: each word found in our code, a client/supplier code, description, color, size or a line value
+  code?: string;
+  description?: string;
+  color?: string;
+  size?: string;
+  ref_code?: string; // ignoring case, spaces and - . / _
+  ref_client_id?: number; // limit ref_code to this client (alone: any code from it)
+  ref_supplier_id?: number;
+  base_uom_id?: number;
+  line_value?: string; // any line value contains this
+  line?: string[]; // one template line each: "po_number:451"
   category_id?: number;
   client_id?: number;
   generic_only?: boolean;
   active_only?: boolean; // server default: true
   kind?: AccessoryItemKind;
   template_id?: number;
+  sort?: 'code' | 'newest';
+  group_variants?: boolean; // fold variants under their base (a base is listed when one of its variants matches)
   limit?: number;
   offset?: number;
+}
+
+/** What the New item form sends to find look-alikes. */
+export interface SimilarItemQuery {
+  category_id: number;
+  client_id?: number; // none = generic
+  description: string;
+  color?: string;
+  size?: string;
+  exclude_id?: number; // the item being edited
 }
 
 export interface AccessoryItemPage {
@@ -142,10 +166,16 @@ export interface ItemConversionCreate {
   factor: number;
 }
 
-const toQuery = (params: Record<string, string | number | boolean | undefined>) => {
+type QueryValue = string | number | boolean | undefined;
+
+/** `?a=1&b=x`; empty values are left out, a list repeats its key (`line=a:1&line=b:2`). */
+const toQuery = (params: Record<string, QueryValue | QueryValue[]>) => {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
-    if (value !== undefined && value !== '') search.set(key, String(value));
+    const values = Array.isArray(value) ? value : [value];
+    values.forEach((v) => {
+      if (v !== undefined && v !== '') search.append(key, String(v));
+    });
   });
   const s = search.toString();
   return s ? `?${s}` : '';
@@ -154,6 +184,9 @@ const toQuery = (params: Record<string, string | number | boolean | undefined>) 
 export const accessoryItemApi = {
   search: (params: AccessoryItemQuery = {}) =>
     api.request<AccessoryItemPage>(`/accessory-items/${toQuery({ ...params })}`),
+  /** Items that look like the same trim (same category, client, description, color, size). */
+  similar: (params: SimilarItemQuery) =>
+    api.request<AccessoryItem[]>(`/accessory-items/similar${toQuery({ ...params })}`),
   get: (id: number) => api.request<AccessoryItem>(`/accessory-items/${id}`),
   create: (item: AccessoryItemCreate) => api.request<AccessoryItem>('/accessory-items/', 'POST', item),
   update: (id: number, changes: AccessoryItemUpdate) =>
@@ -181,7 +214,8 @@ export const accessoryItemApi = {
   deleteField: (id: number, fieldId: number) =>
     api.request<void>(`/accessory-items/${id}/fields/${fieldId}`, 'DELETE'),
 
-  getVariants: (id: number) => api.request<AccessoryItem[]>(`/accessory-items/${id}/variants`),
+  getVariants: (id: number, activeOnly = false) =>
+    api.request<AccessoryItem[]>(`/accessory-items/${id}/variants${toQuery({ active_only: activeOnly || undefined })}`),
   /** The variant that already has this combination, or null. Saves nothing. */
   checkVariant: (id: number, variant: AccessoryVariantCreate) =>
     api.request<AccessoryItem | null>(`/accessory-items/${id}/variants/check`, 'POST', variant),

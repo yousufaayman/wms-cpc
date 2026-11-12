@@ -417,6 +417,7 @@ class AccessoryItem(BaseModel):
     refs: List[AccessoryItemRef] = []
     # Item 10
     is_template: bool = False
+    variant_count: int = 0
     fields: List[AccessoryItemField] = []  # a template's variable lines
     parent_template_id: Optional[int] = None
     template_code: Optional[str] = None
@@ -425,6 +426,44 @@ class AccessoryItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+class AccessoryItemSearch(BaseModel):
+    """Filters of the Accessory Items list (item 11). Every one given must match.
+
+    q: quick search, each word found in any field. Text filters are "contains",
+    ignoring case. ref_client_id / ref_supplier_id narrow the reference filter
+    to one party. line: "key:text" entries, one template line each (e.g.
+    "po_number:451" = that line contains 451). Read from the query string.
+    """
+    q: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    size: Optional[str] = None
+    ref_code: Optional[str] = None
+    ref_client_id: Optional[int] = None
+    ref_supplier_id: Optional[int] = None
+    base_uom_id: Optional[int] = None
+    line_value: Optional[str] = None
+    line: List[str] = Field(default_factory=list)
+    category_id: Optional[int] = None
+    client_id: Optional[int] = None
+    generic_only: bool = False
+    active_only: bool = True
+    kind: Optional[Literal["plain", "template", "variant"]] = None
+    template_id: Optional[int] = None
+    sort: Literal["code", "newest"] = "code"
+    # Variants folded under their base: list only plain items and bases; a
+    # base is listed when it or one of its variants matches (item 11).
+    group_variants: bool = False
+    limit: int = Field(50, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+    @property
+    def lines(self) -> Dict[str, str]:
+        """`line` as {line key: text}; entries without a colon are ignored."""
+        return dict(entry.split(":", 1) for entry in self.line if ":" in entry)
+
 
 class AccessoryItemPage(BaseModel):
     items: List[AccessoryItem]

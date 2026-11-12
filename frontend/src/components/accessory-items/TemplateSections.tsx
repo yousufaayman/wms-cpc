@@ -5,8 +5,11 @@
  *   Adding the first line makes a plain item a template. Labels and order can
  *   always change; a line that a variant uses can't change type or be deleted;
  *   once variants exist, new lines must be optional.
- * - `VariantsSection`: a template's variants (one combination of values each),
- *   with an "Add variant" form that warns, while typing, when the combination
+ * - `VariantsSection`: a base item's variants (one combination of values,
+ *   color and size each). On an item without lines it adds colors / sizes
+ *   ("Add color / size", item 11), which turns a plain item into a base item.
+ *   A color / size the base has is filled in and locked (the variant gets it).
+ *   The "Add variant" form that warns, while typing, when the combination
  *   already exists and offers to open that variant.
  * - `ValueInputs`: one input per line, typed (number, money, date, text);
  *   also used by the page to edit a variant's values.
@@ -234,16 +237,23 @@ export const VariantsSection = ({
   const [takenBy, setTakenBy] = useState<AccessoryItem | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // The base's color / size, when it has one, is the variant's too.
+  const color = template.color ?? form.color;
+  const size = template.size ?? form.size;
   const body = (f: VariantForm) => ({
     values: Object.fromEntries(Object.entries(f.values).map(([k, v]) => [k, v.trim() || null])),
-    color: f.color.trim() || null,
-    size: f.size.trim() || null,
+    color: (template.color ?? f.color).trim() || null,
+    size: (template.size ?? f.size).trim() || null,
   });
   const missingRequired = template.fields.some((f) => f.required && !(form.values[f.field_key] ?? "").trim());
+  // A variant must differ from its base: a color, a size or a line value.
+  const empty = !color.trim() && !size.trim() && !Object.values(form.values).some((v) => v.trim());
+  const colorsOnly = template.fields.length === 0;
+  const addLabel = colorsOnly ? t("accAddColorSize") : t("accAddVariant");
 
   /** Ask the server whether this combination exists (when a field loses focus). */
   const check = async () => {
-    if (missingRequired) {
+    if (missingRequired || empty) {
       setTakenBy(null);
       return;
     }
@@ -293,18 +303,18 @@ export const VariantsSection = ({
 
       {canManage && template.active && (
         <div className="space-y-3 rounded-md border p-3">
-          <h4 className="text-sm font-medium">{t("accAddVariant")}</h4>
+          <h4 className="text-sm font-medium">{addLabel}</h4>
           <ValueInputs fields={template.fields} values={form.values} onBlur={check}
             onChange={(values) => { setForm({ ...form, values }); setTakenBy(null); }} />
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="variant-color">{t("color")}</Label>
-              <Input id="variant-color" maxLength={100} value={form.color} onBlur={check}
+              <Input id="variant-color" maxLength={100} value={color} onBlur={check} disabled={!!template.color}
                 onChange={(e) => { setForm({ ...form, color: e.target.value }); setTakenBy(null); }} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="variant-size">{t("accSize")}</Label>
-              <Input id="variant-size" maxLength={50} value={form.size} onBlur={check}
+              <Input id="variant-size" maxLength={50} value={size} onBlur={check} disabled={!!template.size}
                 onChange={(e) => { setForm({ ...form, size: e.target.value }); setTakenBy(null); }} />
             </div>
           </div>
@@ -316,9 +326,10 @@ export const VariantsSection = ({
               </Button>
             </div>
           )}
-          <div className="flex justify-end">
-            <Button size="sm" onClick={add} disabled={saving || missingRequired || !!takenBy}>
-              <Plus className="mr-1 h-4 w-4" />{t("accAddVariant")}
+          <div className="flex items-center justify-end gap-3">
+            {colorsOnly && empty && <span className="text-xs text-muted-foreground">{t("accColorOrSize")}</span>}
+            <Button size="sm" onClick={add} disabled={saving || missingRequired || empty || !!takenBy}>
+              <Plus className="mr-1 h-4 w-4" />{addLabel}
             </Button>
           </div>
         </div>
