@@ -107,3 +107,51 @@ def test_last_line_can_go_while_variants_have_colors(client, auth_headers, setup
     assert client.delete(f"{ITEMS}{t['id']}/fields/{field_id}", headers=h).status_code == 204
     after = client.get(f"{ITEMS}{t['id']}", headers=h).json()
     assert after["fields"] == [] and after["is_template"] is True  # still a base: it has variants
+
+
+# ── 3. Color / size from the base (user rule) ───────────────────────────────
+
+def _black_button(client, h, s):
+    return _create(client, h, s, description="Button 18L", color="Black",
+                   refs=[{"supplier_id": s["supplier"].id, "ref_code": "B-18-BLK"}]).json()
+
+
+def test_variant_takes_the_base_color(client, auth_headers, setup):
+    h = auth_headers(role="W_Manager")
+    base = _black_button(client, h, setup)
+    r = _variant(client, h, base["id"], {}, size="20mm")
+    assert r.status_code == 201, r.text
+    assert r.json()["color"] == "Black"  # not typed, added from the base
+    assert _variant(client, h, base["id"], {}, color="black", size="24mm").status_code == 201  # same value is fine
+    other = _variant(client, h, base["id"], {}, color="White", size="28mm")
+    assert other.status_code == 400 and "comes from" in other.json()["detail"]
+    assert _variant(client, h, base["id"], {}, size="20MM").status_code == 409
+
+
+def test_variant_cant_change_the_base_color(client, auth_headers, setup):
+    h = auth_headers(role="W_Manager")
+    base = _black_button(client, h, setup)
+    v = _variant(client, h, base["id"], {}, size="20mm").json()
+    assert client.patch(f"{ITEMS}{v['id']}", headers=h, json={"color": "White"}).status_code == 400
+    same = client.patch(f"{ITEMS}{v['id']}", headers=h, json={"color": "Black", "size": "22mm"})
+    assert same.status_code == 200 and same.json()["color"] == "Black"
+
+
+def test_base_color_change_reaches_its_variants(client, auth_headers, setup):
+    h = auth_headers(role="W_Manager")
+    base = _black_button(client, h, setup)
+    a = _variant(client, h, base["id"], {}, size="20mm").json()
+    b = _variant(client, h, base["id"], {}, size="24mm").json()
+    assert client.patch(f"{ITEMS}{base['id']}", headers=h, json={"color": "Navy"}).status_code == 200
+    assert {client.get(f"{ITEMS}{x['id']}", headers=h).json()["color"] for x in (a, b)} == {"Navy"}
+    assert _variant(client, h, base["id"], {}, size="20mm").status_code == 409  # key moved with the color
+
+
+def test_base_color_set_later_refused_if_variants_would_clash(client, auth_headers, setup):
+    h = auth_headers(role="W_Manager")
+    base = _button(client, h, setup)  # no color: variants own theirs
+    _colors(client, h, base["id"], "Black", "Olive")
+    r = client.patch(f"{ITEMS}{base['id']}", headers=h, json={"color": "Black"})
+    assert r.status_code == 409 and "would become the same" in r.json()["detail"]
+    cleared = client.patch(f"{ITEMS}{base['id']}", headers=h, json={"color": None})
+    assert cleared.status_code == 200

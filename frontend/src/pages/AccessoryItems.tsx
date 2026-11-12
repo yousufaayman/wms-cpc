@@ -628,12 +628,12 @@ const AccessoryItems = () => {
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-2">
                     <Label htmlFor="color">{t("color")}</Label>
-                    <Input id="color" maxLength={100} value={form.color} disabled={readOnly}
+                    <Input id="color" maxLength={100} value={form.color} disabled={readOnly || (isVariant && !!template?.color)}
                       onChange={(e) => setForm({ ...form, color: e.target.value })} />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="size">{t("accSize")}</Label>
-                    <Input id="size" maxLength={50} value={form.size} disabled={readOnly}
+                    <Input id="size" maxLength={50} value={form.size} disabled={readOnly || (isVariant && !!template?.size)}
                       onChange={(e) => setForm({ ...form, size: e.target.value })} />
                   </div>
                   <div className="space-y-2">

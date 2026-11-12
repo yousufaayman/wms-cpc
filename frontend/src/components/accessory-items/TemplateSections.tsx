@@ -8,6 +8,7 @@
  * - `VariantsSection`: a base item's variants (one combination of values,
  *   color and size each). On an item without lines it adds colors / sizes
  *   ("Add color / size", item 11), which turns a plain item into a base item.
+ *   A color / size the base has is filled in and locked (the variant gets it).
  *   The "Add variant" form that warns, while typing, when the combination
  *   already exists and offers to open that variant.
  * - `ValueInputs`: one input per line, typed (number, money, date, text);
@@ -236,14 +237,17 @@ export const VariantsSection = ({
   const [takenBy, setTakenBy] = useState<AccessoryItem | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // The base's color / size, when it has one, is the variant's too.
+  const color = template.color ?? form.color;
+  const size = template.size ?? form.size;
   const body = (f: VariantForm) => ({
     values: Object.fromEntries(Object.entries(f.values).map(([k, v]) => [k, v.trim() || null])),
-    color: f.color.trim() || null,
-    size: f.size.trim() || null,
+    color: (template.color ?? f.color).trim() || null,
+    size: (template.size ?? f.size).trim() || null,
   });
   const missingRequired = template.fields.some((f) => f.required && !(form.values[f.field_key] ?? "").trim());
   // A variant must differ from its base: a color, a size or a line value.
-  const empty = !form.color.trim() && !form.size.trim() && !Object.values(form.values).some((v) => v.trim());
+  const empty = !color.trim() && !size.trim() && !Object.values(form.values).some((v) => v.trim());
   const colorsOnly = template.fields.length === 0;
   const addLabel = colorsOnly ? t("accAddColorSize") : t("accAddVariant");
 
@@ -305,12 +309,12 @@ export const VariantsSection = ({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="variant-color">{t("color")}</Label>
-              <Input id="variant-color" maxLength={100} value={form.color} onBlur={check}
+              <Input id="variant-color" maxLength={100} value={color} onBlur={check} disabled={!!template.color}
                 onChange={(e) => { setForm({ ...form, color: e.target.value }); setTakenBy(null); }} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="variant-size">{t("accSize")}</Label>
-              <Input id="variant-size" maxLength={50} value={form.size} onBlur={check}
+              <Input id="variant-size" maxLength={50} value={size} onBlur={check} disabled={!!template.size}
                 onChange={(e) => { setForm({ ...form, size: e.target.value }); setTakenBy(null); }} />
             </div>
           </div>

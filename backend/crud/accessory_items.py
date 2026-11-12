@@ -23,6 +23,10 @@ Rules checked here, raised as HTTP errors:
   white). "Template" in this file = base item: has lines or has variants.
   Every variant needs a color, a size or a line value; the last line of a
   base can go only while each variant still has a color or a size.
+- inherited color / size (item 11, user): when the base has a color or a
+  size, every variant gets it automatically and can't change it. Setting or
+  changing it on the base copies it to all its variants (refused if two
+  would become the same); clearing it on the base leaves the variants' own.
 """
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
@@ -313,6 +317,8 @@ def update_item(db: Session, item_id: int, payload: AccessoryItemUpdate) -> Acce
         _update_variant(db, item, changes, new_values)
     elif new_values is not None:
         raise _bad("Only a variant has values")
+    else:
+        _push_to_variants(db, item, changes)
 
     new_uom = changes.get("base_uom_id")
     if new_uom is not None and new_uom != item.base_uom_id:
@@ -568,6 +574,40 @@ def _clean(template: AccessoryItem, values, color, size) -> Tuple[dict, str]:
         raise _bad(str(exc)) from exc
 
 
+_INHERITED = ("color", "size")
+
+
+def _inherited(template: AccessoryItem, field: str, given: Optional[str]) -> Optional[str]:
+    """A variant's color / size: the base's when it has one (a different value
+    is refused), otherwise what was typed."""
+    base_value = getattr(template, field)
+    if not base_value:
+        return given
+    if given and normalize_code(given) != normalize_code(base_value):
+        raise _bad(f"The {field} comes from {template.code}: {base_value}")
+    return base_value
+
+
+def _push_to_variants(db: Session, base: AccessoryItem, changes: dict) -> None:
+    """The base's color / size was set or changed: its variants take it."""
+    pushed = {f: changes[f] for f in _INHERITED if changes.get(f) and changes[f] != getattr(base, f)}
+    if not pushed:
+        return
+    seen, planned = {}, []
+    for variant in list_variants(db, base.id):  # check them all first, then change
+        if has_stock(db, variant.id):
+            raise _bad(f"{variant.code} has stock, so its {', '.join(pushed)} can't change")
+        color = pushed.get("color", variant.color)
+        size = pushed.get("size", variant.size)
+        _, key = _clean(base, variant.variable_values, color, size)
+        if key in seen:
+            raise _bad(f"{seen[key]} and {variant.code} would become the same", status.HTTP_409_CONFLICT)
+        seen[key] = variant.code
+        planned.append((variant, color, size, key))
+    for variant, color, size, key in planned:
+        variant.color, variant.size, variant.variant_key = color, size, key
+
+
 def _find_variant(db: Session, template_id: int, key: str) -> Optional[AccessoryItem]:
     return (
         db.query(AccessoryItem)
@@ -594,7 +634,8 @@ def _commit_variant(db: Session) -> None:
 def check_variant(db: Session, template_id: int, payload: AccessoryVariantCreate) -> Optional[AccessoryItem]:
     """The variant that already has this combination, or None (for the form)."""
     template = _template_or_400(db, template_id)
-    _, key = _clean(template, payload.values, payload.color, payload.size)
+    color, size = _inherited(template, "color", payload.color), _inherited(template, "size", payload.size)
+    _, key = _clean(template, payload.values, color, size)
     return _find_variant(db, template.id, key)
 
 
@@ -610,7 +651,8 @@ def create_variant(db: Session, template_id: int, payload: AccessoryVariantCreat
     template = _template_or_400(db, template_id)
     if not template.active:
         raise _bad(f"The template {template.code} is switched off")
-    values, key = _clean(template, payload.values, payload.color, payload.size)
+    color, size = _inherited(template, "color", payload.color), _inherited(template, "size", payload.size)
+    values, key = _clean(template, payload.values, color, size)
     existing = _find_variant(db, template.id, key)
     if existing is not None:
         raise _taken(existing)
@@ -618,8 +660,8 @@ def create_variant(db: Session, template_id: int, payload: AccessoryVariantCreat
         category_id=template.category_id,
         client_id=template.client_id,
         description=payload.description or template.description,
-        color=payload.color,
-        size=payload.size,
+        color=color,
+        size=size,
         base_uom_id=template.base_uom_id,
         created_by=user_id,
         parent_template_id=template.id,
@@ -647,7 +689,13 @@ def create_variant(db: Session, template_id: int, payload: AccessoryVariantCreat
 
 
 def _update_variant(db: Session, item: AccessoryItem, changes: dict, new_values) -> None:
-    """Color / size / values of a variant changed: re-check the combination."""
+    """Color / size / values of a variant changed: re-check the combination.
+    A color / size the base has stays the base's (sending it again is fine)."""
+    for field in _INHERITED:
+        if field in changes and getattr(item.parent_template, field):
+            changes[field] = _inherited(item.parent_template, field, changes[field])
+        if field in changes and changes[field] == getattr(item, field):
+            changes.pop(field)  # the form sends them back unchanged
     if new_values is None and "color" not in changes and "size" not in changes:
         return
     if has_stock(db, item.id):
