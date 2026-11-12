@@ -42,6 +42,7 @@ from backend.models import (
     AccessoryCategory,
     AccessoryItem,
     AccessoryItemField,
+    AccessoryPack,
     AccessoryItemRef,
     Client,
     LogicalLocation,
@@ -67,9 +68,10 @@ def _bad(detail: str, code: int = status.HTTP_400_BAD_REQUEST) -> HTTPException:
 
 
 def has_stock(db: Session, item_id: int) -> bool:
-    """Has this item ever held stock? Packs and the ledger don't exist yet
-    (items 12/13), so nothing has: item 12 makes this check its packs."""
-    return False
+    """Has this item ever held stock, i.e. was a pack ever made of it (item 12)?
+    Empty packs count too: the item's history uses its unit and values. Every
+    ledger row (item 13) belongs to a pack, so packs are enough to look at."""
+    return bool(db.scalar(select(select(AccessoryPack.id).where(AccessoryPack.accessory_item_id == item_id).exists())))
 
 
 def ensure_stockable(item: AccessoryItem) -> None:
