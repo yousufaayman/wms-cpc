@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
+from decimal import Decimal
 from enum import Enum
 
 # User Role schemas
@@ -485,11 +486,55 @@ class AccessoryPack(BaseModel):
     supplier_type: Optional[Literal["client", "logical_location"]] = None
     client_supplier_id: Optional[int] = None
     status: Literal["active", "empty"]
+    quantity: Decimal  # on hand, base unit: the sum of the pack's ledger rows (item 13)
     created_by: int
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class AccessoryLedgerEntry(BaseModel):
+    """One ledger row. `balance` (pack history only) = the pack's quantity
+    after this row. who / when / why come from its posting."""
+    id: int
+    posting_id: int
+    pack_id: int
+    accessory_item_id: int
+    entry_type: str
+    qty_delta: Decimal
+    balance: Optional[Decimal] = None
+    job_order_id: Optional[int] = None
+    accessory_receipt_item_id: Optional[int] = None
+    reversal_of: Optional[int] = None
+    is_reversed: bool
+    reason: Optional[str] = None
+    created_by: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AccessoryPosting(BaseModel):
+    id: int
+    supplier_receipt_id: Optional[int] = None
+    internal_receipt_id: Optional[int] = None
+    external_receipt_id: Optional[int] = None
+    reason: Optional[str] = None
+    reverses_posting_id: Optional[int] = None
+    reversed_by_posting_id: Optional[int] = None
+    created_by: int
+    created_at: datetime
+    entries: List[AccessoryLedgerEntry]
+
+    class Config:
+        from_attributes = True
+
+
+class AccessoryReverseIn(BaseModel):
+    """Why the posting is being cancelled (required)."""
+    reason: str = Field(..., min_length=1, max_length=500)
 
 
 class AccessoryPackPage(BaseModel):

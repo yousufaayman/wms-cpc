@@ -4,6 +4,7 @@ from sqlalchemy import (
     BigInteger,
     String,
     ForeignKey,
+    ForeignKeyConstraint,
     Boolean,
     DateTime,
     TIMESTAMP,
@@ -1067,6 +1068,9 @@ class AccessoryPack(Base):
         ),
         CheckConstraint(_CK_DELIVERY_SUPPLIER_PAIR, name="ck_accessory_packs_supplier_pair"),
         CheckConstraint("status IN ('active', 'empty')", name="ck_accessory_packs_status"),
+        # Target of the ledger's (pack_id, accessory_item_id) FK: the database
+        # itself keeps every ledger row on its pack's item (item 13).
+        UniqueConstraint("id", "accessory_item_id", name="uq_accessory_packs_id_item"),
         Index("ix_accessory_packs_item", "accessory_item_id"),
         Index("ix_accessory_packs_warehouse_rack", "warehouse_id", "rack_id"),
         Index("ix_accessory_packs_delivery_item", "expected_delivery_item_id"),
@@ -1154,6 +1158,142 @@ class AccessoryPackMove(Base):
 
     def __repr__(self):
         return f"<AccessoryPackMove pack={self.pack_id} {self.from_rack_id}->{self.to_rack_id}>"
+
+
+# Ledger entry types (item 13) and the sign each must have. Reversal rows flip
+# the sign, so the sign rule skips them.
+ACCESSORY_ENTRY_TYPES = (
+    "receipt", "issue", "return", "transfer", "adjustment", "supplier_return", "write_off", "reclassify",
+)
+_SQL_LIST = lambda values: ", ".join(f"'{v}'" for v in values)  # noqa: E731
+
+
+class AccessoryPosting(Base):
+    """One action that changed accessory stock: a receive session, an issue
+    receipt's confirm, a split, an adjustment, the opening balance, a
+    reversal. Holds who / when / why and the receipt it came from (at most
+    one of the three; none for receiving, D-1). Its ledger rows are the
+    quantity changes. Written only by `domains/posting/accessory.py`."""
+    __tablename__ = "accessory_postings"
+    __table_args__ = (
+        CheckConstraint(
+            "(supplier_receipt_id IS NOT NULL)::int + (internal_receipt_id IS NOT NULL)::int"
+            " + (external_receipt_id IS NOT NULL)::int <= 1",
+            name="ck_accessory_postings_one_receipt",
+        ),
+        UniqueConstraint("reverses_posting_id", name="uq_accessory_postings_reverses"),
+        {"schema": "wms"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    supplier_receipt_id = Column(Integer, ForeignKey(_FK_SUPPLIER_RECEIPTS, ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    internal_receipt_id = Column(Integer, ForeignKey(_FK_INTERNAL_RECEIPTS, ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    external_receipt_id = Column(Integer, ForeignKey(_FK_EXTERNAL_RECEIPTS, ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    reason = Column(String(500), nullable=True)
+    # Set on a reversal: the posting it cancels. UNIQUE = reversed at most once.
+    reverses_posting_id = Column(
+        BigInteger, ForeignKey("wms.accessory_postings.id", ondelete=_ON_DELETE_RESTRICT), nullable=True
+    )
+    created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    entries = relationship(
+        "AccessoryLedgerEntry", back_populates="posting", order_by="AccessoryLedgerEntry.id", lazy="selectin"
+    )
+
+    def __repr__(self):
+        return f"<AccessoryPosting {self.id}>"
+
+
+class AccessoryLedgerEntry(Base):
+    """One quantity change of one pack, in the item's base unit. Never edited
+    or deleted: a mistake is cancelled by an opposite row (`reversal_of`).
+    What a pack holds = the sum of its rows (`AccessoryPack.quantity`)."""
+    __tablename__ = "accessory_ledger"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["pack_id", "accessory_item_id"],
+            ["wms.accessory_packs.id", "wms.accessory_packs.accessory_item_id"],
+            name="fk_accessory_ledger_pack_item",
+            ondelete=_ON_DELETE_RESTRICT,
+        ),
+        UniqueConstraint("reversal_of", name="uq_accessory_ledger_reversal_of"),
+        CheckConstraint(f"entry_type IN ({_SQL_LIST(ACCESSORY_ENTRY_TYPES)})", name="ck_accessory_ledger_entry_type"),
+        CheckConstraint("qty_delta <> 0", name="ck_accessory_ledger_qty_nonzero"),
+        CheckConstraint(
+            "reversal_of IS NOT NULL"
+            " OR (entry_type IN ('receipt', 'return') AND qty_delta > 0)"
+            " OR (entry_type IN ('issue', 'supplier_return', 'write_off') AND qty_delta < 0)"
+            " OR entry_type IN ('transfer', 'adjustment', 'reclassify')",
+            name="ck_accessory_ledger_sign",
+        ),
+        CheckConstraint(
+            "entry_type NOT IN ('issue', 'return') OR job_order_id IS NOT NULL", name="ck_accessory_ledger_jo"
+        ),
+        Index("ix_accessory_ledger_pack", "pack_id", "id"),
+        Index("ix_accessory_ledger_posting", "posting_id"),
+        Index("ix_accessory_ledger_job_order", "job_order_id"),
+        Index("ix_accessory_ledger_item", "accessory_item_id"),
+        {"schema": "wms"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    posting_id = Column(
+        BigInteger, ForeignKey("wms.accessory_postings.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    pack_id = Column(BigInteger, nullable=False)
+    accessory_item_id = Column(BigInteger, nullable=False)
+    entry_type = Column(String(20), nullable=False)
+    qty_delta = Column(NUMERIC(14, 4), nullable=False)
+    job_order_id = Column(Integer, ForeignKey("core.job_orders.job_order_id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    # The receipt line that caused it. RESTRICT: a posted line can't be
+    # deleted, only reversed.
+    accessory_receipt_item_id = Column(
+        Integer, ForeignKey("wms.accessory_receipt_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=True
+    )
+    reversal_of = Column(BigInteger, ForeignKey("wms.accessory_ledger.id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
+
+    posting = relationship("AccessoryPosting", back_populates="entries")
+
+    # Filled in by the pack history (quantity after this row); not a column.
+    balance = None
+
+    @property
+    def created_by(self) -> int:
+        return self.posting.created_by
+
+    @property
+    def created_at(self):
+        return self.posting.created_at
+
+    @property
+    def reason(self):
+        return self.posting.reason
+
+    def __repr__(self):
+        return f"<AccessoryLedgerEntry {self.id} pack={self.pack_id} {self.entry_type} {self.qty_delta}>"
+
+
+# What a pack holds right now = the sum of its ledger rows (0 for a new pack).
+_ledger = AccessoryLedgerEntry.__table__
+AccessoryPack.quantity = column_property(
+    select(func.coalesce(func.sum(_ledger.c.qty_delta), 0))
+    .where(_ledger.c.pack_id == AccessoryPack.__table__.c.id)
+    .correlate_except(_ledger)
+    .scalar_subquery()
+)
+# Has someone reversed this row / posting? (Their reversal points back at it.)
+_reversal_row = _ledger.alias("reversal_row")
+AccessoryLedgerEntry.is_reversed = column_property(
+    exists().where(_reversal_row.c.reversal_of == _ledger.c.id).correlate_except(_reversal_row)
+)
+_reversal_posting = AccessoryPosting.__table__.alias("reversal_posting")
+AccessoryPosting.reversed_by_posting_id = column_property(
+    select(_reversal_posting.c.id)
+    .where(_reversal_posting.c.reverses_posting_id == AccessoryPosting.__table__.c.id)
+    .correlate_except(_reversal_posting)
+    .scalar_subquery()
+)
 
 
 # Backward compatibility alias; canonical definition lives in backend.schemas.
