@@ -469,6 +469,64 @@ class AccessoryItemPage(BaseModel):
     items: List[AccessoryItem]
     total: int
 
+
+# Accessory packs (item 12). Packs are created by receiving (item 17) together
+# with their ledger row, so there is no create schema for the API.
+class AccessoryPack(BaseModel):
+    id: int
+    barcode: str  # "<id>*ACC", what the label carries
+    accessory_item_id: int
+    item_code: str
+    item_description: str
+    warehouse_id: int
+    rack_id: Optional[int] = None  # None = waiting for put-away
+    rack_code: Optional[str] = None
+    expected_delivery_item_id: Optional[int] = None
+    supplier_type: Optional[Literal["client", "logical_location"]] = None
+    client_supplier_id: Optional[int] = None
+    status: Literal["active", "empty"]
+    created_by: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AccessoryPackPage(BaseModel):
+    items: List[AccessoryPack]
+    total: int
+
+
+class AccessoryPackSearch(BaseModel):
+    """Filters of the pack list; all given must match. `unracked=true` = only
+    packs waiting for put-away (rack_id given at the same time is ignored)."""
+    warehouse_id: Optional[int] = None
+    accessory_item_id: Optional[int] = None
+    rack_id: Optional[int] = None
+    unracked: bool = False
+    status: Optional[Literal["active", "empty"]] = None
+    limit: int = Field(50, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+
+class AccessoryPackMoveIn(BaseModel):
+    """Put a pack on a rack, or take it off one (`rack_id: null`)."""
+    rack_id: Optional[int] = None
+
+
+class AccessoryPackMove(BaseModel):
+    id: int
+    pack_id: int
+    from_rack_id: Optional[int] = None
+    from_rack_code: Optional[str] = None
+    to_rack_id: Optional[int] = None
+    to_rack_code: Optional[str] = None
+    moved_by: int
+    moved_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # Box schemas
 class BoxBase(BaseModel):
     rack_id: Optional[int] = None

@@ -1048,6 +1048,114 @@ class ExpectedDeliveryItem(Base):
         return f"<ExpectedDeliveryItem {self.id} delivery={self.delivery_id}>"
 
 
+# ── Accessory stock (item 12) ───────────────────────────────────────────────
+
+class AccessoryPack(Base):
+    """One physical pack (bag / box / carton) holding a single accessory item.
+
+    Its label barcode is the id + `*ACC` (`domains/accessories/pack_barcode.py`),
+    so nothing extra is stored for it. How much is inside comes from the
+    ledger (item 13), not from this row. A pack belongs to a warehouse even
+    when it's on no rack yet (`rack_id` NULL = waiting for put-away). The
+    supplier pair is the same as on expected deliveries; item 17 fills it and
+    the delivery line it matched."""
+    __tablename__ = "accessory_packs"
+    __table_args__ = (
+        CheckConstraint(
+            "supplier_type IS NULL OR supplier_type IN ('client', 'logical_location')",
+            name="ck_accessory_packs_supplier_type",
+        ),
+        CheckConstraint(_CK_DELIVERY_SUPPLIER_PAIR, name="ck_accessory_packs_supplier_pair"),
+        CheckConstraint("status IN ('active', 'empty')", name="ck_accessory_packs_status"),
+        Index("ix_accessory_packs_item", "accessory_item_id"),
+        Index("ix_accessory_packs_warehouse_rack", "warehouse_id", "rack_id"),
+        Index("ix_accessory_packs_delivery_item", "expected_delivery_item_id"),
+        {"schema": "wms"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    accessory_item_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    warehouse_id = Column(Integer, ForeignKey(_FK_WAREHOUSES, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    rack_id = Column(
+        Integer, ForeignKey(_FK_RACKS, onupdate="CASCADE", ondelete=_ON_DELETE_SET_NULL), nullable=True
+    )
+    expected_delivery_item_id = Column(
+        Integer,
+        ForeignKey("wms.expected_delivery_items.id", onupdate="CASCADE", ondelete=_ON_DELETE_SET_NULL),
+        nullable=True,
+    )
+    supplier_type = Column(String(20), nullable=True)
+    client_supplier_id = Column(Integer, nullable=True)
+    status = Column(String(10), nullable=False, server_default="active")
+    created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    item = relationship("AccessoryItem", foreign_keys=[accessory_item_id], lazy="selectin")
+    rack = relationship("WarehouseRack", foreign_keys=[rack_id], lazy="selectin")
+    moves = relationship("AccessoryPackMove", back_populates="pack", order_by="AccessoryPackMove.id")
+
+    @property
+    def barcode(self) -> str:
+        from .domains.accessories.pack_barcode import pack_barcode
+        return pack_barcode(self.id)
+
+    @property
+    def item_code(self) -> str:
+        return self.item.code
+
+    @property
+    def item_description(self) -> str:
+        return self.item.description
+
+    @property
+    def rack_code(self):
+        return self.rack.rack_code if self.rack is not None else None
+
+    def __repr__(self):
+        return f"<AccessoryPack {self.id}*ACC item={self.accessory_item_id} rack={self.rack_id}>"
+
+
+class AccessoryPackMove(Base):
+    """Rack history of a pack: one row per move. NULL rack = not on a rack
+    (before put-away, or taken off). Creating a pack writes no row; the first
+    move's `from_rack_id` says where it started. Moves never touch the ledger."""
+    __tablename__ = "accessory_pack_moves"
+    __table_args__ = (
+        Index("ix_accessory_pack_moves_pack", "pack_id", "moved_at"),
+        {"schema": "wms"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    pack_id = Column(
+        BigInteger, ForeignKey("wms.accessory_packs.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    from_rack_id = Column(
+        Integer, ForeignKey(_FK_RACKS, onupdate="CASCADE", ondelete=_ON_DELETE_SET_NULL), nullable=True
+    )
+    to_rack_id = Column(
+        Integer, ForeignKey(_FK_RACKS, onupdate="CASCADE", ondelete=_ON_DELETE_SET_NULL), nullable=True
+    )
+    moved_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    moved_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    pack = relationship("AccessoryPack", back_populates="moves")
+    from_rack = relationship("WarehouseRack", foreign_keys=[from_rack_id], lazy="selectin")
+    to_rack = relationship("WarehouseRack", foreign_keys=[to_rack_id], lazy="selectin")
+
+    @property
+    def from_rack_code(self):
+        return self.from_rack.rack_code if self.from_rack is not None else None
+
+    @property
+    def to_rack_code(self):
+        return self.to_rack.rack_code if self.to_rack is not None else None
+
+    def __repr__(self):
+        return f"<AccessoryPackMove pack={self.pack_id} {self.from_rack_id}->{self.to_rack_id}>"
+
+
 # Backward compatibility alias; canonical definition lives in backend.schemas.
 if TYPE_CHECKING:
     from .schemas import TokenPayload as TokenPayload
