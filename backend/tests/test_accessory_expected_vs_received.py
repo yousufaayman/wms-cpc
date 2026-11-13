@@ -181,7 +181,7 @@ def test_packs_received_on_a_line(client, auth_headers, db, s, make_user):
     for p in kept["packs"]:
         row = by_id[p["id"]]
         assert Decimal(row["received_qty"]) == 7 and Decimal(row["quantity"]) == 7
-        assert row["barcode"] == f"{p['id']}*ACC" and row["received_by"] == worker.username
+        assert "barcode" not in row and row["received_by"] == worker.username
     gone = by_id[undone["packs"][0]["id"]]
     assert Decimal(gone["received_qty"]) == 0 and gone["status"] == "empty"
 

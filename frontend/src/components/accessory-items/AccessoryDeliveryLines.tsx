@@ -121,7 +121,7 @@ function LinePacks({ line, colSpan }: Readonly<{ line: ExpectedDeliveryItem; col
           <TableBody>
             {packs.map((p) => (
               <TableRow key={p.id} className={p.status === "empty" ? "text-muted-foreground" : ""}>
-                <TableCell className="font-mono text-sm" dir="ltr">{p.barcode}</TableCell>
+                <TableCell className="font-mono text-sm" dir="ltr">{p.id}</TableCell>
                 <TableCell className="text-right font-mono text-sm" dir="ltr">{fmtQty(p.received_qty)} {line.uom_code}</TableCell>
                 <TableCell className="text-right font-mono text-sm" dir="ltr">{fmtQty(p.quantity)} {line.uom_code}</TableCell>
                 <TableCell className="text-sm">{p.rack_code ?? "—"}</TableCell>

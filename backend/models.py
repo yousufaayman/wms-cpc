@@ -1155,7 +1155,8 @@ class AccessoryPack(Base):
     """One physical pack (bag / box / carton) holding a single accessory item.
 
     Its label barcode is the id + `*ACC` (`domains/accessories/pack_barcode.py`),
-    so nothing extra is stored for it. How much is inside comes from the
+    so nothing extra is stored for it; `*ACC` is only the scan terminator, the
+    API and screens show the bare id. How much is inside comes from the
     ledger (item 13), not from this row. A pack belongs to a warehouse even
     when it's on no rack yet (`rack_id` NULL = waiting for put-away). The
     supplier pair is the same as on expected deliveries; item 17 fills it and
@@ -1202,11 +1203,6 @@ class AccessoryPack(Base):
     moves = relationship("AccessoryPackMove", back_populates="pack", order_by="AccessoryPackMove.id")
 
     @property
-    def barcode(self) -> str:
-        from .domains.accessories.pack_barcode import pack_barcode
-        return pack_barcode(self.id)
-
-    @property
     def item_code(self) -> str:
         return self.item.code
 
@@ -1251,7 +1247,7 @@ class AccessoryPack(Base):
         return f"B-{self.delivery_id}" if self.delivery_id is not None else None
 
     def __repr__(self):
-        return f"<AccessoryPack {self.id}*ACC item={self.accessory_item_id} rack={self.rack_id}>"
+        return f"<AccessoryPack {self.id} item={self.accessory_item_id} rack={self.rack_id}>"
 
 
 class AccessoryPackMove(Base):

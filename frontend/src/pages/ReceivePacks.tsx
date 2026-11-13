@@ -690,7 +690,7 @@ const ReceivePacks = () => {
                     <TableBody>
                       {batches.map((b) => b.packs.map((p, i) => (
                         <TableRow key={p.id} className={b.undone ? "opacity-50 line-through" : ""}>
-                          <TableCell className="font-mono" dir="ltr">{p.barcode}</TableCell>
+                          <TableCell className="font-mono" dir="ltr">{p.id}</TableCell>
                           <TableCell className="font-mono">{p.item_code}</TableCell>
                           <TableCell className="text-right font-mono" dir="ltr">{fmtQty(p.quantity)} {p.uom_code}</TableCell>
                           <TableCell>{p.rack_code ?? <span className="text-muted-foreground">{t("accInvWaitingPutaway")}</span>}</TableCell>
@@ -719,7 +719,7 @@ const ReceivePacks = () => {
                                   <AlertDialogContent>
                                     <AlertDialogHeader>
                                       <AlertDialogTitle>
-                                        {t("rpUndoTitle", { ids: b.packs.map((x) => x.barcode).join(", ") })}
+                                        {t("rpUndoTitle", { ids: b.packs.map((x) => x.id).join(", ") })}
                                       </AlertDialogTitle>
                                       <AlertDialogDescription>{t("rpUndoDesc")}</AlertDialogDescription>
                                     </AlertDialogHeader>

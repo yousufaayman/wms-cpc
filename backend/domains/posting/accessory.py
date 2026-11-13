@@ -207,7 +207,7 @@ def post(
         if balance[line.pack_id] < 0:
             pack = packs[line.pack_id]
             have = balance[line.pack_id] - line.qty_delta
-            raise _bad(f"Pack {pack.barcode} has only {_show(have)} left, can't take {_show(-line.qty_delta)}")
+            raise _bad(f"Pack {pack.id} has only {_show(have)} left, can't take {_show(-line.qty_delta)}")
 
     posting = models.AccessoryPosting(
         reason=reason,

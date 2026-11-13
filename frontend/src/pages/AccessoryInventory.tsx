@@ -16,7 +16,7 @@
  *   template row holds all its variants' stock and a "▸ N variants" button
  *   opens them underneath. Clicking the template row shows all its packs.
  *   With a template chosen in the filters, its variants are listed flat.
- * - Packs: one row per pack (label `<id>*ACC`), its rack or "Waiting for
+ * - Packs: one row per pack (its id; the label barcode adds `*ACC`), its rack or "Waiting for
  *   put-away", and how much it holds. Clicking a pack shows its quantity
  *   history (every ledger row with the balance after it) and its rack moves.
  * Anyone with a WMS role can look (Tab 1: "everyone, including Viewer").
@@ -317,7 +317,7 @@ export default function AccessoryInventory() {
       <TableBody>
         {packs.map((p) => (
           <TableRow key={p.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setOpenPack(p)}>
-            <TableCell className="font-mono" dir="ltr">{p.barcode}</TableCell>
+            <TableCell className="font-mono" dir="ltr">{p.id}</TableCell>
             <TableCell className="font-mono">{p.item_code}</TableCell>
             <TableCell>
               <div>{p.item_description}</div>
@@ -432,7 +432,7 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
         {pack && <>
           <DialogHeader>
             <DialogTitle>
-              {t("accInvPack")} <span className="font-mono" dir="ltr">{pack.barcode}</span>
+              {t("accInvPack")} <span className="font-mono" dir="ltr">{pack.id}</span>
             </DialogTitle>
           </DialogHeader>
 

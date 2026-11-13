@@ -59,7 +59,6 @@ export type LineReceiveState = "waiting" | "partial" | "complete" | "over";
     brought in (0 after an undo); quantity = on hand now. Base unit. */
 export interface DeliveryLinePack {
   id: number;
-  barcode: string;
   status: "active" | "empty";
   received_qty: string;
   quantity: string;

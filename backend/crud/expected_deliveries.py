@@ -559,7 +559,6 @@ def line_packs(db: Session, line_id: int) -> List[dict]:
     return [
         {
             "id": pack.id,
-            "barcode": pack.barcode,
             "status": pack.status,
             "received_qty": Decimal(rec),
             "quantity": Decimal(held),

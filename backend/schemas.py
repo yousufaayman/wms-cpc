@@ -496,7 +496,6 @@ class AccessoryItemPage(BaseModel):
 # with their ledger row, so there is no create schema for the API.
 class AccessoryPack(BaseModel):
     id: int
-    barcode: str  # "<id>*ACC", what the label carries
     accessory_item_id: int
     item_code: str
     item_description: str
@@ -1660,7 +1659,6 @@ class DeliveryLinePack(BaseModel):
     """Item 18: one pack received on a delivery line. received_qty = its
     receipt rows (0 after an undo); quantity = on hand now. Base unit."""
     id: int
-    barcode: str
     status: Literal["active", "empty"]
     received_qty: Decimal
     quantity: Decimal

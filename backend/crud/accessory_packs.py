@@ -169,10 +169,10 @@ def move_pack(db: Session, pack: AccessoryPack, rack_id: Optional[int], moved_by
     moved (nothing is left in it); moving to the rack it's already on is
     refused so the history only holds real moves. Commits."""
     if pack.status == "empty":
-        raise _bad(f"Pack {pack.barcode} is empty")
+        raise _bad(f"Pack {pack.id} is empty")
     if rack_id == pack.rack_id:
         where = f"rack {pack.rack_code}" if rack_id is not None else "no rack"
-        raise _bad(f"Pack {pack.barcode} is already on {where}")
+        raise _bad(f"Pack {pack.id} is already on {where}")
     ensure_module(db, pack.warehouse_id, MODULE)
     if rack_id is not None:
         _rack_in_warehouse(db, rack_id, pack.warehouse_id)

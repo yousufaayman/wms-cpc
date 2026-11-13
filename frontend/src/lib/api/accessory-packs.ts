@@ -3,7 +3,8 @@ import { toQuery, type AccessoryValueLine } from './accessory-items';
 
 /**
  * Accessory packs and stock (items 12–14). A pack holds one item; its label
- * barcode is `<id>*ACC`. How much it holds (`quantity`, in the item's base
+ * barcode encodes `<id>*ACC` (`*ACC` is only the scan terminator; screens show
+ * the bare id). How much it holds (`quantity`, in the item's base
  * unit) is the sum of its ledger rows. Packs are made by Receive Packs
  * (item 17) through `receive` (one call per Add; `undoReceive` cancels it).
  * Reading is open to every WMS role; 404 while FEATURE_ACCESSORIES is off.
@@ -19,7 +20,6 @@ export type StockGroupBy = 'item' | 'client' | 'rack';
 
 export interface AccessoryPack {
   id: number;
-  barcode: string;
   accessory_item_id: number;
   item_code: string;
   item_description: string;
