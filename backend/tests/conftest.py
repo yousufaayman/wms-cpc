@@ -106,7 +106,7 @@ def _load_from_atlas(atlas: str) -> None:
     subprocess.run(
         # file://S:/... (not as_uri()'s file:///S:/..., which Atlas can't open on Windows)
         [atlas, "migrate", "apply", "--url", url, "--dir", f"file://{MIGRATIONS_DIR.as_posix()}"],
-        check=True, capture_output=True, text=True,
+        check=True, capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
 
 

@@ -516,6 +516,10 @@ class AccessoryPack(BaseModel):
     value_lines: List[AccessoryValueLine] = []
     uom_code: str
     client_id: Optional[int] = None
+    # Item 17: the delivery the pack was received on, and its batch ("B-12",
+    # = the delivery number; None for a pack on no delivery)
+    delivery_id: Optional[int] = None
+    batch_no: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -564,6 +568,29 @@ class AccessoryPosting(BaseModel):
 class AccessoryReverseIn(BaseModel):
     """Why the posting is being cancelled (required)."""
     reason: str = Field(..., min_length=1, max_length=500)
+
+
+class AccessoryReceiveIn(BaseModel):
+    """Receive Packs (item 17): `pack_count` packs of one item, each holding
+    `qty_per_pack` in `uom_id` (default: the item's base unit). With
+    `expected_delivery_item_id` (the line picked in "load a delivery" mode)
+    every pack goes to that line; without it each pack is matched to the
+    oldest open line for the item from this supplier. The acting user is the
+    logged-in one."""
+    warehouse_id: int
+    accessory_item_id: int
+    supplier_type: Optional[Literal["client", "logical_location"]] = None
+    client_supplier_id: Optional[int] = None
+    rack_id: Optional[int] = None  # None = put away later
+    expected_delivery_item_id: Optional[int] = None
+    pack_count: int = Field(1, ge=1, le=200)
+    qty_per_pack: Decimal = Field(..., gt=0)
+    uom_id: Optional[int] = None
+
+
+class AccessoryReceiveOut(BaseModel):
+    posting_id: int  # one posting per Add; Undo cancels it
+    packs: List[AccessoryPack]
 
 
 class AccessoryPackPage(BaseModel):
