@@ -166,10 +166,10 @@ export interface ItemConversionCreate {
   factor: number;
 }
 
-type QueryValue = string | number | boolean | undefined;
+export type QueryValue = string | number | boolean | undefined;
 
 /** `?a=1&b=x`; empty values are left out, a list repeats its key (`line=a:1&line=b:2`). */
-const toQuery = (params: Record<string, QueryValue | QueryValue[]>) => {
+export const toQuery = (params: Record<string, QueryValue | QueryValue[]>) => {
   const search = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
     const values = Array.isArray(value) ? value : [value];

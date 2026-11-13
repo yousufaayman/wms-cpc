@@ -19,6 +19,7 @@ const ManageWarehouseRacks = lazy(() => import("./pages/ManageWarehouseRacks"));
 const ManageLogicalLocations = lazy(() => import("./pages/ManageLogicalLocations"));
 const AccessorySetup = lazy(() => import("./pages/AccessorySetup"));
 const AccessoryItems = lazy(() => import("./pages/AccessoryItems"));
+const AccessoryInventory = lazy(() => import("./pages/AccessoryInventory"));
 const Receipts = lazy(() => import("./pages/Receipts"));
 const ReceiptDetail = lazy(() => import("./pages/ReceiptDetail"));
 const CreateReceipt = lazy(() => import("./pages/CreateReceipt"));
@@ -256,7 +257,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
-            {/* Accessory warehouse: placeholders until items 14, 17, 11 and 29 build the real pages */}
+            {/* Accessory warehouse: Accessory Inventory (item 14); placeholders until items 17 and 29 build theirs */}
             <Route
               path="/accessory-inventory"
               element={
@@ -264,7 +265,7 @@ const App = () => (
                   <RequirePermission anyRole>
                     <RequireModule module="accessory_inventory">
                       <Suspense fallback={<LoadingSpinner message="Loading..." />}>
-                        <ComingSoon title="accessoryInventory" description="accessoryInventoryComingSoon" />
+                        <AccessoryInventory />
                       </Suspense>
                     </RequireModule>
                   </RequirePermission>

@@ -9,25 +9,32 @@ between racks. No quantities here: what a pack holds comes from the ledger
   row. The pack page's move endpoint and, later, the item-31 Assign to Rack
   page both use it.
 - Lookups: by id, by scanned barcode (`<id>*ACC`), and a filtered list.
+- `stock_summary` (item 14): the Accessory Inventory roll-ups by item, client
+  or rack, read from the `wms.accessory_stock` view (on hand per pack).
 """
-from typing import List, Optional, Tuple
+from collections import defaultdict
+from decimal import Decimal
+from typing import Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import distinct, func, select
 from sqlalchemy.orm import Session
 
 from backend.core.warehouse_modules import ensure_module
-from backend.crud.accessory_items import ensure_stockable, get_item_or_404
+from backend.crud.accessory_items import ensure_stockable, get_item_or_404, matching_item_ids
 from backend.domains.accessories.pack_barcode import parse_pack_barcode
 from backend.models import (
+    AccessoryItem,
     AccessoryPack,
     AccessoryPackMove,
     Client,
     ExpectedDeliveryItem,
     LogicalLocation,
+    Uom,
     WarehouseRack,
+    accessory_stock,
 )
-from backend.schemas import AccessoryPackSearch
+from backend.schemas import AccessoryPackSearch, AccessoryStockSearch
 
 # Packs are accessory stock: only warehouses with Accessory Inventory hold them.
 MODULE = "accessory_inventory"
@@ -120,16 +127,35 @@ def find_by_barcode(db: Session, barcode: str) -> AccessoryPack:
     return get_pack_or_404(db, pack_id)
 
 
-def list_packs(db: Session, search: AccessoryPackSearch) -> Tuple[List[AccessoryPack], int]:
+def _item_conditions(item_id_col, search) -> list:
+    """Which items: the quick search `q`, a client, or generic (no client)."""
+    conditions = []
+    if search.q and search.q.strip():
+        conditions.append(item_id_col.in_(matching_item_ids(search.q.strip())))
+    if search.generic:
+        conditions.append(item_id_col.in_(select(AccessoryItem.id).where(AccessoryItem.client_id.is_(None))))
+    elif search.client_id is not None:
+        conditions.append(item_id_col.in_(select(AccessoryItem.id).where(AccessoryItem.client_id == search.client_id)))
+    return conditions
+
+
+def _place_conditions(warehouse_col, rack_col, search) -> list:
+    """Which warehouse and rack; `unracked` = waiting for put-away."""
     conditions = []
     if search.warehouse_id is not None:
-        conditions.append(AccessoryPack.warehouse_id == search.warehouse_id)
+        conditions.append(warehouse_col == search.warehouse_id)
+    if search.unracked:
+        conditions.append(rack_col.is_(None))
+    elif search.rack_id is not None:
+        conditions.append(rack_col == search.rack_id)
+    return conditions
+
+
+def list_packs(db: Session, search: AccessoryPackSearch) -> Tuple[List[AccessoryPack], int]:
+    conditions = _place_conditions(AccessoryPack.warehouse_id, AccessoryPack.rack_id, search)
+    conditions += _item_conditions(AccessoryPack.accessory_item_id, search)
     if search.accessory_item_id is not None:
         conditions.append(AccessoryPack.accessory_item_id == search.accessory_item_id)
-    if search.unracked:
-        conditions.append(AccessoryPack.rack_id.is_(None))
-    elif search.rack_id is not None:
-        conditions.append(AccessoryPack.rack_id == search.rack_id)
     if search.status is not None:
         conditions.append(AccessoryPack.status == search.status)
 
@@ -170,3 +196,81 @@ def list_moves(db: Session, pack_id: int) -> List[AccessoryPackMove]:
     return list(db.scalars(
         select(AccessoryPackMove).where(AccessoryPackMove.pack_id == pack_id).order_by(AccessoryPackMove.id)
     ).all())
+
+
+# ── Accessory Inventory roll-ups (item 14) ──────────────────────────────────
+
+_STOCK = accessory_stock.c
+_GROUP_KEY = {"item": _STOCK.accessory_item_id, "client": _STOCK.client_id, "rack": _STOCK.rack_id}
+
+
+def stock_summary(db: Session, search: AccessoryStockSearch) -> Tuple[List[dict], int]:
+    """Stock grouped by item, client or rack: item count, pack count and the
+    on-hand total per unit. Rows with key None = generic items (by client)
+    or packs waiting for put-away (by rack); those come first.
+
+    One query over the view groups by (key, unit); the units are then folded
+    into one row per key. Sorted by item code / client name / rack code, then
+    paged."""
+    key = _GROUP_KEY[search.group_by]
+    conditions = _place_conditions(_STOCK.warehouse_id, _STOCK.rack_id, search)
+    conditions += _item_conditions(_STOCK.accessory_item_id, search)
+    if not search.include_empty:
+        conditions.append(_STOCK.on_hand > 0)
+
+    grouped = db.execute(
+        select(
+            key.label("key"),
+            _STOCK.base_uom_id,
+            func.count(distinct(_STOCK.accessory_item_id)),
+            func.count(),
+            func.sum(_STOCK.on_hand),
+        ).where(*conditions).group_by(key, _STOCK.base_uom_id)
+    ).all()
+
+    rows: Dict[Optional[int], dict] = defaultdict(lambda: {"item_count": 0, "pack_count": 0, "totals": []})
+    for k, uom_id, items, packs, qty in grouped:
+        row = rows[k]
+        row["key"] = k
+        row["item_count"] += items  # an item has one base unit, so no double counting
+        row["pack_count"] += packs
+        row["totals"].append((uom_id, Decimal(qty)))
+
+    keys = sorted(rows, key=_sort_key(db, search.group_by, [k for k in rows if k is not None]))
+    page = [rows[k] for k in keys[search.offset:search.offset + search.limit]]
+    _describe(db, search.group_by, page)
+    return page, len(keys)
+
+
+def _sort_key(db: Session, group_by: str, ids: List[int]):
+    """None (generic / waiting for put-away) first, then by code or name."""
+    if group_by == "item":
+        names = dict(db.execute(select(AccessoryItem.id, AccessoryItem.code).where(AccessoryItem.id.in_(ids))).all())
+    elif group_by == "client":
+        names = dict(db.execute(select(Client.client_id, Client.client_name).where(Client.client_id.in_(ids))).all())
+    else:
+        names = dict(db.execute(select(WarehouseRack.id, WarehouseRack.rack_code).where(WarehouseRack.id.in_(ids))).all())
+    return lambda k: (k is not None, (names.get(k) or "").lower(), k or 0)
+
+
+def _describe(db: Session, group_by: str, page: List[dict]) -> None:
+    """Fill code / name (and the item details) and the unit codes of one page."""
+    uom_ids = {uom_id for row in page for uom_id, _ in row["totals"]}
+    uoms = {u.id: u.code for u in db.scalars(select(Uom).where(Uom.id.in_(uom_ids)))} if uom_ids else {}
+    for row in page:
+        row["totals"] = sorted(
+            ({"uom_id": u, "uom_code": uoms[u], "qty": q} for u, q in row["totals"]), key=lambda t: t["uom_code"]
+        )
+        k = row["key"]
+        if k is None:
+            continue
+        if group_by == "item":
+            item = db.get(AccessoryItem, k)
+            row.update(code=item.code, name=item.description, color=item.color, size=item.size,
+                       value_lines=item.value_lines,
+                       client_name=item.client.client_name if item.client is not None else None)
+        elif group_by == "client":
+            client = db.get(Client, k)
+            row.update(code=client.client_code, name=client.client_name)
+        else:
+            row.update(code=db.get(WarehouseRack, k).rack_code)

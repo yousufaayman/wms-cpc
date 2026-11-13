@@ -147,6 +147,12 @@ def _quick_search(q: str):
     return words
 
 
+def matching_item_ids(q: str):
+    """Ids of the items the Items page quick search finds for `q` (a subquery):
+    the Accessory Inventory filters packs and stock by it (item 14)."""
+    return select(AccessoryItem.id).where(_quick_search(q))
+
+
 def _ref_filter(f: AccessoryItemSearch):
     """Code and/or party of a reference, on the same reference row. A party
     alone = items carrying any code from it."""

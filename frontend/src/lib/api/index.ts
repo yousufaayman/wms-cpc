@@ -240,3 +240,20 @@ export {
 
 // Export feature flag types and API
 export { featureApi, type Features } from './features';
+
+// Accessory packs + stock (items 12-14)
+export {
+  accessoryPackApi,
+  type AccessoryPack,
+  type AccessoryPackPage,
+  type PackQuery,
+  type PackStatus,
+  type StockFilters,
+  type StockQuery,
+  type StockGroupBy,
+  type StockRow,
+  type StockTotal,
+  type StockPage,
+  type PackLedgerEntry,
+  type PackMove,
+} from './accessory-packs';
