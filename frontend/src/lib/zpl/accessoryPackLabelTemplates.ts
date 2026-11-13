@@ -15,6 +15,10 @@
 //   variant's values ("Price: 34.99"), one per line, in the template's print
 //   order (up to 5 lines; a 6th and more become "...").
 //
+// Item 17: a pack received on an expected delivery also gets a small "الدفعة"
+// (batch) row under the quantity, top right; the quantity shrinks a little to
+// make room. The rows below are unchanged.
+//
 // Fonts, Arabic shaping (^PA) and text measuring are shared with the roll
 // labels (rollLabelTemplates.ts), so the same printer setup works for both.
 
@@ -51,6 +55,8 @@ export interface AccessoryPackLabelData {
   description?: string | null;
   /** A variant's values in print order (item 10), e.g. [{label: "Price", value: "34.99"}]. */
   variantLines?: { label: string; value: string }[] | null;
+  /** The delivery batch (item 17), e.g. "B-12"; printed under the quantity. None = no row. */
+  batchNo?: string | null;
 }
 
 export type PackLabelVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -171,15 +177,26 @@ export function generateAccessoryPackLabel(data: AccessoryPackLabelData, copies 
   const barcodeW = code128Width(code);
   const qtyX = LEFT + barcodeW + 30;
   const qtyW = RIGHT - qtyX;
-  const qtySize = fitSize(qty, 64, qtyW);
+  const batch = present(data.batchNo) ? zplSafe(data.batchNo!.trim()) : null;
+  const qtySize = fitSize(qty, batch ? 52 : 64, qtyW);
   const top = [
     `^BY${BARCODE_MODULE},2,80`,
     `^FO${LEFT},20^BCN,95,N,N,N^FD${code}^FS`,
     text(LEFT, 122, id, fitSize(id, 44, barcodeW)),
     caption(25, 'الكمية'),
-    text(RIGHT - Math.ceil(textWidthAtSize(qty, qtySize)), 75, qty, qtySize),
+    text(RIGHT - Math.ceil(textWidthAtSize(qty, qtySize)), batch ? 66 : 75, qty, qtySize),
     `^FO${LEFT},170^GB${RIGHT - LEFT},4,4^FS`,
   ];
+  if (batch) {
+    // "B-12  الدفعة": caption at the right edge, the batch just left of it.
+    const label = 'الدفعة';
+    const labelW = Math.ceil(textWidthAtSize(label, ROW_FONT));
+    const batchSize = fitSize(batch, ROW_FONT, qtyW - labelW - 15);
+    top.push(
+      text(RIGHT - labelW, 130, label, ROW_FONT),
+      text(RIGHT - labelW - 15 - Math.ceil(textWidthAtSize(batch, batchSize)), 130, batch, batchSize),
+    );
+  }
 
   const rows: [string, string][] = [
     ['كود الصنف', zplSafe(data.itemCode || '-')],

@@ -259,4 +259,6 @@ export {
   type StockPage,
   type PackLedgerEntry,
   type PackMove,
+  type ReceivePacksIn,
+  type ReceivePacksOut,
 } from './accessory-packs';

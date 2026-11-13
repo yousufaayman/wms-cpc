@@ -5,8 +5,8 @@ import { toQuery, type AccessoryValueLine } from './accessory-items';
  * Accessory packs and stock (items 12–14). A pack holds one item; its label
  * barcode is `<id>*ACC`. How much it holds (`quantity`, in the item's base
  * unit) is the sum of its ledger rows. Packs are made by Receive Packs
- * (item 17), so there's no create call here. Reading is open to every WMS
- * role; 404 while FEATURE_ACCESSORIES is off.
+ * (item 17) through `receive` (one call per Add; `undoReceive` cancels it).
+ * Reading is open to every WMS role; 404 while FEATURE_ACCESSORIES is off.
  *
  * `stock` (item 14) = the Accessory Inventory roll-ups by item, client or rack.
  * A row's `key` is null for generic items (by client) or for packs waiting for
@@ -38,6 +38,30 @@ export interface AccessoryPack {
   quantity: string; // decimal as text, base unit
   created_by: number;
   created_at: string;
+  // Item 17: the delivery the pack came on; its batch = "B-<delivery id>"
+  delivery_id: number | null;
+  batch_no: string | null;
+}
+
+/** One Add on Receive Packs: `pack_count` packs of `qty_per_pack` (in
+    `uom_id`, default the base unit). With `expected_delivery_item_id` every
+    pack goes to that line; without it the server matches each pack to the
+    oldest open line for the item from this supplier. */
+export interface ReceivePacksIn {
+  warehouse_id: number;
+  accessory_item_id: number;
+  supplier_type: 'client' | 'logical_location' | null;
+  client_supplier_id: number | null;
+  rack_id: number | null;
+  expected_delivery_item_id: number | null;
+  pack_count: number;
+  qty_per_pack: string;
+  uom_id: number | null;
+}
+
+export interface ReceivePacksOut {
+  posting_id: number; // pass to undoReceive
+  packs: AccessoryPack[];
 }
 
 export interface AccessoryPackPage {
@@ -137,4 +161,6 @@ export const accessoryPackApi = {
   get: (id: number) => api.request<AccessoryPack>(`/accessory-packs/${id}`),
   ledger: (id: number) => api.request<PackLedgerEntry[]>(`/accessory-packs/${id}/ledger`),
   moves: (id: number) => api.request<PackMove[]>(`/accessory-packs/${id}/moves`),
+  receive: (body: ReceivePacksIn) => api.request<ReceivePacksOut>('/accessory-packs/receive', 'POST', body),
+  undoReceive: (postingId: number) => api.request<unknown>(`/accessory-packs/receive/${postingId}/undo`, 'POST'),
 };

@@ -257,6 +257,7 @@ export default function AccessoryInventory() {
           <TableHead>{t("accItemCode")}</TableHead>
           <TableHead>{t("accDescription")}</TableHead>
           <TableHead>{t("rack")}</TableHead>
+          <TableHead>{t("accBatch")}</TableHead>
           <TableHead className="text-right">{t("accInvOnHand")}</TableHead>
           <TableHead>{t("accStatus")}</TableHead>
           <TableHead>{t("accInvReceivedAt")}</TableHead>
@@ -278,6 +279,7 @@ export default function AccessoryInventory() {
                 ? <span className="font-mono">{p.rack_code}</span>
                 : <Badge variant="outline" className="border-amber-500 text-amber-700">{t("accInvWaitingPutaway")}</Badge>}
             </TableCell>
+            <TableCell className="font-mono" dir="ltr">{p.batch_no ?? "—"}</TableCell>
             <TableCell className="text-right font-medium" dir="ltr">{fmtQty(p.quantity)} {p.uom_code}</TableCell>
             <TableCell>
               <Badge variant={p.status === "active" ? "default" : "secondary"}>
@@ -400,6 +402,10 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
             <div>
               <div className="text-muted-foreground">{t("rack")}</div>
               <div>{pack.rack_code ?? t("accInvWaitingPutaway")}</div>
+            </div>
+            <div>
+              <div className="text-muted-foreground">{t("accBatch")}</div>
+              <div className="font-mono" dir="ltr">{pack.batch_no ?? "—"}</div>
             </div>
             <div>
               <div className="text-muted-foreground">{t("accStatus")}</div>

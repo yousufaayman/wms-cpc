@@ -1189,6 +1189,7 @@ class AccessoryPack(Base):
 
     item = relationship("AccessoryItem", foreign_keys=[accessory_item_id], lazy="selectin")
     rack = relationship("WarehouseRack", foreign_keys=[rack_id], lazy="selectin")
+    delivery_line = relationship("ExpectedDeliveryItem", foreign_keys=[expected_delivery_item_id], lazy="selectin")
     moves = relationship("AccessoryPackMove", back_populates="pack", order_by="AccessoryPackMove.id")
 
     @property
@@ -1228,6 +1229,17 @@ class AccessoryPack(Base):
     @property
     def client_id(self):
         return self.item.client_id
+
+    # Item 17: every pack of one expected delivery shares a batch, so trims of
+    # one shipment (one dye lot / shade) can be told apart later. The batch is
+    # the delivery number itself ("B-12"); nothing extra is stored.
+    @property
+    def delivery_id(self):
+        return self.delivery_line.delivery_id if self.delivery_line is not None else None
+
+    @property
+    def batch_no(self):
+        return f"B-{self.delivery_id}" if self.delivery_id is not None else None
 
     def __repr__(self):
         return f"<AccessoryPack {self.id}*ACC item={self.accessory_item_id} rack={self.rack_id}>"

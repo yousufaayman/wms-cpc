@@ -20,6 +20,7 @@ const ManageLogicalLocations = lazy(() => import("./pages/ManageLogicalLocations
 const AccessorySetup = lazy(() => import("./pages/AccessorySetup"));
 const AccessoryItems = lazy(() => import("./pages/AccessoryItems"));
 const AccessoryInventory = lazy(() => import("./pages/AccessoryInventory"));
+const ReceivePacks = lazy(() => import("./pages/ReceivePacks"));
 const Receipts = lazy(() => import("./pages/Receipts"));
 const ReceiptDetail = lazy(() => import("./pages/ReceiptDetail"));
 const CreateReceipt = lazy(() => import("./pages/CreateReceipt"));
@@ -279,7 +280,7 @@ const App = () => (
                   <RequirePermission permission="receive_accessories">
                     <RequireModule module="receive_packs">
                       <Suspense fallback={<LoadingSpinner message="Loading..." />}>
-                        <ComingSoon title="receivePacks" description="receivePacksComingSoon" />
+                        <ReceivePacks />
                       </Suspense>
                     </RequireModule>
                   </RequirePermission>
