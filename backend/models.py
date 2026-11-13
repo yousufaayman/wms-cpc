@@ -12,6 +12,7 @@ from sqlalchemy import (
     UniqueConstraint,
     CheckConstraint,
     Index,
+    Table,
     exists,
     select,
     text,
@@ -1117,6 +1118,27 @@ class AccessoryPack(Base):
     def rack_code(self):
         return self.rack.rack_code if self.rack is not None else None
 
+    # Shown on the Accessory Inventory page (item 14).
+    @property
+    def item_color(self):
+        return self.item.color
+
+    @property
+    def item_size(self):
+        return self.item.size
+
+    @property
+    def value_lines(self):
+        return self.item.value_lines
+
+    @property
+    def uom_code(self) -> str:
+        return self.item.base_uom.code
+
+    @property
+    def client_id(self):
+        return self.item.client_id
+
     def __repr__(self):
         return f"<AccessoryPack {self.id}*ACC item={self.accessory_item_id} rack={self.rack_id}>"
 
@@ -1147,6 +1169,11 @@ class AccessoryPackMove(Base):
     pack = relationship("AccessoryPack", back_populates="moves")
     from_rack = relationship("WarehouseRack", foreign_keys=[from_rack_id], lazy="selectin")
     to_rack = relationship("WarehouseRack", foreign_keys=[to_rack_id], lazy="selectin")
+    mover = relationship("User", foreign_keys=[moved_by], lazy="selectin")
+
+    @property
+    def moved_by_name(self):
+        return self.mover.username if self.mover is not None else None
 
     @property
     def from_rack_code(self):
@@ -1200,6 +1227,7 @@ class AccessoryPosting(Base):
     entries = relationship(
         "AccessoryLedgerEntry", back_populates="posting", order_by="AccessoryLedgerEntry.id", lazy="selectin"
     )
+    creator = relationship("User", foreign_keys=[created_by], lazy="selectin")
 
     def __repr__(self):
         return f"<AccessoryPosting {self.id}>"
@@ -1254,6 +1282,7 @@ class AccessoryLedgerEntry(Base):
     reversal_of = Column(BigInteger, ForeignKey("wms.accessory_ledger.id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
 
     posting = relationship("AccessoryPosting", back_populates="entries")
+    job_order = relationship("JobOrder", foreign_keys=[job_order_id])
 
     # Filled in by the pack history (quantity after this row); not a column.
     balance = None
@@ -1269,6 +1298,14 @@ class AccessoryLedgerEntry(Base):
     @property
     def reason(self):
         return self.posting.reason
+
+    @property
+    def created_by_name(self):
+        return self.posting.creator.username if self.posting.creator is not None else None
+
+    @property
+    def job_order_number(self):
+        return self.job_order.job_order_number if self.job_order is not None else None
 
     def __repr__(self):
         return f"<AccessoryLedgerEntry {self.id} pack={self.pack_id} {self.entry_type} {self.qty_delta}>"
@@ -1293,6 +1330,28 @@ AccessoryPosting.reversed_by_posting_id = column_property(
     .where(_reversal_posting.c.reverses_posting_id == AccessoryPosting.__table__.c.id)
     .correlate_except(_reversal_posting)
     .scalar_subquery()
+)
+
+
+# On-hand stock per pack (item 14): the **view** `wms.accessory_stock`, made by a
+# hand-written cpc-db migration (Atlas doesn't see views). Declared here only so
+# queries can use it; it's read-only (never insert into it, never create it).
+# One row per pack, empty packs included; on_hand is in the item's base unit
+# and equals the sum of the pack's ledger rows (= AccessoryPack.quantity).
+accessory_stock = Table(
+    "accessory_stock",
+    Base.metadata,
+    Column("pack_id", BigInteger, primary_key=True),
+    Column("accessory_item_id", BigInteger),
+    Column("client_id", Integer),
+    Column("category_id", BigInteger),
+    Column("base_uom_id", BigInteger),
+    Column("warehouse_id", Integer),
+    Column("rack_id", Integer),
+    Column("status", String(10)),
+    Column("on_hand", NUMERIC(14, 4)),
+    schema="wms",
+    info={"is_view": True},
 )
 
 

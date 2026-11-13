@@ -147,6 +147,14 @@ def _quick_search(q: str):
     return words
 
 
+def matching_item_ids(f: AccessoryItemSearch):
+    """Ids of the items the Items page search finds for `f` (quick search +
+    advanced fields), as a subquery: the Accessory Inventory filters packs and
+    stock by it (item 14). Kind and sort don't apply. None = no filter given."""
+    conditions = _search_conditions(f, with_kind=False)
+    return select(AccessoryItem.id).where(*conditions) if conditions else None
+
+
 def _ref_filter(f: AccessoryItemSearch):
     """Code and/or party of a reference, on the same reference row. A party
     alone = items carrying any code from it."""

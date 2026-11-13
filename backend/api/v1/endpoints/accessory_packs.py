@@ -1,4 +1,5 @@
 """Accessory packs (item 12): look packs up and move them between racks.
+`GET /stock` (item 14) = the Accessory Inventory roll-ups by item, client or rack.
 
 Reading needs any WMS role; moving needs `receive_accessories` (W_Manager,
 W_Worker: "receive packs, labels, move packs" in authz.py). The router is off
@@ -25,6 +26,8 @@ from backend.schemas import (
     AccessoryPackMoveIn,
     AccessoryPackPage,
     AccessoryPackSearch,
+    AccessoryStockPage,
+    AccessoryStockSearch,
 )
 
 router = APIRouter()
@@ -35,6 +38,15 @@ def list_packs(search: Annotated[AccessoryPackSearch, Query()], db: Session = De
     """Newest first. `?warehouse_id=3&unracked=true` = packs waiting for put-away."""
     packs, total = crud.list_packs(db, search)
     return {"items": packs, "total": total}
+
+
+@router.get("/stock", response_model=AccessoryStockPage)
+def stock_summary(search: Annotated[AccessoryStockSearch, Query()], db: Session = Depends(get_db)):
+    """On hand grouped by item, client or rack (`?group_by=`), from the
+    `wms.accessory_stock` view. Totals are per unit; empty packs are left out
+    unless `include_empty=true`."""
+    rows, total = crud.stock_summary(db, search)
+    return {"items": rows, "total": total}
 
 
 @router.get("/scan", response_model=AccessoryPack)

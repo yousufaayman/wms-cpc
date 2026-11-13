@@ -489,6 +489,12 @@ class AccessoryPack(BaseModel):
     quantity: Decimal  # on hand, base unit: the sum of the pack's ledger rows (item 13)
     created_by: int
     created_at: datetime
+    # Item 14 (Accessory Inventory page): the item's color / size / values, unit, client
+    item_color: Optional[str] = None
+    item_size: Optional[str] = None
+    value_lines: List[AccessoryValueLine] = []
+    uom_code: str
+    client_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -510,7 +516,9 @@ class AccessoryLedgerEntry(BaseModel):
     is_reversed: bool
     reason: Optional[str] = None
     created_by: int
+    created_by_name: Optional[str] = None  # item 14
     created_at: datetime
+    job_order_number: Optional[str] = None  # item 14
 
     class Config:
         from_attributes = True
@@ -542,7 +550,33 @@ class AccessoryPackPage(BaseModel):
     total: int
 
 
-class AccessoryPackSearch(BaseModel):
+class StockItemFilters(BaseModel):
+    """Which items, for the pack list and the stock roll-ups (item 14): the
+    Items page quick search `q` and its advanced fields, same meaning (see
+    `AccessoryItemSearch`). client_id = that client's items; generic = items
+    for no client (client_id ignored). Inactive items with stock still count."""
+    q: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    size: Optional[str] = None
+    ref_code: Optional[str] = None
+    ref_client_id: Optional[int] = None
+    ref_supplier_id: Optional[int] = None
+    base_uom_id: Optional[int] = None
+    category_id: Optional[int] = None
+    line_value: Optional[str] = None
+    template_id: Optional[int] = None
+    line: List[str] = Field(default_factory=list)  # "key:text", one template line each
+    client_id: Optional[int] = None
+    generic: bool = False
+
+    def item_search(self) -> "AccessoryItemSearch":
+        fields = self.model_dump(include=set(StockItemFilters.model_fields) - {"generic"})
+        return AccessoryItemSearch(**fields, generic_only=self.generic, active_only=False)
+
+
+class AccessoryPackSearch(StockItemFilters):
     """Filters of the pack list; all given must match. `unracked=true` = only
     packs waiting for put-away (rack_id given at the same time is ignored)."""
     warehouse_id: Optional[int] = None
@@ -552,6 +586,48 @@ class AccessoryPackSearch(BaseModel):
     status: Optional[Literal["active", "empty"]] = None
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
+
+
+class AccessoryStockSearch(StockItemFilters):
+    """Accessory Inventory roll-up (item 14): stock grouped by item, client or
+    rack, with the same filters as the pack list. Empty packs are left out
+    unless include_empty. Read from the query string."""
+    group_by: Literal["item", "client", "rack"] = "item"
+    warehouse_id: Optional[int] = None
+    rack_id: Optional[int] = None
+    unracked: bool = False
+    include_empty: bool = False
+    limit: int = Field(50, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+
+class AccessoryStockTotal(BaseModel):
+    """How much, in one unit. A client or rack holding items in several units
+    gets one total per unit (pieces and metres are never added together)."""
+    uom_id: int
+    uom_code: str
+    qty: Decimal
+
+
+class AccessoryStockRow(BaseModel):
+    """One row of a roll-up. key = item / client / rack id; None = generic
+    items (by client) or packs waiting for put-away (by rack). code = item
+    code / client code / rack code; name = item description / client name."""
+    key: Optional[int] = None
+    code: Optional[str] = None
+    name: Optional[str] = None
+    color: Optional[str] = None  # item rows only, down to client_name
+    size: Optional[str] = None
+    value_lines: List[AccessoryValueLine] = []
+    client_name: Optional[str] = None
+    item_count: int
+    pack_count: int
+    totals: List[AccessoryStockTotal]
+
+
+class AccessoryStockPage(BaseModel):
+    items: List[AccessoryStockRow]
+    total: int
 
 
 class AccessoryPackMoveIn(BaseModel):
@@ -567,6 +643,7 @@ class AccessoryPackMove(BaseModel):
     to_rack_id: Optional[int] = None
     to_rack_code: Optional[str] = None
     moved_by: int
+    moved_by_name: Optional[str] = None  # item 14
     moved_at: datetime
 
     class Config:
