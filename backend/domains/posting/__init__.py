@@ -3,7 +3,8 @@
 - service.py   the functions callers use (add_line, remove_line, post_confirm, reverse)
 - registry.py  the adapter interface + which adapter serves which warehouse type
 - fabric.py    Fabric's rules (roll in/out at scan time), unchanged from before
-- accessory.py Accessory's adapter: a stub until the ledger exists (item 13)
+- accessory.py Accessory stock: the only writer of the accessory ledger (item 13)
+               (post / receive / issue / transfer / reverse_posting) + its receipt hooks
 """
 from . import accessory, fabric  # noqa: F401  (registers the adapters)
 from .registry import PostingAdapter, adapter_for_line_kind, adapter_for_warehouse_type, register

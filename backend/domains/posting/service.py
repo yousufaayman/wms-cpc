@@ -4,11 +4,11 @@ Endpoints and crud call these functions instead of touching stock themselves:
 - add_line     a line is scanned/added onto a receipt
 - remove_line  a line is removed from a receipt
 - post_confirm a receipt is confirmed
-- reverse      a confirmed receipt is undone (item 13; not available yet)
+- reverse      a confirmed receipt is undone (Accessory: reverses its postings)
 
 Each looks up the adapter of the warehouse type (registry.py), lets it check
-and act, then commits once. For accessories the adapter will be the only
-writer of wms.accessory_ledger (item 13), posting on confirm.
+and act, then commits once. Accessory stock that isn't receipt-driven (receiving, splits,
+adjustments) is posted straight through domains/posting/accessory.py.
 """
 from typing import Any
 

@@ -17,7 +17,9 @@ from backend import models
 from backend.core.authz import PERM_RECEIVE_ACCESSORIES
 from backend.core.deps import get_db, require_permission
 from backend.crud import accessory_packs as crud
+from backend.domains.posting import accessory as accessory_posting
 from backend.schemas import (
+    AccessoryLedgerEntry,
     AccessoryPack,
     AccessoryPackMove,
     AccessoryPackMoveIn,
@@ -50,6 +52,13 @@ def get_pack(pack_id: int, db: Session = Depends(get_db)):
 def list_moves(pack_id: int, db: Session = Depends(get_db)):
     """Rack history, oldest first."""
     return crud.list_moves(db, pack_id)
+
+
+@router.get("/{pack_id}/ledger", response_model=List[AccessoryLedgerEntry])
+def pack_ledger(pack_id: int, db: Session = Depends(get_db)):
+    """Quantity history, oldest first; `balance` = what the pack held after each row."""
+    crud.get_pack_or_404(db, pack_id)
+    return accessory_posting.pack_history(db, pack_id)
 
 
 @router.post("/{pack_id}/move", response_model=AccessoryPackMove)
