@@ -147,10 +147,12 @@ def _quick_search(q: str):
     return words
 
 
-def matching_item_ids(q: str):
-    """Ids of the items the Items page quick search finds for `q` (a subquery):
-    the Accessory Inventory filters packs and stock by it (item 14)."""
-    return select(AccessoryItem.id).where(_quick_search(q))
+def matching_item_ids(f: AccessoryItemSearch):
+    """Ids of the items the Items page search finds for `f` (quick search +
+    advanced fields), as a subquery: the Accessory Inventory filters packs and
+    stock by it (item 14). Kind and sort don't apply. None = no filter given."""
+    conditions = _search_conditions(f, with_kind=False)
+    return select(AccessoryItem.id).where(*conditions) if conditions else None
 
 
 def _ref_filter(f: AccessoryItemSearch):

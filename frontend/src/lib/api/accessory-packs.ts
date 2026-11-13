@@ -45,10 +45,23 @@ export interface AccessoryPackPage {
   total: number;
 }
 
-/** Filters shared by the roll-ups and the pack list. */
+/** Filters shared by the roll-ups and the pack list. The item fields mean the
+    same as on the Items page's advanced search. */
 export interface StockFilters {
   warehouse_id?: number;
   q?: string;
+  code?: string;
+  description?: string;
+  color?: string;
+  size?: string;
+  ref_code?: string;
+  ref_client_id?: number;
+  ref_supplier_id?: number;
+  base_uom_id?: number;
+  category_id?: number;
+  line_value?: string;
+  template_id?: number;
+  line?: string[]; // "key:text", one template line each
   client_id?: number;
   generic?: boolean; // items for no client
   rack_id?: number;

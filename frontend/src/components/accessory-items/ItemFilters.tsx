@@ -10,9 +10,12 @@
  *   supplier, description, color, size, base unit, any line value, a template
  *   (then one box per line of that template), category, client, kind, inactive.
  * - `ItemPager`: Previous / Next and "Page 2 of 7 · 312 items".
+ * - Accessory Inventory (item 14) uses the same bar with `stock`: no Sort,
+ *   Kind or "Show inactive" (stock counts whatever has packs); its own
+ *   controls (rack, show empty) go in as `children` on the first row.
  * The server does the matching: see `crud/accessory_items.py` → `list_items`.
  */
-import { useMemo } from "react";
+import { useMemo, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
 import { ChevronDown, ChevronUp, SlidersHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -164,11 +167,14 @@ type BarProps = {
   suppliers: LogicalLocation[];
   uoms: Uom[];
   templates: AccessoryItem[];
+  stock?: boolean; // Accessory Inventory: item filters only
+  children?: ReactNode; // extra controls on the first row
 };
 
 export function ItemFilterBar({
   filters: f, update, clear, advanced, open, setOpen, categories, categoryName, clients, suppliers, uoms, templates,
-}: BarProps) {
+  stock = false, children,
+}: Readonly<BarProps>) {
   const { t, language } = useTranslation();
   const template = f.template === ALL ? undefined : templates.find((x) => String(x.id) === f.template);
   const field = (label: string, value: string, key: keyof ItemFilters, ltr = false) => (
@@ -188,13 +194,16 @@ export function ItemFilterBar({
           {advanced > 0 && <Badge variant="secondary" className="ml-2">{advanced}</Badge>}
           {open ? <ChevronUp className="ml-1 h-4 w-4" /> : <ChevronDown className="ml-1 h-4 w-4" />}
         </Button>
-        <Select value={f.sort} onValueChange={(v) => update({ sort: v as ItemFilters["sort"] })}>
-          <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="code">{`${t("accSortBy")}: ${t("accSortCode")}`}</SelectItem>
-            <SelectItem value="newest">{`${t("accSortBy")}: ${t("accSortNewest")}`}</SelectItem>
-          </SelectContent>
-        </Select>
+        {!stock && (
+          <Select value={f.sort} onValueChange={(v) => update({ sort: v as ItemFilters["sort"] })}>
+            <SelectTrigger className="w-48"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="code">{`${t("accSortBy")}: ${t("accSortCode")}`}</SelectItem>
+              <SelectItem value="newest">{`${t("accSortBy")}: ${t("accSortNewest")}`}</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        {children}
         {(advanced > 0 || f.q) && <Button variant="ghost" onClick={clear}>{t("clearAll")}</Button>}
       </div>
 
@@ -253,7 +262,7 @@ export function ItemFilterBar({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
+          {!stock && <div className="space-y-1">
             <Label className="text-xs">{t("accKind")}</Label>
             <Select value={f.kind} onValueChange={(v) => update({ kind: v as ItemFilters["kind"] })}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -264,7 +273,7 @@ export function ItemFilterBar({
                 <SelectItem value="variant">{t("accKindVariants")}</SelectItem>
               </SelectContent>
             </Select>
-          </div>
+          </div>}
           {field(t("accLineValue"), f.lineValue, "lineValue")}
           <div className="space-y-1">
             <Label className="text-xs">{t("accTemplate")}</Label>
@@ -285,10 +294,10 @@ export function ItemFilterBar({
                 onChange={(e) => update({ lines: { ...f.lines, [line.field_key]: e.target.value } })} />
             </div>
           ))}
-          <div className="flex items-center gap-2 self-end pb-2">
+          {!stock && <div className="flex items-center gap-2 self-end pb-2">
             <Switch id="inactive" checked={f.inactive} onCheckedChange={(v) => update({ inactive: v })} />
             <Label htmlFor="inactive">{t("accShowInactive")}</Label>
-          </div>
+          </div>}
         </div>
       )}
     </div>

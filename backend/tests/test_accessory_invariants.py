@@ -283,6 +283,31 @@ def test_filters_and_paging(client, shelves):
     assert page["total"] == 3 and len(page["items"]) == 1
 
 
+def test_advanced_item_filters(client, shelves, setup, db):
+    """The Items page's advanced fields narrow stock and packs the same way;
+    an item switched off still shows while it has stock."""
+    f = shelves
+    def keys(**p):
+        return {r["key"] for r in _get(client, f["h"], STOCK, warehouse_id=f["wh"], **p)["items"]}
+    def packs(**p):
+        return {x["id"] for x in _get(client, f["h"], PACKS, warehouse_id=f["wh"], **p)["items"]}
+    assert keys(base_uom_id=setup["cone"].id) == {f["t"]}
+    assert keys(category_id=setup["cat"].id) == {f["g"], f["c"]}
+    assert keys(description="woven") == {f["c"]}
+    assert keys(code="GEN-") == {f["g"]}
+    c_ref = db.scalar(select(models.AccessoryItemRef.ref_code).where(models.AccessoryItemRef.accessory_item_id == f["c"]))
+    assert keys(ref_code=c_ref) == {f["c"]}
+    assert keys(ref_supplier_id=setup["supplier"].id) == {f["g"], f["c"], f["t"]}
+    assert keys(ref_client_id=setup["client"].client_id) == set()
+    assert keys(category_id=setup["cat"].id, client_id=f["client"].client_id) == {f["c"]}
+    assert packs(base_uom_id=setup["cone"].id) == {f["packs"][3]}
+    assert keys(group_by="rack", description="thread") == {f["a2"].id}
+
+    db.get(models.AccessoryItem, f["g"]).active = False
+    db.commit()
+    assert f["g"] in keys(code="GEN-")
+
+
 def test_pack_list_filters_and_display_fields(client, shelves):
     f = shelves
     def ids(**p):

@@ -2,9 +2,12 @@
  * Accessory Inventory (item 14): what's in stock in this Accessory warehouse.
  * Read-only: stock only changes through receiving, issuing and corrections.
  *
- * - Filter bar: search (item code, description, client / supplier code, line
- *   values), client (or generic only), rack (or waiting for put-away), and
- *   "Show empty packs". The filters apply to every tab.
+ * - Filter bar: the Items page's search bar (`ItemFilterBar` in stock mode):
+ *   quick search + "Advanced search" (item code, reference code + its client /
+ *   supplier, description, color, size, base unit, category, client, line
+ *   value, template lines). Item filters are kept in the page link like on the
+ *   Items page. Plus rack (or waiting for put-away) and "Show empty packs".
+ *   The filters apply to every tab.
  * - Tabs By item / By client / By rack: totals from the `wms.accessory_stock`
  *   view, grouped on the server. A client or rack holding items in different
  *   units shows one total per unit ("1,200 PCS · 35 M"); they're never added.
@@ -17,29 +20,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Search, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Combobox, type ComboItem } from "@/components/Combobox";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import {
-  accessoryPackApi, clientApi, valueSummary, warehouseRackApi,
-  type AccessoryPack, type Client, type PackLedgerEntry, type PackMove, type PackQuery,
-  type StockGroupBy, type StockFilters, type StockRow, type StockTotal, type WarehouseRack,
+  accessoryCategoryApi, accessoryItemApi, accessoryPackApi, clientApi, logicalLocationApi, uomApi, valueSummary,
+  warehouseRackApi,
+  type AccessoryCategory, type AccessoryItem, type AccessoryPack, type Client, type LogicalLocation,
+  type PackLedgerEntry, type PackMove, type PackQuery, type StockGroupBy, type StockFilters, type StockRow,
+  type StockTotal, type Uom, type WarehouseRack,
 } from "@/lib/api";
+import {
+  GENERIC, ItemFilterBar, toItemQuery, useItemFilters,
+} from "@/components/accessory-items/ItemFilters";
 import { useWarehouse } from "@/hooks/useWarehouse";
 import { useTranslation } from "@/hooks/useTranslation";
 import type { TranslationKey } from "@/lib/translations";
 
 const PAGE_SIZE = 50;
 const ALL = "all";
-const GENERIC = "generic";
 const UNRACKED = "unracked";
 
 type Tab = StockGroupBy | "packs";
@@ -67,10 +73,9 @@ export default function AccessoryInventory() {
   const { t, language } = useTranslation();
   const { warehouseId } = useWarehouse();
 
-  // Filters (shared by every tab)
-  const [typed, setTyped] = useState("");
-  const [q, setQ] = useState("");
-  const [clientFilter, setClientFilter] = useState<string>(ALL);
+  // Filters (shared by every tab). Item filters live in the page link.
+  const { filters: itemForm, update: updateItems, clear: clearItems, advanced } = useItemFilters();
+  const [advancedOpen, setAdvancedOpen] = useState(advanced > 0);
   const [rackFilter, setRackFilter] = useState<string>(ALL);
   const [showEmpty, setShowEmpty] = useState(false);
   const [itemFilter, setItemFilter] = useState<{ id: number; code: string } | null>(null); // from a By item click
@@ -84,22 +89,51 @@ export default function AccessoryInventory() {
   const [failed, setFailed] = useState(false);
 
   const [clients, setClients] = useState<Client[]>([]);
+  const [suppliers, setSuppliers] = useState<LogicalLocation[]>([]);
+  const [categories, setCategories] = useState<AccessoryCategory[]>([]);
+  const [uoms, setUoms] = useState<Uom[]>([]);
+  const [templates, setTemplates] = useState<AccessoryItem[]>([]);
   const [racks, setRacks] = useState<WarehouseRack[]>([]);
   const [openPack, setOpenPack] = useState<AccessoryPack | null>(null);
 
-  // Wait a moment after typing before searching.
+  // The item filters as the server's fields; searched a moment after typing stops.
+  const itemQueryText = useMemo(() => {
+    const iq = toItemQuery(itemForm, PAGE_SIZE);
+    const f: StockFilters = {
+      q: iq.q, code: iq.code, description: iq.description, color: iq.color, size: iq.size, ref_code: iq.ref_code,
+      ref_client_id: iq.ref_client_id, ref_supplier_id: iq.ref_supplier_id, base_uom_id: iq.base_uom_id,
+      category_id: iq.category_id, line_value: iq.line_value, template_id: iq.template_id, line: iq.line,
+      client_id: iq.client_id, generic: iq.generic_only,
+    };
+    return JSON.stringify(f);
+  }, [itemForm]);
+  const [itemQuery, setItemQuery] = useState(itemQueryText);
   useEffect(() => {
-    const id = setTimeout(() => setQ(typed.trim()), 300);
+    const id = setTimeout(() => setItemQuery(itemQueryText), 300);
     return () => clearTimeout(id);
-  }, [typed]);
+  }, [itemQueryText]);
 
   // Back to page 1 whenever the question changes.
-  useEffect(() => setPage(1), [q, clientFilter, rackFilter, showEmpty, itemFilter, tab]);
+  useEffect(() => setPage(1), [itemQuery, rackFilter, showEmpty, itemFilter, tab]);
 
   useEffect(() => {
     clientApi.getAll()
       .then((cls) => setClients([...cls].sort((a, b) => a.name.localeCompare(b.name))))
       .catch(() => setClients([]));
+    // Lists for the Advanced search panel
+    Promise.all([
+      accessoryCategoryApi.getAll(), uomApi.getAll(), logicalLocationApi.getAll({ limit: 1000 }),
+      accessoryItemApi.search({ kind: "template", active_only: false, limit: 500 }),
+    ])
+      .then(([cats, units, locations, tpl]) => {
+        setCategories(cats);
+        setUoms(units);
+        setSuppliers(
+          locations.filter((l) => l.location_type === "supplier").sort((a, b) => a.name.localeCompare(b.name)),
+        );
+        setTemplates(tpl.items);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -117,13 +151,11 @@ export default function AccessoryInventory() {
   }, [warehouseId]);
 
   const filters = useMemo((): StockFilters => {
-    const f: StockFilters = { warehouse_id: warehouseId ?? undefined, q: q || undefined };
-    if (clientFilter === GENERIC) f.generic = true;
-    else if (clientFilter !== ALL) f.client_id = Number(clientFilter);
+    const f: StockFilters = { ...(JSON.parse(itemQuery) as StockFilters), warehouse_id: warehouseId ?? undefined };
     if (rackFilter === UNRACKED) f.unracked = true;
     else if (rackFilter !== ALL) f.rack_id = Number(rackFilter);
     return f;
-  }, [warehouseId, q, clientFilter, rackFilter]);
+  }, [warehouseId, itemQuery, rackFilter]);
 
   useEffect(() => {
     if (warehouseId === null) return;
@@ -150,11 +182,7 @@ export default function AccessoryInventory() {
     return () => { cancelled = true; };
   }, [warehouseId, filters, tab, page, showEmpty, itemFilter]);
 
-  const clientItems: ComboItem<string>[] = useMemo(() => [
-    { id: ALL, label: t("accAllClients") },
-    { id: GENERIC, label: t("accGenericOnly") },
-    ...clients.map((c) => ({ id: String(c.id), label: c.name })),
-  ], [clients, t]);
+  const categoryName = (c: AccessoryCategory) => `${c.code} · ${language === "ar" ? c.name_ar : c.name_en}`;
 
   const rackItems: ComboItem<string>[] = useMemo(() => [
     { id: ALL, label: `${t("rack")}: ${t("all")}` },
@@ -165,7 +193,7 @@ export default function AccessoryInventory() {
   /** A roll-up row was clicked: show its packs. */
   const drill = (row: StockRow) => {
     if (tab === "item" && row.key !== null) setItemFilter({ id: row.key, code: row.code ?? "" });
-    if (tab === "client") setClientFilter(row.key === null ? GENERIC : String(row.key));
+    if (tab === "client") updateItems({ client: row.key === null ? GENERIC : String(row.key) });
     if (tab === "rack") setRackFilter(row.key === null ? UNRACKED : String(row.key));
     setTab("packs");
   };
@@ -280,15 +308,12 @@ export default function AccessoryInventory() {
 
             <Card>
               <CardContent className="pt-6 space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="relative flex-1 min-w-[260px]">
-                    <Search className="absolute left-3 rtl:left-auto rtl:right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                    <Input value={typed} onChange={(e) => setTyped(e.target.value)} placeholder={t("accInvSearch")}
-                      className="pl-9 rtl:pl-3 rtl:pr-9" />
-                  </div>
-                  <div className="w-56">
-                    <Combobox items={clientItems} value={clientFilter} onSelect={setClientFilter} placeholder={t("client")} />
-                  </div>
+                <ItemFilterBar
+                  stock filters={itemForm} update={updateItems} clear={clearItems} advanced={advanced}
+                  open={advancedOpen} setOpen={setAdvancedOpen}
+                  categories={categories} categoryName={categoryName} clients={clients} suppliers={suppliers}
+                  uoms={uoms} templates={templates}
+                >
                   <div className="w-56">
                     <Combobox items={rackItems} value={rackFilter} onSelect={setRackFilter} placeholder={t("rack")} />
                   </div>
@@ -296,7 +321,7 @@ export default function AccessoryInventory() {
                     <Switch id="acc-inv-empty" checked={showEmpty} onCheckedChange={setShowEmpty} />
                     <Label htmlFor="acc-inv-empty">{t("accInvShowEmpty")}</Label>
                   </div>
-                </div>
+                </ItemFilterBar>
 
                 <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
                   <div className="flex flex-wrap items-center gap-3">

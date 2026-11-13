@@ -128,15 +128,10 @@ def find_by_barcode(db: Session, barcode: str) -> AccessoryPack:
 
 
 def _item_conditions(item_id_col, search) -> list:
-    """Which items: the quick search `q`, a client, or generic (no client)."""
-    conditions = []
-    if search.q and search.q.strip():
-        conditions.append(item_id_col.in_(matching_item_ids(search.q.strip())))
-    if search.generic:
-        conditions.append(item_id_col.in_(select(AccessoryItem.id).where(AccessoryItem.client_id.is_(None))))
-    elif search.client_id is not None:
-        conditions.append(item_id_col.in_(select(AccessoryItem.id).where(AccessoryItem.client_id == search.client_id)))
-    return conditions
+    """Which items (`StockItemFilters`): the Items page quick search and
+    advanced fields, client or generic. No item filter given = no condition."""
+    matching = matching_item_ids(search.item_search())
+    return [] if matching is None else [item_id_col.in_(matching)]
 
 
 def _place_conditions(warehouse_col, rack_col, search) -> list:

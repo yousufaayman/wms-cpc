@@ -550,7 +550,33 @@ class AccessoryPackPage(BaseModel):
     total: int
 
 
-class AccessoryPackSearch(BaseModel):
+class StockItemFilters(BaseModel):
+    """Which items, for the pack list and the stock roll-ups (item 14): the
+    Items page quick search `q` and its advanced fields, same meaning (see
+    `AccessoryItemSearch`). client_id = that client's items; generic = items
+    for no client (client_id ignored). Inactive items with stock still count."""
+    q: Optional[str] = None
+    code: Optional[str] = None
+    description: Optional[str] = None
+    color: Optional[str] = None
+    size: Optional[str] = None
+    ref_code: Optional[str] = None
+    ref_client_id: Optional[int] = None
+    ref_supplier_id: Optional[int] = None
+    base_uom_id: Optional[int] = None
+    category_id: Optional[int] = None
+    line_value: Optional[str] = None
+    template_id: Optional[int] = None
+    line: List[str] = Field(default_factory=list)  # "key:text", one template line each
+    client_id: Optional[int] = None
+    generic: bool = False
+
+    def item_search(self) -> "AccessoryItemSearch":
+        fields = self.model_dump(include=set(StockItemFilters.model_fields) - {"generic"})
+        return AccessoryItemSearch(**fields, generic_only=self.generic, active_only=False)
+
+
+class AccessoryPackSearch(StockItemFilters):
     """Filters of the pack list; all given must match. `unracked=true` = only
     packs waiting for put-away (rack_id given at the same time is ignored)."""
     warehouse_id: Optional[int] = None
@@ -558,24 +584,16 @@ class AccessoryPackSearch(BaseModel):
     rack_id: Optional[int] = None
     unracked: bool = False
     status: Optional[Literal["active", "empty"]] = None
-    # Item 14: q = the Items page quick search on the pack's item; client_id =
-    # that client's items; generic = items for no client (client_id ignored).
-    q: Optional[str] = None
-    client_id: Optional[int] = None
-    generic: bool = False
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
 
 
-class AccessoryStockSearch(BaseModel):
+class AccessoryStockSearch(StockItemFilters):
     """Accessory Inventory roll-up (item 14): stock grouped by item, client or
     rack, with the same filters as the pack list. Empty packs are left out
     unless include_empty. Read from the query string."""
     group_by: Literal["item", "client", "rack"] = "item"
     warehouse_id: Optional[int] = None
-    q: Optional[str] = None
-    client_id: Optional[int] = None
-    generic: bool = False
     rack_id: Optional[int] = None
     unracked: bool = False
     include_empty: bool = False
