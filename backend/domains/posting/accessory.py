@@ -185,7 +185,7 @@ def post(
     reason = (reason or "").strip() or None
     if reason is not None and len(reason) > 500:
         raise _bad("The reason is longer than 500 characters")
-    is_reversal = _reverses is not None
+    is_reversal = _reverses is not None or _reversal_of is not None
     lines = [LedgerLine(**{**line.__dict__, "qty_delta": _qty(line.qty_delta)}) for line in lines]
     for line in lines:
         _check_line_rules(line, is_reversal, reason)
@@ -211,7 +211,7 @@ def post(
 
     posting = models.AccessoryPosting(
         reason=reason,
-        reverses_posting_id=_reverses.id if is_reversal else None,
+        reverses_posting_id=_reverses.id if _reverses is not None else None,
         created_by=actor_id,
         **({_RECEIPT_FK[receipt_kind]: receipt_id} if receipt_kind else {}),
     )
@@ -336,6 +336,30 @@ def reverse_posting(db: Session, actor_id: int, posting_id: int, reason: str) ->
         receipt_id=getattr(original, _RECEIPT_FK[receipt_kind]) if receipt_kind else None,
         _reverses=original,
         _reversal_of=[r.id for r in rows],
+    )
+
+
+def reverse_entries(
+    db: Session, actor_id: int, entries: Sequence[models.AccessoryLedgerEntry], reason: str
+) -> models.AccessoryPosting:
+    """Cancel some rows of a posting (e.g. one pack of a Receive Packs Add):
+    a new posting with their opposite rows, each linked to the row it cancels
+    (`reversal_of`, UNIQUE = once per row). The original posting stays
+    un-reversed as a whole. Same checks as `reverse_posting` per row."""
+    if not entries:
+        raise _bad("Nothing to reverse")
+    if not (reason or "").strip():
+        raise _bad("A reversal needs a reason")
+    for row in entries:
+        if row.reversal_of is not None:
+            raise _bad("This row is a reversal; post the action again instead of reversing it")
+        if row.is_reversed:
+            raise _bad("Already reversed", status.HTTP_409_CONFLICT)
+    return post(
+        db, actor_id,
+        [LedgerLine(r.pack_id, r.entry_type, -r.qty_delta, r.job_order_id, r.accessory_receipt_item_id) for r in entries],
+        reason=reason,
+        _reversal_of=[r.id for r in entries],
     )
 
 

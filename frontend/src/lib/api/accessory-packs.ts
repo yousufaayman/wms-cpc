@@ -167,4 +167,6 @@ export const accessoryPackApi = {
   moves: (id: number) => api.request<PackMove[]>(`/accessory-packs/${id}/moves`),
   receive: (body: ReceivePacksIn) => api.request<ReceivePacksOut>('/accessory-packs/receive', 'POST', body),
   undoReceive: (postingId: number) => api.request<unknown>(`/accessory-packs/receive/${postingId}/undo`, 'POST'),
+  /** Undo one received pack: back to 0, off its delivery line (receiver or admin, while unused). */
+  undoReceivePack: (packId: number) => api.request<unknown>(`/accessory-packs/receive/pack/${packId}/undo`, 'POST'),
 };

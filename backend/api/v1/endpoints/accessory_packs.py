@@ -8,7 +8,8 @@ W_Worker: "receive packs, labels, move packs" in authz.py). The router is off
 Packs are only made together with their first ledger row: `POST /receive`
 (Receive Packs, item 17; rules in `domains/accessories/receiving.py`) and,
 later, the opening balance (item 25). `POST /receive/{posting_id}/undo`
-cancels one Add (its receiver or an admin, while the packs are unused).
+cancels one Add and `POST /receive/pack/{pack_id}/undo` one pack of it (its
+receiver or an admin, while the packs are unused).
 """
 from typing import Annotated, List
 
@@ -78,6 +79,20 @@ def undo_receive(
 ):
     """Cancel one Add: its packs go back to 0. Returns the reversal posting."""
     reversal = receiving.undo_receive(db, current_user, posting_id)
+    db.commit()
+    db.refresh(reversal)
+    return reversal
+
+
+@router.post("/receive/pack/{pack_id}/undo", response_model=AccessoryPosting, status_code=status.HTTP_201_CREATED)
+def undo_receive_pack(
+    pack_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(require_permission(PERM_RECEIVE_ACCESSORIES)),
+):
+    """Cancel one received pack (Receive Packs' per-row Undo): it goes back to
+    0 and off its delivery line. Returns the reversal posting."""
+    reversal = receiving.undo_receive_pack(db, current_user, pack_id)
     db.commit()
     db.refresh(reversal)
     return reversal

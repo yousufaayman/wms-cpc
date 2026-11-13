@@ -19,9 +19,11 @@ What happens when a worker presses Add on the Receive Packs page, in plain words
 
 The batch of a pack is the delivery it was received on (`AccessoryPack.batch_no`).
 
-Undo (`undo_receive`): the person who pressed Add (or an admin) can cancel
-it while the packs haven't been used for anything else: a reversal posting
-brings them back to 0 and they stop counting toward the delivery.
+Undo: the person who pressed Add (or an admin) can cancel it while the packs
+haven't been used for anything else: a reversal posting brings them back to
+0 and they stop counting toward the delivery. `undo_receive_pack` (the page's
+Undo, one pack at a time) reverses just that pack's row; `undo_receive`
+cancels a whole Add at once.
 
 Nothing here commits; the endpoint commits once.
 """
@@ -172,7 +174,7 @@ def undo_receive(db: Session, user: models.User, posting_id: int) -> models.Acce
         raise _bad("This isn't a Receive Packs entry")
     if posting.created_by != user.id and not user_has_admin_role(db, user):
         raise _bad("Only the person who received these packs can undo it", status.HTTP_403_FORBIDDEN)
-    if posting.reversed_by_posting_id is not None:
+    if posting.reversed_by_posting_id is not None or any(e.is_reversed for e in entries):
         raise _bad("Already undone", status.HTTP_409_CONFLICT)
     pack_ids = {e.pack_id for e in entries}
     used = (
@@ -193,4 +195,45 @@ def undo_receive(db: Session, user: models.User, posting_id: int) -> models.Acce
     db.flush()
     for line_id in line_ids:
         sync_delivery_item_from_packs(db, line_id)
+    return reversal
+
+
+def _is_receive_packs_posting(posting: models.AccessoryPosting) -> bool:
+    return (
+        posting.reverses_posting_id is None
+        and posting.supplier_receipt_id is None
+        and posting.internal_receipt_id is None
+        and posting.external_receipt_id is None
+    )
+
+
+def undo_receive_pack(db: Session, user: models.User, pack_id: int) -> models.AccessoryPosting:
+    """Cancel one pack of an Add: its `receipt` row is reversed, so the pack
+    is back to 0 (empty) and stops counting toward its delivery line. Refused
+    for a pack not made by Receive Packs, for someone else's (unless admin),
+    once undone, and once the pack has any other row (issued, split...)."""
+    from backend.crud.accessory_packs import get_pack_or_404
+
+    pack = get_pack_or_404(db, pack_id)
+    rows = list(db.query(models.AccessoryLedgerEntry)
+                .filter(models.AccessoryLedgerEntry.pack_id == pack.id)
+                .order_by(models.AccessoryLedgerEntry.id).all())
+    first = rows[0] if rows else None
+    if (
+        first is None
+        or first.entry_type != "receipt"
+        or first.reversal_of is not None
+        or not _is_receive_packs_posting(first.posting)
+    ):
+        raise _bad("This pack wasn't made by Receive Packs")
+    if first.posting.created_by != user.id and not user_has_admin_role(db, user):
+        raise _bad("Only the person who received this pack can undo it", status.HTTP_403_FORBIDDEN)
+    if first.is_reversed:
+        raise _bad("Already undone", status.HTTP_409_CONFLICT)
+    if len(rows) > 1:
+        raise _bad("This pack was used since, so it can't be undone here. Ask an admin to correct it")
+    reversal = posting_service.reverse_entries(db, user.id, [first], UNDO_REASON)
+    db.flush()
+    if pack.expected_delivery_item_id is not None:
+        sync_delivery_item_from_packs(db, pack.expected_delivery_item_id)
     return reversal
