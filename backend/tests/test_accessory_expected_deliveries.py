@@ -268,7 +268,8 @@ def test_variant_lines_carry_their_template_and_values(client, auth_headers, db,
     from backend.tests.test_accessory_variants import _template, _variant
 
     h = auth_headers(role="W_Manager")
-    tpl = _template(client, h, setup)
+    cl = setup["client"]
+    tpl = _template(client, h, setup, client_id=cl.client_id, refs=[{"client_id": cl.client_id, "ref_code": "BTN-77"}])
     navy = _variant(client, h, tpl["id"], {"price": "34.99"}, color="Navy", size="M").json()
     red = _variant(client, h, tpl["id"], {"price": "34.99", "po_number": "4512"}, color="Red", size="M").json()
     d = _delivery(db, stock["wh"])
@@ -284,3 +285,6 @@ def test_variant_lines_carry_their_template_and_values(client, auth_headers, db,
     by_color = {ln["item_color"]: ln for ln in lines}
     assert by_color["Navy"]["item_size"] == "M"
     assert [(v["field_key"], v["value"]) for v in by_color["Red"]["value_lines"]] == [("price", "34.99"), ("po_number", "4512")]
+    # variants have no codes of their own, so they show the template's client code
+    for ln in lines:
+        assert [(r["client_code"], r["ref_code"]) for r in ln["client_refs"]] == [(cl.client_code, "BTN-77")]

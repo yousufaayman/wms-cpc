@@ -1,5 +1,5 @@
 import { api } from './client';
-import type { AccessoryValueLine } from './accessory-items';
+import type { AccessoryClientRef, AccessoryValueLine } from './accessory-items';
 
 export type ExpectedDeliveryStatus = 'pending' | 'partial' | 'received' | 'cancelled';
 
@@ -44,6 +44,7 @@ export interface ExpectedDeliveryItem {
   item_color?: string | null;
   item_size?: string | null;
   value_lines?: AccessoryValueLine[];
+  client_refs?: AccessoryClientRef[]; // the client's own codes for the item
   uom_code?: string | null;
   template_id?: number | null; // set = a variant of this template
   template_code?: string | null;

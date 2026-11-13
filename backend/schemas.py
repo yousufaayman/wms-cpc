@@ -323,6 +323,14 @@ class AccessoryItemRef(BaseModel):
     class Config:
         from_attributes = True
 
+class AccessoryClientRef(BaseModel):
+    """A client's own code for an item, with the client's short code for display."""
+    client_id: int
+    client_code: Optional[str] = None
+    client_name: Optional[str] = None
+    ref_code: str
+
+
 class AccessoryItemCreate(BaseModel):
     category_id: int
     client_id: Optional[int] = None  # None = generic
@@ -424,6 +432,7 @@ class AccessoryItem(BaseModel):
     template_code: Optional[str] = None
     variable_values: Optional[Dict[str, str]] = None
     value_lines: List[AccessoryValueLine] = []  # a variant's values, labelled, in print order
+    client_refs: List[AccessoryClientRef] = []  # own, or the template's for a variant
 
     class Config:
         from_attributes = True
@@ -1543,6 +1552,7 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     item_color: Optional[str] = None
     item_size: Optional[str] = None
     value_lines: List[AccessoryValueLine] = []
+    client_refs: List[AccessoryClientRef] = []
     uom_code: Optional[str] = None
     template_id: Optional[int] = None  # set = a variant of this template
     template_code: Optional[str] = None

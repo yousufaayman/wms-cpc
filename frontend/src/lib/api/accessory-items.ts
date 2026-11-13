@@ -40,6 +40,14 @@ export type AccessoryItemFieldCreate = Omit<AccessoryItemField, 'id' | 'accessor
 export type AccessoryItemFieldUpdate = Partial<AccessoryItemFieldCreate>;
 
 /** A variant's value with its line's labels, in print order. */
+/** A client's own code for an item, with the client's short code (item 15). */
+export interface AccessoryClientRef {
+  client_id: number;
+  client_code: string | null;
+  client_name: string | null;
+  ref_code: string;
+}
+
 export interface AccessoryValueLine {
   field_key: string;
   label_en: string;
@@ -100,6 +108,7 @@ export interface AccessoryItem {
   template_code: string | null;
   variable_values: Record<string, string> | null;
   value_lines: AccessoryValueLine[];
+  client_refs: AccessoryClientRef[]; // own, or the template's for a variant
 }
 
 export interface AccessoryItemCreate {

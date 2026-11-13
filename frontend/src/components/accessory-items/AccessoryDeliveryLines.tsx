@@ -23,7 +23,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import {
   accessoryItemApi, expectedDeliveryApi, isLineHasPacksError,
-  type AccessoryItem, type AccessoryItemUnit, type AccessoryValueLine, type ExpectedDelivery, type ExpectedDeliveryItem,
+  type AccessoryClientRef, type AccessoryItem, type AccessoryItemUnit, type AccessoryValueLine, type ExpectedDelivery, type ExpectedDeliveryItem,
 } from "@/lib/api";
 
 const fmtQty = (q: string | number | null | undefined) =>
@@ -112,6 +112,21 @@ function ValueChips({ values, differs, grouped }: Readonly<{ values: AccessoryVa
         <span key={v.field_key} className={`rounded border px-1.5 py-0.5 text-xs ${tone(differs, v.field_key, grouped)}`}>
           <span className="opacity-70">{language === "ar" ? v.label_ar : v.label_en}:</span> {v.value}
         </span>
+      ))}
+    </div>
+  );
+}
+
+/** Clients' own codes for the item, e.g. "UR 4512-BLK" (client code, then their code). */
+function ClientRefs({ refs, inline = false }: Readonly<{ refs: AccessoryClientRef[]; inline?: boolean }>) {
+  if (!refs.length) return inline ? null : <span className="text-muted-foreground">—</span>;
+  return (
+    <div className={inline ? "flex flex-wrap gap-x-3 text-xs" : "space-y-0.5 text-sm"}>
+      {refs.map((r) => (
+        <div key={`${r.client_id}-${r.ref_code}`} title={r.client_name ?? undefined}>
+          <span className="text-muted-foreground">{r.client_code ?? `#${r.client_id}`} </span>
+          <span className="font-mono" dir="ltr">{r.ref_code}</span>
+        </div>
       ))}
     </div>
   );
@@ -252,7 +267,7 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
     }
   };
 
-  const colCount = 7 + (canEdit ? 1 : 0);
+  const colCount = 8 + (canEdit ? 1 : 0);
 
   /** One delivery line. In a template group the description is in the group
       header, so the row shows only what tells this variant apart. */
@@ -261,6 +276,7 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
     return (
       <TableRow key={line.id}>
         <TableCell className={`font-mono text-sm font-medium ${grouped ? "ps-8" : ""}`}>{line.item_code ?? "—"}</TableCell>
+        <TableCell><ClientRefs refs={line.client_refs ?? []} /></TableCell>
         <TableCell className="text-sm">
           {!grouped && <div>{line.item_description ?? "—"}</div>}
           {!grouped && line.template_code && (
@@ -322,6 +338,7 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
                 <TableHeader>
                   <TableRow>
                     <TableHead>{t("accItemCode")}</TableHead>
+                    <TableHead>{t("accRefs")}</TableHead>
                     <TableHead>{t("accDescription")}</TableHead>
                     <TableHead>{t("color")}</TableHead>
                     <TableHead>{t("accSize")}</TableHead>
@@ -371,6 +388,7 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
                   )}
                   <div className="text-xs text-muted-foreground">{[picked.color, picked.size].filter(Boolean).join(" · ")}</div>
                   <ValueChips values={picked.value_lines} differs={new Set()} grouped={false} />
+                  <ClientRefs refs={picked.client_refs ?? []} inline />
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => { setPicked(null); setUnits([]); setUomId(null); }}>
                   {t("cancel")}
@@ -401,6 +419,7 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
                             {item.size && <span className={tone(differs, "size", grouped) || "text-muted-foreground"}>{item.size}</span>}
                           </div>
                           <ValueChips values={item.value_lines} differs={differs} grouped={grouped} />
+                          <ClientRefs refs={item.client_refs ?? []} inline />
                         </button>
                       );
                       if (!grouped) return result(group.rows[0]);

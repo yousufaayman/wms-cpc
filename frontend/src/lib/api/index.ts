@@ -84,6 +84,7 @@ export {
   type AccessoryItemFieldUpdate,
   type AccessoryItemKind,
   type AccessoryValueLine,
+  type AccessoryClientRef,
   type AccessoryVariantCreate,
   type FieldType
 } from './accessory-items';

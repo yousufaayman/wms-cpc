@@ -387,6 +387,23 @@ class AccessoryItem(Base):
         return self.parent_template.code if self.parent_template is not None else None
 
     @property
+    def client_refs(self):
+        """Clients' own codes for this item, for display next to our code. A
+        variant usually has none of its own and shows its template's."""
+        refs = [r for r in self.refs if r.client_id is not None]
+        if not refs and self.parent_template is not None:
+            refs = [r for r in self.parent_template.refs if r.client_id is not None]
+        return [
+            {
+                "client_id": r.client_id,
+                "client_code": r.client.client_code if r.client is not None else None,
+                "client_name": r.client.client_name if r.client is not None else None,
+                "ref_code": r.ref_code,
+            }
+            for r in refs
+        ]
+
+    @property
     def value_lines(self):
         """A variant's values in its template's print order, with the line labels."""
         if self.parent_template is None:
@@ -487,6 +504,7 @@ class AccessoryItemRef(Base):
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     item = relationship("AccessoryItem", back_populates="refs")
+    client = relationship("Client", foreign_keys=[client_id], lazy="selectin")
 
     def __repr__(self):
         return f"<AccessoryItemRef {self.ref_code} item={self.accessory_item_id}>"
@@ -1095,6 +1113,10 @@ class ExpectedDeliveryItem(Base):
     @property
     def value_lines(self):
         return self.accessory_item.value_lines if self.accessory_item is not None else []
+
+    @property
+    def client_refs(self):
+        return self.accessory_item.client_refs if self.accessory_item is not None else []
 
     @property
     def uom_code(self):
