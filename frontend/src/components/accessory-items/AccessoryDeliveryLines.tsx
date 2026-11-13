@@ -7,8 +7,13 @@
  * quantity can be typed in any unit that converts to it (e.g. 50 DOZ); the
  * server converts on save. "Received" comes from the server, worked out from
  * the packs received against the line, so this page never edits it.
+ *
+ * Item 18: each line shows where it stands (waiting / partly received /
+ * complete / over-received), the card counts complete lines and explains a
+ * delivery closed short, and a line opens to list the packs received on it.
+ * `DeliveryFlagBadges` is also used by the delivery header and the list.
  */
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -16,12 +21,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Loader2, Minus, PackageOpen, Pencil, Plus, Trash2, TrendingDown, TrendingUp } from "lucide-react";
+import {
+  AlertTriangle, ChevronDown, ChevronRight, Loader2, Minus, PackageOpen, Pencil, Plus, Trash2, TrendingDown, TrendingUp,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   accessoryItemApi, expectedDeliveryApi, isLineHasPacksError,
-  type AccessoryItem, type AccessoryItemUnit, type ExpectedDelivery, type ExpectedDeliveryItem,
+  type AccessoryItem, type AccessoryItemUnit, type DeliveryLinePack, type ExpectedDelivery, type ExpectedDeliveryItem,
+  type LineReceiveState,
 } from "@/lib/api";
 import {
   ClientRefs, ItemSearch, PickedItem, QtyInUnit, ValueChips, differing, fmtQty, groupByTemplate, lineInfo, tone,
@@ -39,6 +47,98 @@ function Difference({ expected, received }: Readonly<{ expected: number; receive
       {over ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
       {over ? "+" : ""}{fmtQty(diff)}
     </span>
+  );
+}
+
+const STATE_STYLE: Record<LineReceiveState, string> = {
+  waiting: "bg-amber-100 text-amber-800 border-amber-300",
+  partial: "bg-blue-100 text-blue-800 border-blue-300",
+  complete: "bg-green-100 text-green-800 border-green-300",
+  over: "bg-purple-100 text-purple-800 border-purple-300",
+};
+const STATE_KEY = { waiting: "lineWaiting", partial: "linePartial", complete: "lineComplete", over: "lineOver" } as const;
+
+function LineStateBadge({ state }: Readonly<{ state: LineReceiveState }>) {
+  const { t } = useTranslation();
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${STATE_STYLE[state]}`}>
+      {t(STATE_KEY[state])}
+    </span>
+  );
+}
+
+/** "Over-received" / "Closed short" badges of an accessory delivery (none on fabric). */
+export function DeliveryFlagBadges({ delivery }: Readonly<{ delivery: ExpectedDelivery }>) {
+  const { t } = useTranslation();
+  if (!delivery.over_received && !delivery.closed_short) return null;
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {delivery.over_received && <LineStateBadge state="over" />}
+      {delivery.closed_short && (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border bg-red-100 text-red-800 border-red-300">
+          {t("deliveryClosedShort")}
+        </span>
+      )}
+    </span>
+  );
+}
+
+const fmtDateTime = (ds: string) =>
+  new Date(ds).toLocaleString("en-GB", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+
+/** The packs received on one line, loaded when the line is opened. */
+function LinePacks({ line, colSpan }: Readonly<{ line: ExpectedDeliveryItem; colSpan: number }>) {
+  const { t } = useTranslation();
+  const [packs, setPacks] = useState<DeliveryLinePack[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    expectedDeliveryApi.linePacks(line.id)
+      .then((p) => { if (live) setPacks(p); })
+      .catch(() => { if (live) setPacks([]); });
+    return () => { live = false; };
+  }, [line.id, line.received_qty]);
+
+  let body;
+  if (packs === null) {
+    body = <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />;
+  } else if (packs.length === 0) {
+    body = <p className="text-sm text-muted-foreground">{t("accNoPacksOnLine")}</p>;
+  } else {
+    body = (
+      <div className="space-y-2">
+        <div className="text-sm font-medium">{t("accLinePacks", { count: packs.length })}</div>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>{t("accInvPack")}</TableHead>
+              <TableHead className="text-right">{t("accReceivedQty")}</TableHead>
+              <TableHead className="text-right">{t("accInvOnHand")}</TableHead>
+              <TableHead>{t("rack")}</TableHead>
+              <TableHead>{t("accReceivedAt")}</TableHead>
+              <TableHead>{t("accReceivedBy")}</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {packs.map((p) => (
+              <TableRow key={p.id} className={p.status === "empty" ? "text-muted-foreground" : ""}>
+                <TableCell className="font-mono text-sm" dir="ltr">{p.barcode}</TableCell>
+                <TableCell className="text-right font-mono text-sm" dir="ltr">{fmtQty(p.received_qty)} {line.uom_code}</TableCell>
+                <TableCell className="text-right font-mono text-sm" dir="ltr">{fmtQty(p.quantity)} {line.uom_code}</TableCell>
+                <TableCell className="text-sm">{p.rack_code ?? "—"}</TableCell>
+                <TableCell className="text-sm" dir="ltr">{fmtDateTime(p.created_at)}</TableCell>
+                <TableCell className="text-sm">{p.received_by ?? "—"}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    );
+  }
+
+  return (
+    <TableRow className="bg-muted/20 hover:bg-muted/20">
+      <TableCell colSpan={colSpan} className="py-3 ps-10">{body}</TableCell>
+    </TableRow>
   );
 }
 
@@ -121,15 +221,34 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
     }
   };
 
+  // ── Open lines (the packs received on them) ──
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const toggle = (id: number) => setOpen((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+
   const colCount = 8 + (canEdit ? 1 : 0);
 
   /** One delivery line. In a template group the description is in the group
       header, so the row shows only what tells this variant apart. */
   const renderLine = (line: ExpectedDeliveryItem, differs: Set<string>, grouped: boolean) => {
     const received = Number(line.received_qty ?? 0);
+    const isOpen = open.has(line.id);
+    const short = delivery.closed_short && (line.receive_state === "waiting" || line.receive_state === "partial");
     return (
-      <TableRow key={line.id}>
-        <TableCell className={`font-mono text-sm font-medium ${grouped ? "ps-8" : ""}`}>{line.item_code ?? "—"}</TableCell>
+      <Fragment key={line.id}>
+      <TableRow
+        className={`cursor-pointer ${short ? "bg-red-50 hover:bg-red-100/70 dark:bg-red-950/30" : ""}`}
+        onClick={() => toggle(line.id)}
+      >
+        <TableCell className={`font-mono text-sm font-medium whitespace-nowrap ${grouped ? "ps-8" : ""}`}>
+          {isOpen
+            ? <ChevronDown className="inline h-4 w-4 me-1 text-muted-foreground" />
+            : <ChevronRight className="inline h-4 w-4 me-1 text-muted-foreground rtl:rotate-180" />}
+          {line.item_code ?? "—"}
+        </TableCell>
         <TableCell><ClientRefs refs={line.client_refs ?? []} /></TableCell>
         <TableCell className="text-sm">
           {!grouped && <div>{line.item_description ?? "—"}</div>}
@@ -144,10 +263,13 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
         <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(line.expected_qty)} {line.uom_code}</TableCell>
         <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(received)} {line.uom_code}</TableCell>
         <TableCell className="text-center">
-          <Difference expected={Number(line.expected_qty ?? 0)} received={received} />
+          <div className="flex flex-col items-center gap-1">
+            {line.receive_state && <LineStateBadge state={line.receive_state} />}
+            <Difference expected={Number(line.expected_qty ?? 0)} received={received} />
+          </div>
         </TableCell>
         {canEdit && (
-          <TableCell>
+          <TableCell onClick={(e) => e.stopPropagation()}>
             <Button size="sm" variant="ghost" title={t("editDeliveryItem")} onClick={() => openEdit(line)}>
               <Pencil className="h-4 w-4" />
             </Button>
@@ -162,6 +284,8 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
           </TableCell>
         )}
       </TableRow>
+      {isOpen && <LinePacks line={line} colSpan={colCount} />}
+      </Fragment>
     );
   };
 
@@ -170,7 +294,14 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
       <Card>
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="text-base">{t("deliveryItems")} ({delivery.items.length})</CardTitle>
+            <div className="flex items-center gap-3 flex-wrap">
+              <CardTitle className="text-base">{t("deliveryItems")} ({delivery.items.length})</CardTitle>
+              {delivery.lines_total != null && delivery.lines_total > 0 && (
+                <span className="text-sm text-muted-foreground">
+                  {t("accLinesComplete", { done: delivery.lines_complete ?? 0, total: delivery.lines_total })}
+                </span>
+              )}
+            </div>
             {canEdit && (
               <Button size="sm" onClick={() => setAddOpen(true)}>
                 <Plus className="h-4 w-4 mr-1" />
@@ -180,6 +311,12 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
           </div>
         </CardHeader>
         <CardContent className="p-0">
+          {delivery.closed_short && (
+            <div className="mx-4 mb-3 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-sm text-red-800 dark:text-red-300">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              {t("accClosedShortNote")}
+            </div>
+          )}
           {delivery.items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center gap-2">
               <PackageOpen className="h-10 w-10 text-muted-foreground" />

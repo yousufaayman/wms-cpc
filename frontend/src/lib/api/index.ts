@@ -238,6 +238,9 @@ export {
   type ExpectedDeliveryFilters,
   type ExpectedDeliveryStatus,
   type SupplierType,
+  type LineReceiveState,
+  type DeliveryLinePack,
+  type DeliveryFlag,
   isLineHasPacksError,
 } from './expected-deliveries';
 

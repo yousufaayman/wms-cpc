@@ -1037,6 +1037,13 @@ class ExpectedDelivery(Base):
     closer = relationship("User", foreign_keys=[closed_by])
     items = relationship("ExpectedDeliveryItem", back_populates="delivery", cascade=_CASCADE_DELETE)
 
+    # Item 18 summary of the accessory lines, set by crud.expected_deliveries
+    # on load (never stored). None on fabric deliveries.
+    lines_total = None
+    lines_complete = None
+    over_received = None
+    closed_short = None
+
     def __repr__(self):
         return f"<ExpectedDelivery {self.id} supplier={self.supplier_type}:{self.client_supplier_id}>"
 
@@ -1092,6 +1099,8 @@ class ExpectedDeliveryItem(Base):
     # Received on an accessory line: set by crud.expected_deliveries when the
     # line is loaded (never stored). None on fabric lines.
     received_qty = None
+    # Item 18: waiting | partial | complete | over (same rule as received_qty)
+    receive_state = None
 
     # Item 15 display fields for accessory lines (None on fabric lines)
     @property

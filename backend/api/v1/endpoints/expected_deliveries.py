@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from backend import models
 from backend.core.authz import ensure_admin, PERM_OPERATIONS, PERM_MANAGE_EXPECTED_DELIVERIES
@@ -8,6 +8,7 @@ from backend.core.deps import get_db, get_current_user, require_permission
 from backend.crud import expected_deliveries as crud
 from backend.core.warehouse_modules import ACCESSORY, FABRIC, ensure_module, ensure_same_warehouse_type
 from backend.schemas import (
+    DeliveryLinePack,
     ExpectedDelivery,
     ExpectedDeliveryCreate,
     ExpectedDeliveryUpdate,
@@ -33,11 +34,13 @@ def list_expected_deliveries(
     warehouse_id: Optional[int] = Query(None),
     status: Optional[str] = Query(None),
     open_only: bool = Query(False),
+    # Item 18: accessory deliveries with a line over expected, or closed short
+    flag: Optional[Literal["over_received", "closed_short"]] = Query(None),
     db: Session = Depends(get_db),
     current_user: models.User = _REQUIRE_VIEW,
 ):
     return crud.get_expected_deliveries(
-        db, skip=skip, limit=limit, warehouse_id=warehouse_id, status=status, open_only=open_only
+        db, skip=skip, limit=limit, warehouse_id=warehouse_id, status=status, open_only=open_only, flag=flag,
     )
 
 
@@ -134,6 +137,15 @@ def add_delivery_item(
         return crud.add_delivery_item(db, delivery_id=delivery_id, item=item)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.get("/items/{item_id}/packs", response_model=List[DeliveryLinePack])
+def list_line_packs(item_id: int, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_VIEW):
+    """Item 18: the packs received on one accessory delivery line."""
+    line = db.get(models.ExpectedDeliveryItem, item_id)
+    if line is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ITEM_NOT_FOUND)
+    return crud.line_packs(db, item_id)
 
 
 @router.put("/items/{item_id}", response_model=ExpectedDeliveryItem)

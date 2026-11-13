@@ -1574,6 +1574,8 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     # Accessory lines (item 15): received = sum of the `receipt` ledger rows
     # on the packs linked to the line (reversals net out), base unit
     received_qty: Optional[Decimal] = None
+    # Item 18: waiting | partial | complete | over (over-receipts are allowed, flagged)
+    receive_state: Optional[Literal["waiting", "partial", "complete", "over"]] = None
     item_code: Optional[str] = None
     item_description: Optional[str] = None
     item_color: Optional[str] = None
@@ -1636,9 +1638,29 @@ class ExpectedDeliveryInDB(ExpectedDeliveryBase):
     closed_at: Optional[datetime] = None
     closed_by: Optional[int] = None
     items: List[ExpectedDeliveryItem] = []
+    # Item 18, accessory deliveries only (None on fabric): lines complete
+    # (or over) out of all lines; any line over expected; closed as
+    # received while a line is still short
+    lines_total: Optional[int] = None
+    lines_complete: Optional[int] = None
+    over_received: Optional[bool] = None
+    closed_short: Optional[bool] = None
 
     class Config:
         from_attributes = True
+
+
+class DeliveryLinePack(BaseModel):
+    """Item 18: one pack received on a delivery line. received_qty = its
+    receipt rows (0 after an undo); quantity = on hand now. Base unit."""
+    id: int
+    barcode: str
+    status: Literal["active", "empty"]
+    received_qty: Decimal
+    quantity: Decimal
+    rack_code: Optional[str] = None
+    created_at: datetime
+    received_by: Optional[str] = None
 
 
 class ExpectedDelivery(ExpectedDeliveryInDB):
