@@ -260,3 +260,27 @@ def test_line_kinds_do_not_mix_on_edit(client, auth_headers, db, stock):
     line = _add(client, h, d.id, accessory_item_id=stock["item"], expected_qty="10").json()
     r = client.put(f"{DELIVERIES}items/{line['id']}", json={"expected_weight_kg": 5}, headers=h)
     assert r.status_code == 400 and "fabric fields" in r.json()["detail"]
+
+
+# ── 5. Variants of one template (grouped on the page) ───────────────────────
+
+def test_variant_lines_carry_their_template_and_values(client, auth_headers, db, stock, setup):
+    from backend.tests.test_accessory_variants import _template, _variant
+
+    h = auth_headers(role="W_Manager")
+    tpl = _template(client, h, setup)
+    navy = _variant(client, h, tpl["id"], {"price": "34.99"}, color="Navy", size="M").json()
+    red = _variant(client, h, tpl["id"], {"price": "34.99", "po_number": "4512"}, color="Red", size="M").json()
+    d = _delivery(db, stock["wh"])
+    for v in (navy, red):
+        assert _add(client, h, d.id, accessory_item_id=v["id"], expected_qty="10").status_code == 201
+    # a template itself can't be expected (never stocked)
+    assert _add(client, h, d.id, accessory_item_id=tpl["id"], expected_qty="10").status_code == 400
+
+    lines = _get(client, h, d.id)["items"]
+    assert {ln["template_id"] for ln in lines} == {tpl["id"]}
+    assert {ln["template_code"] for ln in lines} == {tpl["code"]}
+    assert all(ln["template_description"] == tpl["description"] for ln in lines)
+    by_color = {ln["item_color"]: ln for ln in lines}
+    assert by_color["Navy"]["item_size"] == "M"
+    assert [(v["field_key"], v["value"]) for v in by_color["Red"]["value_lines"]] == [("price", "34.99"), ("po_number", "4512")]

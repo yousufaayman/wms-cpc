@@ -1100,6 +1100,20 @@ class ExpectedDeliveryItem(Base):
     def uom_code(self):
         return self.accessory_item.base_uom.code if self.accessory_item is not None else None
 
+    # A variant's template, so the page can group variants of one template
+    @property
+    def template_id(self):
+        return self.accessory_item.parent_template_id if self.accessory_item is not None else None
+
+    @property
+    def template_code(self):
+        return self.accessory_item.template_code if self.accessory_item is not None else None
+
+    @property
+    def template_description(self):
+        tpl = self.accessory_item.parent_template if self.accessory_item is not None else None
+        return tpl.description if tpl is not None else None
+
     def __repr__(self):
         return f"<ExpectedDeliveryItem {self.id} delivery={self.delivery_id}>"
 

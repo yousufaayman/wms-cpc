@@ -8,8 +8,9 @@
  * server converts on save. "Received" comes from the server, worked out from
  * the packs received against the line, so this page never edits it.
  */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -21,8 +22,8 @@ import { toast } from "sonner";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import {
-  accessoryItemApi, expectedDeliveryApi, isLineHasPacksError, valueSummary,
-  type AccessoryItem, type AccessoryItemUnit, type ExpectedDelivery, type ExpectedDeliveryItem,
+  accessoryItemApi, expectedDeliveryApi, isLineHasPacksError,
+  type AccessoryItem, type AccessoryItemUnit, type AccessoryValueLine, type ExpectedDelivery, type ExpectedDeliveryItem,
 } from "@/lib/api";
 
 const fmtQty = (q: string | number | null | undefined) =>
@@ -40,6 +41,79 @@ function Difference({ expected, received }: Readonly<{ expected: number; receive
       {over ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
       {over ? "+" : ""}{fmtQty(diff)}
     </span>
+  );
+}
+
+// ─── Variants of one template, shown together ───────────────────────────────
+// Lines (or search results) that are variants of the same template are listed
+// under one header, so it's clear they are the same trim. Inside a group,
+// the color / size / line values that differ between the variants are bold;
+// the ones they all share are muted.
+
+/** What a row needs to be grouped and told apart (a delivery line or an item). */
+interface VariantInfo {
+  templateId: number | null;
+  color: string | null;
+  size: string | null;
+  values: AccessoryValueLine[];
+}
+
+const lineInfo = (l: ExpectedDeliveryItem): VariantInfo => ({
+  templateId: l.template_id ?? null, color: l.item_color ?? null, size: l.item_size ?? null, values: l.value_lines ?? [],
+});
+const itemInfo = (i: AccessoryItem): VariantInfo => ({
+  templateId: i.parent_template_id, color: i.color, size: i.size, values: i.value_lines,
+});
+
+/** Rows in their order, variants of one template pulled together where the first one appears. */
+function groupByTemplate<T>(rows: T[], info: (r: T) => VariantInfo): { templateId: number | null; rows: T[] }[] {
+  const groups: { templateId: number | null; rows: T[] }[] = [];
+  const byTemplate = new Map<number, { templateId: number | null; rows: T[] }>();
+  for (const row of rows) {
+    const tid = info(row).templateId;
+    const existing = tid !== null ? byTemplate.get(tid) : undefined;
+    if (existing) { existing.rows.push(row); continue; }
+    const group = { templateId: tid, rows: [row] };
+    groups.push(group);
+    if (tid !== null) byTemplate.set(tid, group);
+  }
+  return groups;
+}
+
+/** Which attributes differ inside a group: "color", "size" and line field keys. */
+function differing(infos: VariantInfo[]): Set<string> {
+  const out = new Set<string>();
+  if (infos.length < 2) return out;
+  const seen = new Map<string, Set<string>>();
+  const note = (key: string, value: string | null | undefined) => {
+    if (!seen.has(key)) seen.set(key, new Set());
+    seen.get(key)!.add((value ?? "").trim().toLowerCase());
+  };
+  const keys = new Set(infos.flatMap((i) => i.values.map((v) => v.field_key)));
+  for (const i of infos) {
+    note("color", i.color);
+    note("size", i.size);
+    for (const k of keys) note(k, i.values.find((v) => v.field_key === k)?.value);
+  }
+  for (const [key, values] of seen) if (values.size > 1) out.add(key);
+  return out;
+}
+
+const tone = (differs: Set<string>, key: string, grouped: boolean) =>
+  !grouped ? "" : differs.has(key) ? "font-semibold text-foreground" : "text-muted-foreground";
+
+/** A variant's line values as small "label: value" chips. */
+function ValueChips({ values, differs, grouped }: Readonly<{ values: AccessoryValueLine[]; differs: Set<string>; grouped: boolean }>) {
+  const { language } = useLanguage();
+  if (!values.length) return null;
+  return (
+    <div className="flex flex-wrap gap-1 mt-0.5">
+      {values.map((v) => (
+        <span key={v.field_key} className={`rounded border px-1.5 py-0.5 text-xs ${tone(differs, v.field_key, grouped)}`}>
+          <span className="opacity-70">{language === "ar" ? v.label_ar : v.label_en}:</span> {v.value}
+        </span>
+      ))}
+    </div>
   );
 }
 
@@ -88,7 +162,6 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
   onDelete: (lineId: number) => void;
 }>) {
   const { t } = useTranslation();
-  const { language } = useLanguage();
 
   // ── Add line ──
   const [addOpen, setAddOpen] = useState(false);
@@ -118,7 +191,7 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
     const timer = setTimeout(() => {
       setSearching(true);
       accessoryItemApi.search({ q, limit: 20 })
-        .then((page) => { if (!cancelled) setResults(page.items.filter((i) => !i.is_template).slice(0, 8)); })
+        .then((page) => { if (!cancelled) setResults(page.items.filter((i) => !i.is_template).slice(0, 12)); })
         .catch(() => { if (!cancelled) setResults([]); })
         .finally(() => { if (!cancelled) setSearching(false); });
     }, 300);
@@ -179,8 +252,48 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
     }
   };
 
-  const itemExtra = (line: ExpectedDeliveryItem) =>
-    [line.item_color, line.item_size, valueSummary(line.value_lines ?? [], language)].filter(Boolean).join(" · ");
+  const colCount = 7 + (canEdit ? 1 : 0);
+
+  /** One delivery line. In a template group the description is in the group
+      header, so the row shows only what tells this variant apart. */
+  const renderLine = (line: ExpectedDeliveryItem, differs: Set<string>, grouped: boolean) => {
+    const received = Number(line.received_qty ?? 0);
+    return (
+      <TableRow key={line.id}>
+        <TableCell className={`font-mono text-sm font-medium ${grouped ? "ps-8" : ""}`}>{line.item_code ?? "—"}</TableCell>
+        <TableCell className="text-sm">
+          {!grouped && <div>{line.item_description ?? "—"}</div>}
+          {!grouped && line.template_code && (
+            <div className="text-xs text-muted-foreground">{t("accVariantOf", { code: line.template_code })}</div>
+          )}
+          <ValueChips values={line.value_lines ?? []} differs={differs} grouped={grouped} />
+          {line.notes && <div className="text-xs text-muted-foreground italic">{line.notes}</div>}
+        </TableCell>
+        <TableCell className={`text-sm ${tone(differs, "color", grouped)}`}>{line.item_color ?? "—"}</TableCell>
+        <TableCell className={`text-sm ${tone(differs, "size", grouped)}`}>{line.item_size ?? "—"}</TableCell>
+        <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(line.expected_qty)} {line.uom_code}</TableCell>
+        <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(received)} {line.uom_code}</TableCell>
+        <TableCell className="text-center">
+          <Difference expected={Number(line.expected_qty ?? 0)} received={received} />
+        </TableCell>
+        {canEdit && (
+          <TableCell>
+            <Button size="sm" variant="ghost" title={t("editDeliveryItem")} onClick={() => openEdit(line)}>
+              <Pencil className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm" variant="ghost" className="text-destructive hover:text-destructive"
+              title={received > 0 ? t("accLineHasPacks") : t("deleteDeliveryItem")}
+              disabled={received > 0}
+              onClick={() => onDelete(line.id)}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          </TableCell>
+        )}
+      </TableRow>
+    );
+  };
 
   return (
     <>
@@ -210,6 +323,8 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
                   <TableRow>
                     <TableHead>{t("accItemCode")}</TableHead>
                     <TableHead>{t("accDescription")}</TableHead>
+                    <TableHead>{t("color")}</TableHead>
+                    <TableHead>{t("accSize")}</TableHead>
                     <TableHead className="text-right">{t("accExpectedQty")}</TableHead>
                     <TableHead className="text-right">{t("accReceivedQty")}</TableHead>
                     <TableHead className="text-center">{t("accQtyDifference")}</TableHead>
@@ -217,37 +332,21 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {delivery.items.map((line) => {
-                    const received = Number(line.received_qty ?? 0);
+                  {groupByTemplate(delivery.items, lineInfo).map((group) => {
+                    if (group.rows.length < 2) return renderLine(group.rows[0], new Set(), false);
+                    const differs = differing(group.rows.map(lineInfo));
+                    const head = group.rows[0];
                     return (
-                      <TableRow key={line.id}>
-                        <TableCell className="font-mono text-sm font-medium">{line.item_code ?? "—"}</TableCell>
-                        <TableCell className="text-sm">
-                          <div>{line.item_description ?? "—"}</div>
-                          {itemExtra(line) && <div className="text-xs text-muted-foreground">{itemExtra(line)}</div>}
-                          {line.notes && <div className="text-xs text-muted-foreground italic">{line.notes}</div>}
-                        </TableCell>
-                        <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(line.expected_qty)} {line.uom_code}</TableCell>
-                        <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(received)} {line.uom_code}</TableCell>
-                        <TableCell className="text-center">
-                          <Difference expected={Number(line.expected_qty ?? 0)} received={received} />
-                        </TableCell>
-                        {canEdit && (
-                          <TableCell>
-                            <Button size="sm" variant="ghost" title={t("editDeliveryItem")} onClick={() => openEdit(line)}>
-                              <Pencil className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              size="sm" variant="ghost" className="text-destructive hover:text-destructive"
-                              title={received > 0 ? t("accLineHasPacks") : t("deleteDeliveryItem")}
-                              disabled={received > 0}
-                              onClick={() => onDelete(line.id)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                      <Fragment key={`tpl-${group.templateId}`}>
+                        <TableRow className="bg-muted/40 hover:bg-muted/40">
+                          <TableCell colSpan={colCount} className="py-2">
+                            <span className="font-mono text-sm font-medium">{head.template_code}</span>{" "}
+                            <span className="text-sm">{head.template_description}</span>{" "}
+                            <Badge variant="secondary" className="ms-1">{t("accVariantCount", { n: group.rows.length })}</Badge>
                           </TableCell>
-                        )}
-                      </TableRow>
+                        </TableRow>
+                        {group.rows.map((line) => renderLine(line, differs, true))}
+                      </Fragment>
                     );
                   })}
                 </TableBody>
@@ -267,9 +366,11 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
                 <div className="min-w-0">
                   <div className="font-mono text-sm font-medium">{picked.code}</div>
                   <div className="text-sm">{picked.description}</div>
-                  <div className="text-xs text-muted-foreground">
-                    {[picked.color, picked.size, valueSummary(picked.value_lines, language)].filter(Boolean).join(" · ")}
-                  </div>
+                  {picked.template_code && (
+                    <div className="text-xs text-muted-foreground">{t("accVariantOf", { code: picked.template_code })}</div>
+                  )}
+                  <div className="text-xs text-muted-foreground">{[picked.color, picked.size].filter(Boolean).join(" · ")}</div>
+                  <ValueChips values={picked.value_lines} differs={new Set()} grouped={false} />
                 </div>
                 <Button size="sm" variant="ghost" onClick={() => { setPicked(null); setUnits([]); setUomId(null); }}>
                   {t("cancel")}
@@ -283,19 +384,38 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
                 </div>
                 {searching && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
                 {results.length > 0 && (
-                  <div className="max-h-64 overflow-y-auto rounded-md border divide-y">
-                    {results.map((item) => (
-                      <button
-                        key={item.id} type="button" onClick={() => pick(item)}
-                        className="w-full text-left px-3 py-2 hover:bg-muted transition-colors"
-                      >
-                        <span className="font-mono text-sm font-medium">{item.code}</span>{" "}
-                        <span className="text-sm">{item.description}</span>
-                        <div className="text-xs text-muted-foreground">
-                          {[item.color, item.size, valueSummary(item.value_lines, language)].filter(Boolean).join(" · ")}
+                  <div className="max-h-72 overflow-y-auto rounded-md border divide-y">
+                    {groupByTemplate(results, itemInfo).map((group) => {
+                      const grouped = group.rows.length > 1;
+                      const differs = differing(group.rows.map(itemInfo));
+                      const result = (item: AccessoryItem) => (
+                        <button
+                          key={item.id} type="button" onClick={() => pick(item)}
+                          className={`w-full text-start py-2 pe-3 hover:bg-muted transition-colors ${grouped ? "ps-6" : "ps-3"}`}
+                        >
+                          <span className="font-mono text-sm font-medium">{item.code}</span>{" "}
+                          {!grouped && <span className="text-sm">{item.description}</span>}
+                          <div className="text-xs">
+                            {item.color && <span className={tone(differs, "color", grouped) || "text-muted-foreground"}>{item.color}</span>}
+                            {item.color && item.size && <span className="text-muted-foreground"> · </span>}
+                            {item.size && <span className={tone(differs, "size", grouped) || "text-muted-foreground"}>{item.size}</span>}
+                          </div>
+                          <ValueChips values={item.value_lines} differs={differs} grouped={grouped} />
+                        </button>
+                      );
+                      if (!grouped) return result(group.rows[0]);
+                      const first = group.rows[0];
+                      return (
+                        <div key={`tpl-${group.templateId}`}>
+                          <div className="px-3 py-1.5 bg-muted/40 text-xs">
+                            <span className="font-medium">{t("accVariantOf", { code: first.template_code ?? "" })}</span>{" "}
+                            <span className="text-muted-foreground">{first.description}</span>{" "}
+                            <span className="text-muted-foreground">· {t("accVariantCount", { n: group.rows.length })}</span>
+                          </div>
+                          <div className="divide-y">{group.rows.map(result)}</div>
                         </div>
-                      </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

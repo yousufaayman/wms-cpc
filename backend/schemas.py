@@ -1544,6 +1544,9 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     item_size: Optional[str] = None
     value_lines: List[AccessoryValueLine] = []
     uom_code: Optional[str] = None
+    template_id: Optional[int] = None  # set = a variant of this template
+    template_code: Optional[str] = None
+    template_description: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -45,6 +45,9 @@ export interface ExpectedDeliveryItem {
   item_size?: string | null;
   value_lines?: AccessoryValueLine[];
   uom_code?: string | null;
+  template_id?: number | null; // set = a variant of this template
+  template_code?: string | null;
+  template_description?: string | null;
 }
 
 export interface ExpectedDeliveryItemCreate {
