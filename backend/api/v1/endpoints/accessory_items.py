@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session
 from backend.core.authz import PERM_MANAGE_ACCESSORY_ITEMS
 from backend.core.deps import get_db, require_permission
 from backend.crud import accessory_items as crud
+from backend.domains.accessories import uom
 from backend.schemas import (
     AccessoryItem,
     AccessoryItemCreate,
@@ -39,6 +40,7 @@ from backend.schemas import (
     AccessoryItemRefIn,
     AccessoryItemRefUpdate,
     AccessoryItemSearch,
+    AccessoryItemUnit,
     AccessoryItemUpdate,
     AccessoryVariantCreate,
     UomConversion,
@@ -99,6 +101,20 @@ def create_item(payload: AccessoryItemCreate, db: Session = Depends(get_db), use
 @router.patch("/{item_id}", response_model=AccessoryItem)
 def update_item(item_id: int, payload: AccessoryItemUpdate, db: Session = Depends(get_db), _user=Depends(_can_manage)):
     return crud.update_item(db, item_id, payload)
+
+
+@router.get("/{item_id}/units", response_model=List[AccessoryItemUnit])
+def list_item_units(item_id: int, db: Session = Depends(get_db)):
+    """Units a quantity of this item can be typed in (base unit first), with
+    how many base units one of each is. For quantity boxes (item 15+)."""
+    item = crud.get_item_or_404(db, item_id)
+    return [
+        AccessoryItemUnit(
+            uom_id=u.id, code=u.code, name_en=u.name_en, name_ar=u.name_ar,
+            allows_decimals=u.allows_decimals, factor=f, is_base=(u.id == item.base_uom_id),
+        )
+        for u, f in uom.item_units(db, item)
+    ]
 
 
 @router.get("/{item_id}/conversions", response_model=List[UomConversion])

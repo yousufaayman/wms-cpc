@@ -323,6 +323,14 @@ class AccessoryItemRef(BaseModel):
     class Config:
         from_attributes = True
 
+class AccessoryClientRef(BaseModel):
+    """A client's own code for an item, with the client's short code for display."""
+    client_id: int
+    client_code: Optional[str] = None
+    client_name: Optional[str] = None
+    ref_code: str
+
+
 class AccessoryItemCreate(BaseModel):
     category_id: int
     client_id: Optional[int] = None  # None = generic
@@ -424,9 +432,22 @@ class AccessoryItem(BaseModel):
     template_code: Optional[str] = None
     variable_values: Optional[Dict[str, str]] = None
     value_lines: List[AccessoryValueLine] = []  # a variant's values, labelled, in print order
+    client_refs: List[AccessoryClientRef] = []  # own, or the template's for a variant
 
     class Config:
         from_attributes = True
+
+class AccessoryItemUnit(BaseModel):
+    """A unit a quantity of this item can be typed in (item 15): the base unit
+    (factor 1) and every unit with a direct conversion to it.
+    1 of this unit = `factor` base units."""
+    uom_id: int
+    code: str
+    name_en: str
+    name_ar: str
+    allows_decimals: bool
+    factor: Decimal
+    is_base: bool
 
 class AccessoryItemSearch(BaseModel):
     """Filters of the Accessory Items list (item 11). Every one given must match.
@@ -1455,20 +1476,37 @@ class AccountFlow(BaseModel):
 # ── Expected Delivery schemas ────────────────────────────────────────────────
 
 class ExpectedDeliveryItemBase(BaseModel):
-    # Exactly one of these must be set (enforced by DB check constraint)
+    # Exactly one of client_fabric_code_id / material_id / accessory_item_id
+    # must be set (enforced by DB check constraint)
     client_fabric_code_id: Optional[int] = None  # dyed fabric path
     client_id: Optional[int] = None              # undyed fabric path (with material_id)
     material_id: Optional[int] = None            # undyed fabric path
     expected_weight_kg: Optional[float] = Field(None, ge=0)
     expected_length_m: Optional[float] = Field(None, ge=0)
+    # Accessory path (item 15): the item + how much, in the item's base unit
+    # (on create/update it may be typed in another unit, see `uom_id` below)
+    accessory_item_id: Optional[int] = None
+    expected_qty: Optional[Decimal] = Field(None, gt=0, max_digits=14, decimal_places=4)
     notes: Optional[str] = None
 
     @model_validator(mode="after")
     def validate_exactly_one_type(self) -> "ExpectedDeliveryItemBase":
         has_cfc = self.client_fabric_code_id is not None
         has_mat = self.material_id is not None
-        if has_cfc == has_mat:
-            raise ValueError("Exactly one of client_fabric_code_id (dyed) or material_id (undyed) must be set")
+        has_acc = self.accessory_item_id is not None
+        if has_cfc + has_mat + has_acc != 1:
+            raise ValueError(
+                "Exactly one of client_fabric_code_id (dyed), material_id (undyed) "
+                "or accessory_item_id (accessory) must be set"
+            )
+        if has_acc:
+            if self.expected_qty is None:
+                raise ValueError("expected_qty is required for accessory items")
+            if self.client_id is not None or self.expected_weight_kg is not None or self.expected_length_m is not None:
+                raise ValueError("Accessory items take expected_qty only (no client, weight or length)")
+            return self
+        if self.expected_qty is not None:
+            raise ValueError("expected_qty is for accessory items only")
         if has_mat and self.client_id is None:
             raise ValueError("client_id is required for undyed items (material_id set)")
         if has_cfc and self.client_id is not None:
@@ -1477,18 +1515,24 @@ class ExpectedDeliveryItemBase(BaseModel):
 
 
 class ExpectedDeliveryItemCreate(ExpectedDeliveryItemBase):
-    pass
+    # Accessory lines: the unit expected_qty was typed in (default: the item's
+    # base unit). Converted to the base unit on save; not stored.
+    uom_id: Optional[int] = None
 
 
 class ExpectedDeliveryItemUpdate(BaseModel):
     # received_weight_kg / received_length_m are deliberately absent: they are
     # derived from the roll ledger (rolls.expected_delivery_item_id) and can
-    # only change by linking/unlinking/editing rolls.
+    # only change by linking/unlinking/editing rolls. Accessory lines have no
+    # received column at all (computed from the pack ledger).
     client_fabric_code_id: Optional[int] = None
     client_id: Optional[int] = None
     material_id: Optional[int] = None
     expected_weight_kg: Optional[float] = Field(None, ge=0)
     expected_length_m: Optional[float] = Field(None, ge=0)
+    accessory_item_id: Optional[int] = None
+    expected_qty: Optional[Decimal] = Field(None, gt=0, max_digits=14, decimal_places=4)
+    uom_id: Optional[int] = None  # unit of expected_qty, as on create
     notes: Optional[str] = None
 
 
@@ -1500,6 +1544,19 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     client_fabric_code: Optional[ClientFabricCode] = None
     client: Optional[Client] = None
     material: Optional[Material] = None
+    # Accessory lines (item 15): received = sum of the `receipt` ledger rows
+    # on the packs linked to the line (reversals net out), base unit
+    received_qty: Optional[Decimal] = None
+    item_code: Optional[str] = None
+    item_description: Optional[str] = None
+    item_color: Optional[str] = None
+    item_size: Optional[str] = None
+    value_lines: List[AccessoryValueLine] = []
+    client_refs: List[AccessoryClientRef] = []
+    uom_code: Optional[str] = None
+    template_id: Optional[int] = None  # set = a variant of this template
+    template_code: Optional[str] = None
+    template_description: Optional[str] = None
 
     class Config:
         from_attributes = True

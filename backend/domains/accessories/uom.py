@@ -77,3 +77,39 @@ def convert(db: Session, qty, from_uom_id: int, to_uom_id: int, item_id: Optiona
 # The name the receiving/issuing code reads best with.
 def to_base(db: Session, qty, uom_id: int, base_uom_id: int, item_id: Optional[int] = None) -> Decimal:
     return convert(db, qty, uom_id, base_uom_id, item_id)
+
+
+def item_units(db: Session, item: AccessoryItem) -> list:
+    """The units a quantity of `item` can be typed in: its base unit, then each
+    unit with a direct conversion to it (the item's own, or its template's,
+    win over a global pair), as (Uom, factor to base). Switched-off units are
+    left out. Same rule as `find_factor`, listed instead of looked up."""
+    from backend.models import Uom
+
+    base_id = item.base_uom_id
+    owner_id = item.parent_template_id or item.id
+    factors: dict = {}
+    # global first, then the item's own (which overwrite a global pair)
+    for owner in (None, owner_id):
+        rows = (
+            db.query(UomConversion)
+            .filter((UomConversion.from_uom_id == base_id) | (UomConversion.to_uom_id == base_id))
+            .filter(
+                UomConversion.accessory_item_id.is_(None)
+                if owner is None
+                else UomConversion.accessory_item_id == owner
+            )
+            .all()
+        )
+        for row in rows:
+            if row.to_uom_id == base_id:
+                factors[row.from_uom_id] = Decimal(row.factor)
+            else:
+                factors[row.to_uom_id] = Decimal(1) / Decimal(row.factor)
+    factors.pop(base_id, None)
+    uoms = {u.id: u for u in db.query(Uom).filter(Uom.id.in_([base_id, *factors])).all()}
+    out = [(uoms[base_id], Decimal(1))]
+    for uom_id, factor in sorted(factors.items(), key=lambda kv: uoms[kv[0]].code if kv[0] in uoms else ""):
+        if uom_id in uoms and uoms[uom_id].active:
+            out.append((uoms[uom_id], factor))
+    return out

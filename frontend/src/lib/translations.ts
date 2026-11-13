@@ -925,6 +925,15 @@ export const translations = {
     accEntry_write_off: "Write-off",
     accEntry_reclassify: "Reclassify",
     accSimilarItem: "A similar item already exists: {{code}}",
+    // Item 15: accessory lines on expected deliveries
+    accExpectedQty: "Expected quantity",
+    accReceivedQty: "Received quantity",
+    accQtyDifference: "Difference",
+    accSearchItem: "Search item by code or description",
+    accPickItem: "Choose an item.",
+    accEnterQty: "Enter a quantity above 0.",
+    accEqualsBase: "= {{qty}} {{unit}} (base unit)",
+    accLineHasPacks: "Packs were already received on this line, so it can't be deleted or change item.",
     checkingAuthentication: "Checking authentication...",
 
     // Languages
@@ -1857,6 +1866,15 @@ export const translations = {
     accEntry_write_off: "إعدام",
     accEntry_reclassify: "إعادة تصنيف",
     accSimilarItem: "يوجد صنف مشابه بالفعل: {{code}}",
+    // Item 15
+    accExpectedQty: "الكمية المتوقعة",
+    accReceivedQty: "الكمية المستلمة",
+    accQtyDifference: "الفرق",
+    accSearchItem: "ابحث عن الصنف بالكود أو الوصف",
+    accPickItem: "اختر صنفًا.",
+    accEnterQty: "أدخل كمية أكبر من صفر.",
+    accEqualsBase: "= {{qty}} {{unit}} (الوحدة الأساسية)",
+    accLineHasPacks: "تم استلام عبوات على هذا البند، لذلك لا يمكن حذفه أو تغيير الصنف.",
     checkingAuthentication: "جاري التحقق من الهوية...",
 
     // Languages

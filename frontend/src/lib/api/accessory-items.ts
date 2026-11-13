@@ -40,6 +40,14 @@ export type AccessoryItemFieldCreate = Omit<AccessoryItemField, 'id' | 'accessor
 export type AccessoryItemFieldUpdate = Partial<AccessoryItemFieldCreate>;
 
 /** A variant's value with its line's labels, in print order. */
+/** A client's own code for an item, with the client's short code (item 15). */
+export interface AccessoryClientRef {
+  client_id: number;
+  client_code: string | null;
+  client_name: string | null;
+  ref_code: string;
+}
+
 export interface AccessoryValueLine {
   field_key: string;
   label_en: string;
@@ -100,6 +108,7 @@ export interface AccessoryItem {
   template_code: string | null;
   variable_values: Record<string, string> | null;
   value_lines: AccessoryValueLine[];
+  client_refs: AccessoryClientRef[]; // own, or the template's for a variant
 }
 
 export interface AccessoryItemCreate {
@@ -154,6 +163,17 @@ export interface SimilarItemQuery {
   exclude_id?: number; // the item being edited
 }
 
+/** A unit a quantity of an item can be typed in: 1 of it = `factor` base units. */
+export interface AccessoryItemUnit {
+  uom_id: number;
+  code: string;
+  name_en: string;
+  name_ar: string;
+  allows_decimals: boolean;
+  factor: string; // decimal as text
+  is_base: boolean;
+}
+
 export interface AccessoryItemPage {
   items: AccessoryItem[];
   total: number;
@@ -192,6 +212,8 @@ export const accessoryItemApi = {
   update: (id: number, changes: AccessoryItemUpdate) =>
     api.request<AccessoryItem>(`/accessory-items/${id}`, 'PATCH', changes),
 
+  /** Units a quantity of this item can be typed in, base unit first (item 15). */
+  units: (id: number) => api.request<AccessoryItemUnit[]>(`/accessory-items/${id}/units`),
   getConversions: (id: number) => api.request<UomConversion[]>(`/accessory-items/${id}/conversions`),
   createConversion: (id: number, conv: ItemConversionCreate) =>
     api.request<UomConversion>(`/accessory-items/${id}/conversions`, 'POST', conv),
