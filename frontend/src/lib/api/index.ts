@@ -74,6 +74,7 @@ export {
   type AccessoryItemQuery,
   type SimilarItemQuery,
   type AccessoryItemPage,
+  type AccessoryItemUnit,
   type ItemConversionCreate,
   type AccessoryItemRef,
   type AccessoryItemRefCreate,
@@ -236,6 +237,7 @@ export {
   type ExpectedDeliveryFilters,
   type ExpectedDeliveryStatus,
   type SupplierType,
+  isLineHasPacksError,
 } from './expected-deliveries';
 
 // Export feature flag types and API

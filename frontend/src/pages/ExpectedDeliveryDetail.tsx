@@ -21,8 +21,10 @@ import { Combobox } from "@/components/Combobox";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useWarehouse } from "@/hooks/useWarehouse";
+import AccessoryDeliveryLines from "@/components/accessory-items/AccessoryDeliveryLines";
 import {
-  expectedDeliveryApi,
+  expectedDeliveryApi, isLineHasPacksError,
   clientApi, materialApi, colorApi, clientFabricCodeApi,
   type ExpectedDelivery, type ExpectedDeliveryItem, type ExpectedDeliveryStatus,
   type ExpectedDeliveryItemCreate,
@@ -155,6 +157,9 @@ export default function ExpectedDeliveryDetail() {
   const { t } = useTranslation();
   useLanguage();
   const { isAdmin, can } = useCurrentUser();
+  // Accessory warehouses list accessory items instead of fabric (item 15).
+  const { warehouse } = useWarehouse();
+  const isAccessory = warehouse?.type === "Accessory";
 
   const [delivery, setDelivery] = useState<ExpectedDelivery | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
@@ -300,8 +305,8 @@ export default function ExpectedDeliveryDetail() {
       setDeleteItemId(null);
       loadDelivery();
       toast.success(t("itemRemoved"));
-    } catch {
-      toast.error(t("failedToDeleteItem"));
+    } catch (e) {
+      toast.error(isLineHasPacksError(e) ? t("accLineHasPacks") : t("failedToDeleteItem"));
     } finally {
       setDeletingItem(false);
     }
@@ -467,6 +472,14 @@ export default function ExpectedDeliveryDetail() {
           </Card>
 
           {/* Items section */}
+          {isAccessory ? (
+            <AccessoryDeliveryLines
+              delivery={delivery}
+              canEdit={canEdit}
+              onChanged={loadDelivery}
+              onDelete={setDeleteItemId}
+            />
+          ) : (
           <Card>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
@@ -576,6 +589,7 @@ export default function ExpectedDeliveryDetail() {
               )}
             </CardContent>
           </Card>
+          )}
         </main>
       </div>
 

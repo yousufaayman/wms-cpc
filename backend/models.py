@@ -965,7 +965,17 @@ class SingleTransaction(Base):
 
 _CK_DELIVERY_ITEM_ONE_TYPE = (
     "CASE WHEN client_fabric_code_id IS NOT NULL THEN 1 ELSE 0 END + "
-    "CASE WHEN material_id IS NOT NULL THEN 1 ELSE 0 END = 1"
+    "CASE WHEN material_id IS NOT NULL THEN 1 ELSE 0 END + "
+    "CASE WHEN accessory_item_id IS NOT NULL THEN 1 ELSE 0 END = 1"
+)
+
+# Accessory lines (item 15) always carry an expected quantity in the item's
+# base unit, and never the fabric fields; fabric lines never carry one.
+_CK_DELIVERY_ITEM_ACCESSORY_QTY = "(accessory_item_id IS NULL) = (expected_qty IS NULL)"
+_CK_DELIVERY_ITEM_QTY_POSITIVE = "expected_qty IS NULL OR expected_qty > 0"
+_CK_DELIVERY_ITEM_ACCESSORY_NO_FABRIC = (
+    "accessory_item_id IS NULL OR "
+    "(client_id IS NULL AND expected_weight_kg IS NULL AND expected_length_m IS NULL)"
 )
 
 # Undyed lines (material_id set) must also carry the owning client.
@@ -1016,15 +1026,23 @@ class ExpectedDelivery(Base):
 class ExpectedDeliveryItem(Base):
     """One expected line on a delivery.
 
-    Exactly one of client_fabric_code_id (dyed fabric) or material_id (undyed
-    fabric) must be set — enforced by the DB check constraint. Undyed lines
-    must also set client_id (a fabric code already carries its client).
+    Exactly one of client_fabric_code_id (dyed fabric), material_id (undyed
+    fabric) or accessory_item_id (accessory, item 15) must be set — enforced
+    by the DB check constraint. Undyed lines must also set client_id (a fabric
+    code already carries its client). Accessory lines carry expected_qty in
+    the item's base unit; what was received is not stored: it is the sum of
+    the `receipt` ledger rows on the packs linked to the line
+    (crud.expected_deliveries.accessory_received).
     """
 
     __tablename__ = "expected_delivery_items"
     __table_args__ = (
         CheckConstraint(_CK_DELIVERY_ITEM_ONE_TYPE, name="ck_expected_delivery_items_one_type"),
         CheckConstraint(_CK_DELIVERY_ITEM_UNDYED_CLIENT, name="ck_expected_delivery_items_undyed_client"),
+        CheckConstraint(_CK_DELIVERY_ITEM_ACCESSORY_QTY, name="ck_expected_delivery_items_accessory_qty"),
+        CheckConstraint(_CK_DELIVERY_ITEM_QTY_POSITIVE, name="ck_expected_delivery_items_expected_qty_positive"),
+        CheckConstraint(_CK_DELIVERY_ITEM_ACCESSORY_NO_FABRIC, name="ck_expected_delivery_items_accessory_no_fabric"),
+        Index("ix_expected_delivery_items_accessory_item", "accessory_item_id"),
         {'schema': 'wms'},
     )
 
@@ -1039,12 +1057,48 @@ class ExpectedDeliveryItem(Base):
     expected_length_m = Column(NUMERIC(10, 2), nullable=True)
     received_weight_kg = Column(NUMERIC(10, 2), nullable=False, default=0)
     received_length_m = Column(NUMERIC(10, 2), nullable=False, default=0)
+    # Accessory line (item 15): the item and how much of it, in its base unit
+    accessory_item_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", onupdate="CASCADE", ondelete=_ON_DELETE_RESTRICT),
+        nullable=True,
+    )
+    expected_qty = Column(NUMERIC(14, 4), nullable=True)
     notes = Column(Text, nullable=True)
 
     delivery = relationship("ExpectedDelivery", back_populates="items")
+    accessory_item = relationship("AccessoryItem", foreign_keys=[accessory_item_id])
     client_fabric_code = relationship("ClientFabricCode", foreign_keys=[client_fabric_code_id])
     client = relationship("Client", foreign_keys=[client_id])
     material = relationship("Material", foreign_keys=[material_id])
+
+    # Received on an accessory line: set by crud.expected_deliveries when the
+    # line is loaded (never stored). None on fabric lines.
+    received_qty = None
+
+    # Item 15 display fields for accessory lines (None on fabric lines)
+    @property
+    def item_code(self):
+        return self.accessory_item.code if self.accessory_item is not None else None
+
+    @property
+    def item_description(self):
+        return self.accessory_item.description if self.accessory_item is not None else None
+
+    @property
+    def item_color(self):
+        return self.accessory_item.color if self.accessory_item is not None else None
+
+    @property
+    def item_size(self):
+        return self.accessory_item.size if self.accessory_item is not None else None
+
+    @property
+    def value_lines(self):
+        return self.accessory_item.value_lines if self.accessory_item is not None else []
+
+    @property
+    def uom_code(self):
+        return self.accessory_item.base_uom.code if self.accessory_item is not None else None
 
     def __repr__(self):
         return f"<ExpectedDeliveryItem {self.id} delivery={self.delivery_id}>"

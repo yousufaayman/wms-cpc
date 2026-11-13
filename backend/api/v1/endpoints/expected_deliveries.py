@@ -6,7 +6,7 @@ from backend import models
 from backend.core.authz import ensure_admin, PERM_OPERATIONS, PERM_MANAGE_EXPECTED_DELIVERIES
 from backend.core.deps import get_db, get_current_user, require_permission
 from backend.crud import expected_deliveries as crud
-from backend.core.warehouse_modules import FABRIC, ensure_module, ensure_same_warehouse_type
+from backend.core.warehouse_modules import ACCESSORY, FABRIC, ensure_module, ensure_same_warehouse_type
 from backend.schemas import (
     ExpectedDelivery,
     ExpectedDeliveryCreate,
@@ -118,13 +118,22 @@ def add_delivery_item(
     delivery = crud.get_expected_delivery(db, delivery_id=delivery_id)
     if not delivery:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_NOT_FOUND)
-    # Today's lines are all fabric (dyed code or undyed material); accessory
-    # lines arrive in item 15. Deliveries with no warehouse are legacy fabric.
+    # Fabric lines (dyed code or undyed material) go on Fabric deliveries;
+    # deliveries with no warehouse are legacy fabric. Accessory lines (item 15)
+    # only on Accessory deliveries.
+    wh_type = None
     if delivery.warehouse_id is not None:
         wh = ensure_module(db, delivery.warehouse_id, "expected_deliveries")
-        if getattr(wh.type, "value", wh.type) != FABRIC:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fabric lines can only be added to Fabric warehouse deliveries")
-    return crud.add_delivery_item(db, delivery_id=delivery_id, item=item)
+        wh_type = getattr(wh.type, "value", wh.type)
+    if item.accessory_item_id is not None:
+        if wh_type != ACCESSORY:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Accessory lines can only be added to Accessory warehouse deliveries")
+    elif wh_type not in (None, FABRIC):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fabric lines can only be added to Fabric warehouse deliveries")
+    try:
+        return crud.add_delivery_item(db, delivery_id=delivery_id, item=item)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.put("/items/{item_id}", response_model=ExpectedDeliveryItem)
@@ -134,7 +143,10 @@ def update_delivery_item(
     db: Session = Depends(get_db),
     current_user: models.User = _REQUIRE_MANAGE,
 ):
-    result = crud.update_delivery_item(db, item_id=item_id, item=item)
+    try:
+        result = crud.update_delivery_item(db, item_id=item_id, item=item)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     if not result:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ITEM_NOT_FOUND)
     return result
@@ -142,5 +154,9 @@ def update_delivery_item(
 
 @router.delete("/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_delivery_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_MANAGE):
-    if not crud.delete_delivery_item(db, item_id=item_id):
+    try:
+        deleted = crud.delete_delivery_item(db, item_id=item_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=_ITEM_NOT_FOUND)

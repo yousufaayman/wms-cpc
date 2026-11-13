@@ -1,4 +1,5 @@
 import { api } from './client';
+import type { AccessoryValueLine } from './accessory-items';
 
 export type ExpectedDeliveryStatus = 'pending' | 'partial' | 'received' | 'cancelled';
 
@@ -32,15 +33,31 @@ export interface ExpectedDeliveryItem {
   received_weight_kg: number;
   received_length_m: number;
   notes?: string | null;
+  // Accessory path (item 15). Quantities are decimals as text, in the item's
+  // base unit (uom_code). received_qty is worked out from the packs received
+  // against the line; null on fabric lines.
+  accessory_item_id?: number | null;
+  expected_qty?: string | null;
+  received_qty?: string | null;
+  item_code?: string | null;
+  item_description?: string | null;
+  item_color?: string | null;
+  item_size?: string | null;
+  value_lines?: AccessoryValueLine[];
+  uom_code?: string | null;
 }
 
 export interface ExpectedDeliveryItemCreate {
   // Dyed: client_fabric_code_id only. Undyed: client_id + material_id.
+  // Accessory: accessory_item_id + expected_qty (in uom_id, default base unit).
   client_fabric_code_id?: number | null;
   client_id?: number | null;
   material_id?: number | null;
   expected_weight_kg?: number | null;
   expected_length_m?: number | null;
+  accessory_item_id?: number | null;
+  expected_qty?: string | null;
+  uom_id?: number | null;
   notes?: string | null;
 }
 
@@ -52,6 +69,9 @@ export interface ExpectedDeliveryItemUpdate {
   expected_length_m?: number | null;
   received_weight_kg?: number;
   received_length_m?: number;
+  accessory_item_id?: number;
+  expected_qty?: string;
+  uom_id?: number | null;
   notes?: string | null;
 }
 
@@ -97,6 +117,11 @@ export interface ExpectedDeliveryFilters {
   /** Only deliveries still open (pending or partial). */
   open_only?: boolean;
 }
+
+/** The server refuses to delete an accessory line (or change its item) once
+    packs were received on it; pages show `accLineHasPacks` for it. */
+export const isLineHasPacksError = (e: unknown) =>
+  e instanceof Error && e.message.startsWith("Packs were already received");
 
 export const expectedDeliveryApi = {
   getAll: (filters?: ExpectedDeliveryFilters) => {

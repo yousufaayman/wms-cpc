@@ -5,7 +5,11 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.sql import func
 from typing import Iterable, List, Optional
 
+from backend.crud.accessory_items import ensure_stockable, get_item_or_404
+from backend.domains.accessories import uom
 from backend.models import (
+    AccessoryLedgerEntry,
+    AccessoryPack,
     Client,
     DyedFabricRoll,
     ExpectedDelivery,
@@ -97,6 +101,7 @@ def _load_delivery(db: Session, delivery_id: int) -> Optional[ExpectedDelivery]:
                 joinedload(ExpectedDeliveryItem.material),
                 joinedload(ExpectedDeliveryItem.client),
                 joinedload(ExpectedDeliveryItem.client_fabric_code),
+                joinedload(ExpectedDeliveryItem.accessory_item),
             )
         )
         .filter(ExpectedDelivery.id == delivery_id)
@@ -104,6 +109,7 @@ def _load_delivery(db: Session, delivery_id: int) -> Optional[ExpectedDelivery]:
     )
     if delivery:
         _attach_supplier_names(db, [delivery])
+        attach_accessory_received(db, delivery.items)
     return delivery
 
 
@@ -128,6 +134,7 @@ def get_expected_deliveries(
         q = q.filter(ExpectedDelivery.status.in_(_OPEN_STATUSES))
     deliveries = q.order_by(ExpectedDelivery.id.desc()).offset(skip).limit(limit).all()
     _attach_supplier_names(db, deliveries)
+    attach_accessory_received(db, [i for d in deliveries for i in d.items])
     return deliveries
 
 
@@ -190,16 +197,43 @@ def delete_expected_delivery(db: Session, delivery_id: int) -> bool:
 # ── Item sub-resource CRUD ───────────────────────────────────────────────────
 
 def _load_item(db: Session, item_id: int) -> Optional[ExpectedDeliveryItem]:
-    return (
+    line = (
         db.query(ExpectedDeliveryItem)
         .options(
             joinedload(ExpectedDeliveryItem.material),
             joinedload(ExpectedDeliveryItem.client),
             joinedload(ExpectedDeliveryItem.client_fabric_code),
+            joinedload(ExpectedDeliveryItem.accessory_item),
         )
         .filter(ExpectedDeliveryItem.id == item_id)
         .first()
     )
+    if line is not None:
+        attach_accessory_received(db, [line])
+    return line
+
+
+ACCESSORY_LINE_HAS_PACKS = "Packs were already received on this line, so it can't be deleted or change item"
+
+
+def _accessory_qty_in_base(db: Session, accessory_item_id: int, qty, uom_id: Optional[int]) -> Decimal:
+    """Check the item can be stocked and turn `qty` (typed in `uom_id`, default
+    the base unit) into the item's base unit. ValueError on a bad unit."""
+    acc_item = get_item_or_404(db, accessory_item_id)
+    ensure_stockable(acc_item)
+    if uom_id is None or uom_id == acc_item.base_uom_id:
+        return Decimal(str(qty)).quantize(uom.QTY_PLACES)
+    try:
+        base_qty = uom.to_base(db, qty, uom_id, acc_item.base_uom_id, acc_item.id)
+    except uom.NoConversion:
+        raise ValueError(f"{acc_item.code}: no conversion from that unit to its base unit {acc_item.base_uom.code}")
+    if base_qty <= 0:
+        raise ValueError("The quantity is too small for the base unit")
+    return base_qty
+
+
+def _line_has_packs(db: Session, line_id: int) -> bool:
+    return db.query(AccessoryPack.id).filter(AccessoryPack.expected_delivery_item_id == line_id).first() is not None
 
 
 def add_delivery_item(
@@ -207,8 +241,11 @@ def add_delivery_item(
     delivery_id: int,
     item: ExpectedDeliveryItemCreate,
 ) -> ExpectedDeliveryItem:
+    data = item.model_dump(exclude={"uom_id"})
+    if item.accessory_item_id is not None:
+        data["expected_qty"] = _accessory_qty_in_base(db, item.accessory_item_id, item.expected_qty, item.uom_id)
     db_item = ExpectedDeliveryItem(
-        **item.model_dump(),
+        **data,
         delivery_id=delivery_id,
         received_weight_kg=0,
         received_length_m=0,
@@ -227,18 +264,54 @@ def update_delivery_item(
     db_item = db.query(ExpectedDeliveryItem).filter(ExpectedDeliveryItem.id == item_id).first()
     if not db_item:
         return None
-    for field, value in item.model_dump(exclude_unset=True).items():
+    updates = item.model_dump(exclude_unset=True)
+    uom_id = updates.pop("uom_id", None)
+    if db_item.accessory_item_id is not None:
+        updates = _accessory_line_updates(db, db_item, updates, uom_id)
+    elif any(updates.get(f) is not None for f in ("accessory_item_id", "expected_qty")) or uom_id is not None:
+        raise ValueError("A fabric line can't take accessory fields")
+    for field, value in updates.items():
         setattr(db_item, field, value)
+    db.flush()
     # Changing expected quantities can complete (or reopen) the delivery.
     _recompute_delivery_status(db, db_item.delivery_id)
     db.commit()
     return _load_item(db, item_id)
 
 
+_FABRIC_FIELDS = ("client_fabric_code_id", "client_id", "material_id", "expected_weight_kg", "expected_length_m")
+
+
+def _accessory_line_updates(db: Session, line: ExpectedDeliveryItem, updates: dict, uom_id: Optional[int]) -> dict:
+    """Check an edit of an accessory line: it stays an accessory line, its item
+    can't change once packs were received on it, and a new quantity is saved
+    in the item's base unit."""
+    if any(updates.get(f) is not None for f in _FABRIC_FIELDS):
+        raise ValueError("An accessory line can't take fabric fields")
+    new_item_id = updates.get("accessory_item_id") or line.accessory_item_id
+    item_changes = new_item_id != line.accessory_item_id
+    if item_changes and _line_has_packs(db, line.id):
+        raise ValueError(ACCESSORY_LINE_HAS_PACKS)
+    updates.pop("accessory_item_id", None)
+    if updates.get("expected_qty") is None:
+        updates.pop("expected_qty", None)  # an accessory line always keeps a quantity
+    if item_changes or "expected_qty" in updates:
+        if "expected_qty" in updates:
+            qty, unit = updates["expected_qty"], uom_id
+        else:
+            qty, unit = line.expected_qty, None  # the stored quantity is already in base units
+        updates["accessory_item_id"] = new_item_id
+        updates["expected_qty"] = _accessory_qty_in_base(db, new_item_id, qty, unit)
+    return updates
+
+
 def delete_delivery_item(db: Session, item_id: int) -> bool:
     db_item = db.query(ExpectedDeliveryItem).filter(ExpectedDeliveryItem.id == item_id).first()
     if not db_item:
         return False
+    # Fabric unlinks its rolls (FK SET NULL); accessory packs keep their line.
+    if db_item.accessory_item_id is not None and _line_has_packs(db, db_item.id):
+        raise ValueError(ACCESSORY_LINE_HAS_PACKS)
     db.delete(db_item)
     db.commit()
     return True
@@ -373,11 +446,60 @@ def sync_delivery_received(db: Session, delivery_id: int) -> None:
         db.commit()
 
 
+# ── Accessory lines (item 15): received from the pack ledger ───────────────
+# Nothing is stored: received on a line = the `receipt` ledger rows of the
+# packs linked to it (accessory_packs.expected_delivery_item_id). A reversed
+# receipt is a negative `receipt` row, so it nets out; issuing or moving
+# stock from those packs later doesn't change what was received.
+
+def accessory_received(db: Session, line_ids: List[int]) -> dict:
+    """{line id: received in base units} for accessory lines (missing = 0)."""
+    if not line_ids:
+        return {}
+    rows = (
+        db.query(AccessoryPack.expected_delivery_item_id, func.sum(AccessoryLedgerEntry.qty_delta))
+        .join(AccessoryLedgerEntry, AccessoryLedgerEntry.pack_id == AccessoryPack.id)
+        .filter(
+            AccessoryPack.expected_delivery_item_id.in_(line_ids),
+            AccessoryLedgerEntry.entry_type == "receipt",
+        )
+        .group_by(AccessoryPack.expected_delivery_item_id)
+        .all()
+    )
+    return {line_id: Decimal(total) for line_id, total in rows}
+
+
+def attach_accessory_received(db: Session, lines: Iterable[ExpectedDeliveryItem]) -> None:
+    """Set the transient `received_qty` on each accessory line (one query)."""
+    acc = [i for i in lines if i is not None and i.accessory_item_id is not None]
+    sums = accessory_received(db, [i.id for i in acc])
+    for line in acc:
+        line.received_qty = sums.get(line.id, Decimal("0"))
+
+
+def sync_delivery_item_from_packs(db: Session, item_id: int) -> None:
+    """Re-derive the parent delivery's status after packs were received
+    against (or a receipt reversed on) an accessory line. Same contract as
+    sync_delivery_item_from_rolls: the caller flushes first and commits;
+    closed deliveries stay frozen. For item 17 (Receive Packs)."""
+    delivery_id = db.query(ExpectedDeliveryItem.delivery_id).filter(ExpectedDeliveryItem.id == item_id).scalar()
+    if delivery_id is not None:
+        _recompute_delivery_status(db, delivery_id)
+
+
 def _item_fully_received(item: ExpectedDeliveryItem) -> bool:
+    if item.accessory_item_id is not None:
+        return (item.received_qty or Decimal("0")) >= item.expected_qty
     return (
         item.expected_weight_kg is not None
         and (item.received_weight_kg or Decimal("0")) >= item.expected_weight_kg
     )
+
+
+def _item_has_received(item: ExpectedDeliveryItem) -> bool:
+    if item.accessory_item_id is not None:
+        return (item.received_qty or Decimal("0")) > 0
+    return (item.received_weight_kg or 0) > 0 or (item.received_length_m or 0) > 0
 
 
 def _recompute_delivery_status(db: Session, delivery_id: int) -> bool:
@@ -392,9 +514,10 @@ def _recompute_delivery_status(db: Session, delivery_id: int) -> bool:
     if not delivery or delivery.status not in _OPEN_STATUSES:
         return False
     items = delivery.items
+    attach_accessory_received(db, items)
     if items and all(_item_fully_received(i) for i in items):
         new_status = "received"
-    elif any((i.received_weight_kg or 0) > 0 or (i.received_length_m or 0) > 0 for i in items):
+    elif any(_item_has_received(i) for i in items):
         new_status = "partial"
     else:
         new_status = "pending"
