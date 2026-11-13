@@ -12,12 +12,16 @@
  *   view, grouped on the server. A client or rack holding items in different
  *   units shows one total per unit ("1,200 PCS · 35 M"); they're never added.
  *   Clicking a row opens the Packs tab filtered to it.
+ * - By item folds variants under their template, like the Items page: the
+ *   template row holds all its variants' stock and a "▸ N variants" button
+ *   opens them underneath. Clicking the template row shows all its packs.
+ *   With a template chosen in the filters, its variants are listed flat.
  * - Packs: one row per pack (label `<id>*ACC`), its rack or "Waiting for
  *   put-away", and how much it holds. Clicking a pack shows its quantity
  *   history (every ledger row with the balance after it) and its rack moves.
  * Anyone with a WMS role can look (Tab 1: "everyone, including Viewer").
  */
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -26,7 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { X } from "lucide-react";
+import { ChevronDown, ChevronRight, X } from "lucide-react";
 import { Combobox, type ComboItem } from "@/components/Combobox";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
@@ -95,6 +99,7 @@ export default function AccessoryInventory() {
   const [templates, setTemplates] = useState<AccessoryItem[]>([]);
   const [racks, setRacks] = useState<WarehouseRack[]>([]);
   const [openPack, setOpenPack] = useState<AccessoryPack | null>(null);
+  const [openTemplates, setOpenTemplates] = useState<Record<number, StockRow[]>>({}); // template id → its variant rows
 
   // The item filters as the server's fields; searched a moment after typing stops.
   const itemQueryText = useMemo(() => {
@@ -168,8 +173,9 @@ export default function AccessoryInventory() {
           ...filters, ...paging, accessory_item_id: itemFilter?.id, status: showEmpty ? undefined : "active",
         } satisfies PackQuery)
       : accessoryPackApi.stock({
-          ...filters, ...paging, group_by: tab, include_empty: showEmpty,
+          ...filters, ...paging, group_by: tab, include_empty: showEmpty, group_variants: tab === "item",
         });
+    setOpenTemplates({});
     request
       .then((res) => {
         if (cancelled) return;
@@ -192,7 +198,9 @@ export default function AccessoryInventory() {
 
   /** A roll-up row was clicked: show its packs. */
   const drill = (row: StockRow) => {
-    if (tab === "item" && row.key !== null) setItemFilter({ id: row.key, code: row.code ?? "" });
+    // A template row: every pack of its variants (the template filter).
+    if (tab === "item" && row.key !== null && row.variant_count > 0) updateItems({ template: String(row.key), lines: {} });
+    else if (tab === "item" && row.key !== null) setItemFilter({ id: row.key, code: row.code ?? "" });
     if (tab === "client") updateItems({ client: row.key === null ? GENERIC : String(row.key) });
     if (tab === "rack") setRackFilter(row.key === null ? UNRACKED : String(row.key));
     setTab("packs");
@@ -200,6 +208,46 @@ export default function AccessoryInventory() {
 
   const variantText = (color: string | null, size: string | null, lines: StockRow["value_lines"]) =>
     [color, size, valueSummary(lines, language)].filter(Boolean).join(" · ");
+
+  /** Open / close the variants under a template row (same filters, that template). */
+  const toggleTemplate = (row: StockRow) => {
+    const id = row.key;
+    if (id === null) return;
+    if (openTemplates[id]) {
+      setOpenTemplates(({ [id]: _closed, ...rest }) => rest);
+      return;
+    }
+    accessoryPackApi.stock({ ...filters, group_by: "item", template_id: id, include_empty: showEmpty, limit: 500 })
+      .then((res) => setOpenTemplates((prev) => ({ ...prev, [id]: res.items })))
+      .catch(() => undefined);
+  };
+
+  /** One By item row; `nested` = a variant shown under its open template. */
+  const itemCells = (row: StockRow, nested: boolean) => {
+    const open = row.key !== null && openTemplates[row.key] !== undefined;
+    return <>
+      <TableCell className={`font-mono ${nested ? "ps-8" : ""}`}>{row.code}</TableCell>
+      <TableCell>
+        <div className="flex flex-wrap items-center gap-2">
+          <span>{row.name}</span>
+          {row.variant_count > 0 && <>
+            <Badge variant="secondary">{t("accTemplate")}</Badge>
+            <Button
+              variant="ghost" size="sm" className="h-6 px-1 text-xs"
+              onClick={(e) => { e.stopPropagation(); toggleTemplate(row); }}
+            >
+              {open ? <ChevronDown className="me-1 h-3 w-3" /> : <ChevronRight className="me-1 h-3 w-3 rtl:rotate-180" />}
+              {t("accVariantCount", { n: row.variant_count })}
+            </Button>
+          </>}
+        </div>
+        {variantText(row.color, row.size, row.value_lines) && (
+          <div className="text-xs text-muted-foreground">{variantText(row.color, row.size, row.value_lines)}</div>
+        )}
+      </TableCell>
+      <TableCell>{row.client_name ?? t("accInvGeneric")}</TableCell>
+    </>;
+  };
 
   const rollupTable = (by: StockGroupBy) => (
     <Table>
@@ -219,17 +267,9 @@ export default function AccessoryInventory() {
       </TableHeader>
       <TableBody>
         {rows.map((row) => (
-          <TableRow key={row.key ?? "none"} className="cursor-pointer hover:bg-muted/50" onClick={() => drill(row)}>
-            {by === "item" && <>
-              <TableCell className="font-mono">{row.code}</TableCell>
-              <TableCell>
-                <div>{row.name}</div>
-                {variantText(row.color, row.size, row.value_lines) && (
-                  <div className="text-xs text-muted-foreground">{variantText(row.color, row.size, row.value_lines)}</div>
-                )}
-              </TableCell>
-              <TableCell>{row.client_name ?? t("accInvGeneric")}</TableCell>
-            </>}
+          <Fragment key={row.key ?? "none"}>
+          <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => drill(row)}>
+            {by === "item" && itemCells(row, false)}
             {by === "client" && (
               <TableCell>{row.key === null ? <Badge variant="secondary">{t("accInvGeneric")}</Badge> : row.name}</TableCell>
             )}
@@ -244,6 +284,17 @@ export default function AccessoryInventory() {
             <TableCell className="text-right">{row.pack_count}</TableCell>
             <TableCell className="text-right font-medium" dir="ltr">{fmtTotals(row.totals)}</TableCell>
           </TableRow>
+          {by === "item" && row.key !== null && openTemplates[row.key]?.map((v) => (
+            <TableRow
+              key={`v-${v.key}`} className="cursor-pointer bg-muted/20 hover:bg-muted/50"
+              onClick={() => { if (v.key !== null) { setItemFilter({ id: v.key, code: v.code ?? "" }); setTab("packs"); } }}
+            >
+              {itemCells(v, true)}
+              <TableCell className="text-right">{v.pack_count}</TableCell>
+              <TableCell className="text-right font-medium" dir="ltr">{fmtTotals(v.totals)}</TableCell>
+            </TableRow>
+          ))}
+          </Fragment>
         ))}
       </TableBody>
     </Table>

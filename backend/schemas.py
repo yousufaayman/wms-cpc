@@ -641,6 +641,9 @@ class AccessoryStockSearch(StockItemFilters):
     rack, with the same filters as the pack list. Empty packs are left out
     unless include_empty. Read from the query string."""
     group_by: Literal["item", "client", "rack"] = "item"
+    # By item only: one row per template holding all its variants' stock
+    # (like the Items page). Off when a template is chosen (its variants list)
+    group_variants: bool = False
     warehouse_id: Optional[int] = None
     rack_id: Optional[int] = None
     unracked: bool = False
@@ -671,6 +674,9 @@ class AccessoryStockRow(BaseModel):
     item_count: int
     pack_count: int
     totals: List[AccessoryStockTotal]
+    # By item + group_variants: > 0 = a template row, summing this many
+    # variants in stock (open them with template_id=key)
+    variant_count: int = 0
 
 
 class AccessoryStockPage(BaseModel):

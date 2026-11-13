@@ -250,6 +250,37 @@ def test_by_item(client, shelves, setup):
     assert g_row["pack_count"] == 3 and _totals(g_row) == {"QPC": Decimal("150")}
 
 
+def test_by_item_folds_variants_under_their_template(client, shelves, setup, stock, db):
+    """group_variants: one row per template summing its variants (paged and
+    counted as one row); template_id lists the variants themselves."""
+    from backend.tests.test_accessory_variants import _template, _variant
+
+    f = shelves
+    tpl = _template(client, f["h"], setup)
+    navy = _variant(client, f["h"], tpl["id"], {"price": "1.50"}, color="Navy").json()
+    red = _variant(client, f["h"], tpl["id"], {"price": "1.50"}, color="Red").json()
+    _variant(client, f["h"], tpl["id"], {"price": "1.50"}, color="Olive")  # no stock: not counted
+    ledger.receive(db, stock["user"].id, f["wh"], [NewPack(navy["id"], 40), NewPack(navy["id"], 5), NewPack(red["id"], 20)])
+    db.commit()
+
+    folded = _get(client, f["h"], STOCK, warehouse_id=f["wh"], group_by="item", group_variants=True)
+    rows = {r["key"]: r for r in folded["items"]}
+    assert folded["total"] == 4 and set(rows) == {f["g"], f["c"], f["t"], tpl["id"]}
+    t_row = rows[tpl["id"]]
+    assert t_row["code"] == tpl["code"] and t_row["variant_count"] == 2 and t_row["item_count"] == 2
+    assert t_row["pack_count"] == 3 and _totals(t_row) == {"QPC": Decimal("65")}
+    assert rows[f["g"]]["variant_count"] == 0
+
+    # flat (default) and a chosen template both list the variants
+    flat = _get(client, f["h"], STOCK, warehouse_id=f["wh"], group_by="item")
+    assert {navy["id"], red["id"]} <= {r["key"] for r in flat["items"]}
+    opened = _get(client, f["h"], STOCK, warehouse_id=f["wh"], group_by="item", group_variants=True, template_id=tpl["id"])
+    assert {r["key"]: _totals(r)["QPC"] for r in opened["items"]} == {navy["id"]: 45, red["id"]: 20}
+    # a search that matches one variant folds to its template with only that variant
+    red_only = _get(client, f["h"], STOCK, warehouse_id=f["wh"], group_by="item", group_variants=True, color="red")
+    assert [(r["key"], r["variant_count"]) for r in red_only["items"]] == [(tpl["id"], 1)]
+
+
 def test_by_client_keeps_units_apart(client, shelves):
     f = shelves
     rows = _get(client, f["h"], STOCK, warehouse_id=f["wh"], group_by="client")["items"]

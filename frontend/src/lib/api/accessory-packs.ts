@@ -102,6 +102,8 @@ export interface PackQuery extends StockFilters {
 export interface StockQuery extends StockFilters {
   group_by: StockGroupBy;
   include_empty?: boolean;
+  /** By item: one row per template holding its variants' stock. */
+  group_variants?: boolean;
 }
 
 export interface StockTotal {
@@ -121,6 +123,8 @@ export interface StockRow {
   item_count: number;
   pack_count: number;
   totals: StockTotal[];
+  /** group_variants: > 0 = a template row summing this many variants in stock. */
+  variant_count: number;
 }
 
 export interface StockPage {
