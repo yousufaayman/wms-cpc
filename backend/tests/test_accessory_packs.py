@@ -82,7 +82,7 @@ def test_new_pack_is_active_unracked_and_labelled(client, auth_headers, setup, p
     p = _pack(db, user, item["id"], place["acc"])
     assert p.status == "active" and p.rack_id is None and p.created_by == user.id
     body = client.get(f"{PACKS}{p.id}", headers=h).json()
-    assert body["barcode"] == f"{p.id}*ACC"
+    assert "barcode" not in body  # *ACC is only the scan terminator
     assert body["item_code"] == item["code"] and body["rack_code"] is None
     assert client.get(f"{PACKS}{p.id}/moves", headers=h).json() == []  # creating writes no move
 

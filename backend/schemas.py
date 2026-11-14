@@ -496,7 +496,6 @@ class AccessoryItemPage(BaseModel):
 # with their ledger row, so there is no create schema for the API.
 class AccessoryPack(BaseModel):
     id: int
-    barcode: str  # "<id>*ACC", what the label carries
     accessory_item_id: int
     item_code: str
     item_description: str
@@ -641,6 +640,9 @@ class AccessoryStockSearch(StockItemFilters):
     rack, with the same filters as the pack list. Empty packs are left out
     unless include_empty. Read from the query string."""
     group_by: Literal["item", "client", "rack"] = "item"
+    # By item only: one row per template holding all its variants' stock
+    # (like the Items page). Off when a template is chosen (its variants list)
+    group_variants: bool = False
     warehouse_id: Optional[int] = None
     rack_id: Optional[int] = None
     unracked: bool = False
@@ -671,6 +673,9 @@ class AccessoryStockRow(BaseModel):
     item_count: int
     pack_count: int
     totals: List[AccessoryStockTotal]
+    # By item + group_variants: > 0 = a template row, summing this many
+    # variants in stock (open them with template_id=key)
+    variant_count: int = 0
 
 
 class AccessoryStockPage(BaseModel):
@@ -1574,6 +1579,8 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     # Accessory lines (item 15): received = sum of the `receipt` ledger rows
     # on the packs linked to the line (reversals net out), base unit
     received_qty: Optional[Decimal] = None
+    # Item 18: waiting | partial | complete | over (over-receipts are allowed, flagged)
+    receive_state: Optional[Literal["waiting", "partial", "complete", "over"]] = None
     item_code: Optional[str] = None
     item_description: Optional[str] = None
     item_color: Optional[str] = None
@@ -1636,9 +1643,28 @@ class ExpectedDeliveryInDB(ExpectedDeliveryBase):
     closed_at: Optional[datetime] = None
     closed_by: Optional[int] = None
     items: List[ExpectedDeliveryItem] = []
+    # Item 18, accessory deliveries only (None on fabric): lines complete
+    # (or over) out of all lines; any line over expected; closed as
+    # received while a line is still short
+    lines_total: Optional[int] = None
+    lines_complete: Optional[int] = None
+    over_received: Optional[bool] = None
+    closed_short: Optional[bool] = None
 
     class Config:
         from_attributes = True
+
+
+class DeliveryLinePack(BaseModel):
+    """Item 18: one pack received on a delivery line. received_qty = its
+    receipt rows (0 after an undo); quantity = on hand now. Base unit."""
+    id: int
+    status: Literal["active", "empty"]
+    received_qty: Decimal
+    quantity: Decimal
+    rack_code: Optional[str] = None
+    created_at: datetime
+    received_by: Optional[str] = None
 
 
 class ExpectedDelivery(ExpectedDeliveryInDB):

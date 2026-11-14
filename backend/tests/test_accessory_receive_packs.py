@@ -249,6 +249,42 @@ def test_undo_refused_once_packs_are_used_or_not_a_receive(client, auth_headers,
     assert r.status_code == 201, r.text
 
 
+def test_undo_one_pack_of_an_add(client, auth_headers, db, s, make_user):
+    """The page's Undo works per pack: only that pack goes back to 0 and off
+    the delivery; the rest of the Add stays received."""
+    from backend.domains.posting import accessory as ledger
+
+    worker = make_user("W_Worker")
+    h = auth_headers(user=worker)
+    d = _delivery(db, s["wh"], s["supplier"])
+    _line(db, d, s["item"], 100)
+    out = _ok(client, h, _body(s, pack_count=3))
+    first, second, third = (p["id"] for p in out["packs"])
+    undo = lambda pid, hh=h: client.post(f"{RECEIVE}/pack/{pid}/undo", headers=hh)  # noqa: E731
+
+    assert undo(first, auth_headers(role="W_Worker")).status_code == 403
+    r = undo(first)
+    assert r.status_code == 201, r.text
+    assert _received(client, h, d.id) == ("partial", [Decimal(20)])
+    pack = client.get(f"/api/v1/accessory-packs/{first}", headers=h).json()
+    assert Decimal(pack["quantity"]) == 0 and pack["status"] == "empty"
+    assert Decimal(client.get(f"/api/v1/accessory-packs/{second}", headers=h).json()["quantity"]) == 10
+    assert undo(first).status_code == 409
+
+    # the whole-Add undo now refuses (part of it is already undone)
+    assert client.post(f"{RECEIVE}/{out['posting_id']}/undo", headers=h).status_code == 409
+
+    # a used pack can't be undone; an admin may undo someone else's
+    ledger.issue(db, worker.id, second, 3, s["jo"])
+    db.commit()
+    r = undo(second)
+    assert r.status_code == 400 and "used since" in r.json()["detail"]
+    assert undo(third, auth_headers(role="admin")).status_code == 201
+    assert _received(client, h, d.id) == ("partial", [Decimal(10)])
+    assert undo(10**9).status_code == 404
+    check_invariants(db)
+
+
 # ── 5. Access ───────────────────────────────────────────────────────────────
 
 def test_viewer_cannot_receive_and_flag_off_hides_it(client, auth_headers, s, monkeypatch):

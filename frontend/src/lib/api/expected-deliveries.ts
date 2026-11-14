@@ -39,6 +39,8 @@ export interface ExpectedDeliveryItem {
   accessory_item_id?: number | null;
   expected_qty?: string | null;
   received_qty?: string | null;
+  /** Item 18: where the line stands; over-receipts are allowed, only flagged. */
+  receive_state?: LineReceiveState | null;
   item_code?: string | null;
   item_description?: string | null;
   item_color?: string | null;
@@ -50,6 +52,22 @@ export interface ExpectedDeliveryItem {
   template_code?: string | null;
   template_description?: string | null;
 }
+
+export type LineReceiveState = "waiting" | "partial" | "complete" | "over";
+
+/** Item 18: one pack received on a delivery line. received_qty = what it
+    brought in (0 after an undo); quantity = on hand now. Base unit. */
+export interface DeliveryLinePack {
+  id: number;
+  status: "active" | "empty";
+  received_qty: string;
+  quantity: string;
+  rack_code?: string | null;
+  created_at: string;
+  received_by?: string | null;
+}
+
+export type DeliveryFlag = "over_received" | "closed_short";
 
 export interface ExpectedDeliveryItemCreate {
   // Dyed: client_fabric_code_id only. Undyed: client_id + material_id.
@@ -94,6 +112,12 @@ export interface ExpectedDelivery {
   closed_at?: string | null;
   closed_by?: number | null;
   items: ExpectedDeliveryItem[];
+  // Item 18, accessory deliveries only (null on fabric): lines complete (or
+  // over) of all lines; a line over expected; received while a line is short
+  lines_total?: number | null;
+  lines_complete?: number | null;
+  over_received?: boolean | null;
+  closed_short?: boolean | null;
 }
 
 export interface ExpectedDeliveryCreate {
@@ -120,6 +144,8 @@ export interface ExpectedDeliveryFilters {
   status?: ExpectedDeliveryStatus;
   /** Only deliveries still open (pending or partial). */
   open_only?: boolean;
+  /** Item 18 report filter (accessory deliveries). */
+  flag?: DeliveryFlag;
 }
 
 /** The server refuses to delete an accessory line (or change its item) once
@@ -135,6 +161,7 @@ export const expectedDeliveryApi = {
     if (filters?.warehouse_id !== undefined) params.append('warehouse_id', String(filters.warehouse_id));
     if (filters?.status) params.append('status', filters.status);
     if (filters?.open_only) params.append('open_only', 'true');
+    if (filters?.flag) params.append('flag', filters.flag);
     const qs = params.toString();
     return api.request<ExpectedDelivery[]>(qs ? `/expected-deliveries?${qs}` : '/expected-deliveries');
   },
@@ -160,4 +187,8 @@ export const expectedDeliveryApi = {
 
   deleteItem: (itemId: number) =>
     api.request<void>(`/expected-deliveries/items/${itemId}`, 'DELETE'),
+
+  /** Item 18: the packs received on one accessory line, newest first. */
+  linePacks: (itemId: number) =>
+    api.request<DeliveryLinePack[]>(`/expected-deliveries/items/${itemId}/packs`),
 };

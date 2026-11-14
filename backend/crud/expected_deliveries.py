@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from sqlalchemy import or_
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy.sql import func
 from typing import Iterable, List, Optional
@@ -16,6 +16,7 @@ from backend.models import (
     ExpectedDeliveryItem,
     LogicalLocation,
     UndyedFabricRoll,
+    User,
 )
 from backend.schemas import (
     ExpectedDeliveryCreate,
@@ -110,6 +111,7 @@ def _load_delivery(db: Session, delivery_id: int) -> Optional[ExpectedDelivery]:
     if delivery:
         _attach_supplier_names(db, [delivery])
         attach_accessory_received(db, delivery.items)
+        attach_delivery_flags([delivery])
     return delivery
 
 
@@ -124,6 +126,7 @@ def get_expected_deliveries(
     warehouse_id: Optional[int] = None,
     status: Optional[str] = None,
     open_only: bool = False,
+    flag: Optional[str] = None,
 ) -> List[ExpectedDelivery]:
     q = db.query(ExpectedDelivery)
     if warehouse_id is not None:
@@ -132,9 +135,19 @@ def get_expected_deliveries(
         q = q.filter(ExpectedDelivery.status == status)
     if open_only:
         q = q.filter(ExpectedDelivery.status.in_(_OPEN_STATUSES))
+    # Item 18 report filters (accessory lines): over-received anywhere, or
+    # received (closed) with a line still short.
+    if flag == "over_received":
+        q = q.filter(ExpectedDelivery.id.in_(_accessory_lines_where(lambda qty: qty > ExpectedDeliveryItem.expected_qty)))
+    elif flag == "closed_short":
+        q = q.filter(
+            ExpectedDelivery.status == "received",
+            ExpectedDelivery.id.in_(_accessory_lines_where(lambda qty: qty < ExpectedDeliveryItem.expected_qty)),
+        )
     deliveries = q.order_by(ExpectedDelivery.id.desc()).offset(skip).limit(limit).all()
     _attach_supplier_names(db, deliveries)
     attach_accessory_received(db, [i for d in deliveries for i in d.items])
+    attach_delivery_flags(deliveries)
     return deliveries
 
 
@@ -176,7 +189,11 @@ def update_expected_delivery(
             db_delivery.closed_at = func.current_timestamp()
             db_delivery.closed_by = actor_id
         else:
-            # Reopening — the delivery becomes live again for roll matching
+            # Reopening — the delivery becomes live again for roll matching.
+            # Item 18: from a closed state, the status follows what arrived
+            # (partial / pending) whatever was asked.
+            if db_delivery.status not in _OPEN_STATUSES:
+                updates["status"] = _reopened_status(db, db_delivery)
             db_delivery.closed_at = None
             db_delivery.closed_by = None
     for field, value in updates.items():
@@ -441,7 +458,8 @@ def sync_delivery_received(db: Session, delivery_id: int) -> None:
     if not delivery or delivery.status not in _OPEN_STATUSES:
         return
     changed = _sync_items_received(db, delivery.items)
-    status_changed = _recompute_delivery_status(db, delivery_id)
+    # Viewing never closes (item 18): only a receive or a line edit does.
+    status_changed = _recompute_delivery_status(db, delivery_id, allow_close=False)
     if changed or status_changed:
         db.commit()
 
@@ -469,22 +487,99 @@ def accessory_received(db: Session, line_ids: List[int]) -> dict:
     return {line_id: Decimal(total) for line_id, total in rows}
 
 
+def line_receive_state(expected: Decimal, received: Decimal) -> str:
+    """Item 18: where an accessory line stands. Over-receipts are allowed,
+    only flagged."""
+    if received <= 0:
+        return "waiting"
+    if received < expected:
+        return "partial"
+    return "complete" if received == expected else "over"
+
+
 def attach_accessory_received(db: Session, lines: Iterable[ExpectedDeliveryItem]) -> None:
-    """Set the transient `received_qty` on each accessory line (one query)."""
+    """Set the transient `received_qty` and `receive_state` on each accessory
+    line (one query)."""
     acc = [i for i in lines if i is not None and i.accessory_item_id is not None]
     sums = accessory_received(db, [i.id for i in acc])
     for line in acc:
         line.received_qty = sums.get(line.id, Decimal("0"))
+        line.receive_state = line_receive_state(line.expected_qty, line.received_qty)
+
+
+def attach_delivery_flags(deliveries: Iterable[ExpectedDelivery]) -> None:
+    """Item 18: the summary flags of a delivery with accessory lines, from
+    lines that already carry `receive_state`. Fabric deliveries keep None."""
+    for d in deliveries:
+        acc = [i for i in d.items if i.accessory_item_id is not None]
+        if not acc:
+            continue
+        states = [i.receive_state for i in acc]
+        d.lines_total = len(acc)
+        d.lines_complete = sum(s in ("complete", "over") for s in states)
+        d.over_received = "over" in states
+        # Received but something is still missing = someone closed it early.
+        d.closed_short = d.status == "received" and any(s in ("waiting", "partial") for s in states)
+
+
+def _accessory_lines_where(condition):
+    """Ids of deliveries with an accessory line matching `condition`, which
+    compares `received` (base units, the receipt rows) with the line."""
+    received = (
+        select(AccessoryPack.expected_delivery_item_id.label("line_id"), func.sum(AccessoryLedgerEntry.qty_delta).label("qty"))
+        .join(AccessoryLedgerEntry, AccessoryLedgerEntry.pack_id == AccessoryPack.id)
+        .where(AccessoryLedgerEntry.entry_type == "receipt")
+        .group_by(AccessoryPack.expected_delivery_item_id)
+        .subquery()
+    )
+    qty = func.coalesce(received.c.qty, 0)
+    return (
+        select(ExpectedDeliveryItem.delivery_id)
+        .outerjoin(received, received.c.line_id == ExpectedDeliveryItem.id)
+        .where(ExpectedDeliveryItem.accessory_item_id.is_not(None), condition(qty))
+    )
+
+
+def line_packs(db: Session, line_id: int) -> List[dict]:
+    """Item 18: the packs received on one delivery line: what each pack
+    brought in (its receipt rows, so an undone receive shows 0), what it
+    holds now, where it is, and who received it when. Newest first."""
+    received = func.coalesce(
+        func.sum(AccessoryLedgerEntry.qty_delta).filter(AccessoryLedgerEntry.entry_type == "receipt"), 0
+    )
+    on_hand = func.coalesce(func.sum(AccessoryLedgerEntry.qty_delta), 0)
+    rows = db.execute(
+        select(AccessoryPack, received, on_hand, User.username)
+        .outerjoin(AccessoryLedgerEntry, AccessoryLedgerEntry.pack_id == AccessoryPack.id)
+        .outerjoin(User, User.id == AccessoryPack.created_by)
+        .where(AccessoryPack.expected_delivery_item_id == line_id)
+        .group_by(AccessoryPack.id, User.username)
+        .order_by(AccessoryPack.id.desc())
+    ).all()
+    return [
+        {
+            "id": pack.id,
+            "status": pack.status,
+            "received_qty": Decimal(rec),
+            "quantity": Decimal(held),
+            "rack_code": pack.rack_code,
+            "created_at": pack.created_at,
+            "received_by": username,
+        }
+        for pack, rec, held, username in rows
+    ]
 
 
 def sync_delivery_item_from_packs(db: Session, item_id: int) -> None:
     """Re-derive the parent delivery's status after packs were received
     against (or a receipt reversed on) an accessory line. Same contract as
-    sync_delivery_item_from_rolls: the caller flushes first and commits;
-    closed deliveries stay frozen. For item 17 (Receive Packs)."""
+    sync_delivery_item_from_rolls: the caller flushes first and commits.
+    Item 18: a delivery that **closed itself** (received, no closed_by)
+    reopens when a reversal leaves it short; one a person closed, or a
+    cancelled one, stays frozen. For Receive Packs (item 17)."""
     delivery_id = db.query(ExpectedDeliveryItem.delivery_id).filter(ExpectedDeliveryItem.id == item_id).scalar()
     if delivery_id is not None:
-        _recompute_delivery_status(db, delivery_id)
+        _recompute_delivery_status(db, delivery_id, reopen_auto_closed=True)
 
 
 def _item_fully_received(item: ExpectedDeliveryItem) -> bool:
@@ -502,28 +597,49 @@ def _item_has_received(item: ExpectedDeliveryItem) -> bool:
     return (item.received_weight_kg or 0) > 0 or (item.received_length_m or 0) > 0
 
 
-def _recompute_delivery_status(db: Session, delivery_id: int) -> bool:
+def _recompute_delivery_status(
+    db: Session,
+    delivery_id: int,
+    *,
+    allow_close: bool = True,
+    reopen_auto_closed: bool = False,
+) -> bool:
     """Re-derive pending/partial/received from item totals. Returns True when
-    the status changed. No commit."""
+    the status changed. No commit.
+
+    `allow_close=False` (the view path) never closes a delivery: closing
+    happens on a receive or a line edit, so an admin's Reopen of a complete
+    delivery isn't undone by just looking at it. `reopen_auto_closed=True`
+    (pack receive / undo) also re-derives a delivery that closed itself
+    (received, closed_by NULL), so a reversal that leaves it short reopens it."""
     delivery = (
         db.query(ExpectedDelivery)
         .options(selectinload(ExpectedDelivery.items))
         .filter(ExpectedDelivery.id == delivery_id)
         .first()
     )
-    if not delivery or delivery.status not in _OPEN_STATUSES:
+    if not delivery:
+        return False
+    auto_closed = delivery.status == "received" and delivery.closed_by is None
+    if delivery.status not in _OPEN_STATUSES and not (reopen_auto_closed and auto_closed):
         return False
     items = delivery.items
     attach_accessory_received(db, items)
     if items and all(_item_fully_received(i) for i in items):
-        new_status = "received"
+        new_status = "received" if allow_close or delivery.status == "received" else "partial"
     elif any(_item_has_received(i) for i in items):
         new_status = "partial"
     else:
         new_status = "pending"
     if new_status != delivery.status:
         delivery.status = new_status
-        if new_status == "received":
-            delivery.closed_at = func.current_timestamp()
+        delivery.closed_at = func.current_timestamp() if new_status == "received" else None
         return True
     return False
+
+
+def _reopened_status(db: Session, delivery: ExpectedDelivery) -> str:
+    """Item 18: what an admin's Reopen sets: partial when anything was
+    received, else pending (no closing again until the next receive)."""
+    attach_accessory_received(db, delivery.items)
+    return "partial" if any(_item_has_received(i) for i in delivery.items) else "pending"

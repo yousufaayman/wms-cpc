@@ -22,7 +22,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useWarehouse } from "@/hooks/useWarehouse";
-import AccessoryDeliveryLines from "@/components/accessory-items/AccessoryDeliveryLines";
+import AccessoryDeliveryLines, { DeliveryFlagBadges } from "@/components/accessory-items/AccessoryDeliveryLines";
 import {
   expectedDeliveryApi, isLineHasPacksError,
   clientApi, materialApi, colorApi, clientFabricCodeApi,
@@ -422,7 +422,10 @@ export default function ExpectedDeliveryDetail() {
                   )}
                 </div>
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <StatusBadge status={delivery.status} label={statusLabel[delivery.status]} />
+                  <div className="flex items-center gap-1 flex-wrap justify-end">
+                    <DeliveryFlagBadges delivery={delivery} />
+                    <StatusBadge status={delivery.status} label={statusLabel[delivery.status]} />
+                  </div>
                   {/* Status action buttons */}
                   {can('manage_expected_deliveries') && delivery.status !== "cancelled" && delivery.status !== "received" && (
                     <div className="flex gap-2 flex-wrap justify-end">

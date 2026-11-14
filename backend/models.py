@@ -1037,6 +1037,13 @@ class ExpectedDelivery(Base):
     closer = relationship("User", foreign_keys=[closed_by])
     items = relationship("ExpectedDeliveryItem", back_populates="delivery", cascade=_CASCADE_DELETE)
 
+    # Item 18 summary of the accessory lines, set by crud.expected_deliveries
+    # on load (never stored). None on fabric deliveries.
+    lines_total = None
+    lines_complete = None
+    over_received = None
+    closed_short = None
+
     def __repr__(self):
         return f"<ExpectedDelivery {self.id} supplier={self.supplier_type}:{self.client_supplier_id}>"
 
@@ -1092,6 +1099,8 @@ class ExpectedDeliveryItem(Base):
     # Received on an accessory line: set by crud.expected_deliveries when the
     # line is loaded (never stored). None on fabric lines.
     received_qty = None
+    # Item 18: waiting | partial | complete | over (same rule as received_qty)
+    receive_state = None
 
     # Item 15 display fields for accessory lines (None on fabric lines)
     @property
@@ -1146,7 +1155,8 @@ class AccessoryPack(Base):
     """One physical pack (bag / box / carton) holding a single accessory item.
 
     Its label barcode is the id + `*ACC` (`domains/accessories/pack_barcode.py`),
-    so nothing extra is stored for it. How much is inside comes from the
+    so nothing extra is stored for it; `*ACC` is only the scan terminator, the
+    API and screens show the bare id. How much is inside comes from the
     ledger (item 13), not from this row. A pack belongs to a warehouse even
     when it's on no rack yet (`rack_id` NULL = waiting for put-away). The
     supplier pair is the same as on expected deliveries; item 17 fills it and
@@ -1193,11 +1203,6 @@ class AccessoryPack(Base):
     moves = relationship("AccessoryPackMove", back_populates="pack", order_by="AccessoryPackMove.id")
 
     @property
-    def barcode(self) -> str:
-        from .domains.accessories.pack_barcode import pack_barcode
-        return pack_barcode(self.id)
-
-    @property
     def item_code(self) -> str:
         return self.item.code
 
@@ -1242,7 +1247,7 @@ class AccessoryPack(Base):
         return f"B-{self.delivery_id}" if self.delivery_id is not None else None
 
     def __repr__(self):
-        return f"<AccessoryPack {self.id}*ACC item={self.accessory_item_id} rack={self.rack_id}>"
+        return f"<AccessoryPack {self.id} item={self.accessory_item_id} rack={self.rack_id}>"
 
 
 class AccessoryPackMove(Base):

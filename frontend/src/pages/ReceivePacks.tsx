@@ -18,7 +18,8 @@
  *    ledger rows and prints their labels.
  *
  * The session table lists each Add with its packs, the delivery (batch) each
- * went to, Reprint, and Undo (the server allows it while the packs are unused).
+ * went to, newest first, with Reprint and Undo per pack (the server allows it
+ * while the pack is unused).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
@@ -60,13 +61,13 @@ const CONVERSION = -1;
 /** The conversion's "from" side: a unit id, or grams (no unit row; for weighing). */
 const GRAM = "g";
 
-/** One Add of this session. */
+/** One Add of this session. `undone` = the ids of its packs undone since. */
 interface Batch {
   postingId: number;
   packs: AccessoryPack[];
   item: AccessoryItem;
   uomAr: string;
-  undone: boolean;
+  undone: number[];
 }
 
 const remaining = (line: ExpectedDeliveryItem) =>
@@ -339,7 +340,7 @@ const ReceivePacks = () => {
         uom_id: usingConversion ? null : uomId,
       });
       const uomAr = base.name_ar;
-      setBatches((prev) => [{ postingId: out.posting_id, packs: out.packs, item, uomAr, undone: false }, ...prev]);
+      setBatches((prev) => [{ postingId: out.posting_id, packs: out.packs, item, uomAr, undone: [] }, ...prev]);
       print(out.packs, item, uomAr);
       toast.success(t("rpReceivedToast", { count: String(out.packs.length) }));
       setQty("");
@@ -353,10 +354,13 @@ const ReceivePacks = () => {
     }
   };
 
-  const handleUndo = async (batch: Batch) => {
+  /** Undo one pack (the server reverses just its receipt row). */
+  const handleUndo = async (batch: Batch, pack: AccessoryPack) => {
     try {
-      await accessoryPackApi.undoReceive(batch.postingId);
-      setBatches((prev) => prev.map((b) => (b.postingId === batch.postingId ? { ...b, undone: true } : b)));
+      await accessoryPackApi.undoReceivePack(pack.id);
+      setBatches((prev) => prev.map((b) => (
+        b.postingId === batch.postingId ? { ...b, undone: [...b.undone, pack.id] } : b
+      )));
       toast.success(t("rpUndone"));
       await refreshDeliveries();
     } catch (e) {
@@ -371,7 +375,11 @@ const ReceivePacks = () => {
     setBatches([]); setPrintError(false);
   };
 
-  const packTotal = batches.filter((b) => !b.undone).reduce((n, b) => n + b.packs.length, 0);
+  const packTotal = batches.reduce((n, b) => n + b.packs.length - b.undone.length, 0);
+  // Session table: one row per pack, newest first.
+  const sessionRows = batches
+    .flatMap((b) => b.packs.map((p) => ({ b, p, undone: b.undone.includes(p.id) })))
+    .sort((x, y) => y.p.id - x.p.id);
   const unitName = (u: { name_en: string; name_ar: string }) => (language === "ar" ? u.name_ar : u.name_en);
 
   // ── Rendering ──
@@ -688,9 +696,9 @@ const ReceivePacks = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {batches.map((b) => b.packs.map((p, i) => (
-                        <TableRow key={p.id} className={b.undone ? "opacity-50 line-through" : ""}>
-                          <TableCell className="font-mono" dir="ltr">{p.barcode}</TableCell>
+                      {sessionRows.map(({ b, p, undone }) => (
+                        <TableRow key={p.id} className={undone ? "opacity-50 line-through" : ""}>
+                          <TableCell className="font-mono" dir="ltr">{p.id}</TableCell>
                           <TableCell className="font-mono">{p.item_code}</TableCell>
                           <TableCell className="text-right font-mono" dir="ltr">{fmtQty(p.quantity)} {p.uom_code}</TableCell>
                           <TableCell>{p.rack_code ?? <span className="text-muted-foreground">{t("accInvWaitingPutaway")}</span>}</TableCell>
@@ -705,11 +713,11 @@ const ReceivePacks = () => {
                           <TableCell>
                             <div className="flex justify-end gap-1">
                               <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1"
-                                disabled={!printer || b.undone} title={!printer ? t("noPrinterSelectedHint") : undefined}
+                                disabled={!printer || undone} title={!printer ? t("noPrinterSelectedHint") : undefined}
                                 onClick={() => print([p], b.item, b.uomAr)}>
                                 <Printer className="h-3 w-3" /> {t("reprintLabel")}
                               </Button>
-                              {i === 0 && !b.undone && (
+                              {!undone && (
                                 <AlertDialog>
                                   <AlertDialogTrigger asChild>
                                     <Button size="sm" variant="ghost" className="h-7 px-2 text-xs gap-1 text-destructive hover:text-destructive">
@@ -719,7 +727,7 @@ const ReceivePacks = () => {
                                   <AlertDialogContent>
                                     <AlertDialogHeader>
                                       <AlertDialogTitle>
-                                        {t("rpUndoTitle", { ids: b.packs.map((x) => x.barcode).join(", ") })}
+                                        {t("rpUndoTitle", { ids: String(p.id) })}
                                       </AlertDialogTitle>
                                       <AlertDialogDescription>{t("rpUndoDesc")}</AlertDialogDescription>
                                     </AlertDialogHeader>
@@ -727,7 +735,7 @@ const ReceivePacks = () => {
                                       <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
                                       <AlertDialogAction
                                         className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                        onClick={() => handleUndo(b)}
+                                        onClick={() => handleUndo(b, p)}
                                       >
                                         {t("rpUndo")}
                                       </AlertDialogAction>
@@ -738,7 +746,7 @@ const ReceivePacks = () => {
                             </div>
                           </TableCell>
                         </TableRow>
-                      )))}
+                      ))}
                     </TableBody>
                   </Table>
                 </CardContent>

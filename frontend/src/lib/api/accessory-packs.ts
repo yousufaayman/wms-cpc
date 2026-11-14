@@ -3,7 +3,8 @@ import { toQuery, type AccessoryValueLine } from './accessory-items';
 
 /**
  * Accessory packs and stock (items 12–14). A pack holds one item; its label
- * barcode is `<id>*ACC`. How much it holds (`quantity`, in the item's base
+ * barcode encodes `<id>*ACC` (`*ACC` is only the scan terminator; screens show
+ * the bare id). How much it holds (`quantity`, in the item's base
  * unit) is the sum of its ledger rows. Packs are made by Receive Packs
  * (item 17) through `receive` (one call per Add; `undoReceive` cancels it).
  * Reading is open to every WMS role; 404 while FEATURE_ACCESSORIES is off.
@@ -19,7 +20,6 @@ export type StockGroupBy = 'item' | 'client' | 'rack';
 
 export interface AccessoryPack {
   id: number;
-  barcode: string;
   accessory_item_id: number;
   item_code: string;
   item_description: string;
@@ -102,6 +102,8 @@ export interface PackQuery extends StockFilters {
 export interface StockQuery extends StockFilters {
   group_by: StockGroupBy;
   include_empty?: boolean;
+  /** By item: one row per template holding its variants' stock. */
+  group_variants?: boolean;
 }
 
 export interface StockTotal {
@@ -121,6 +123,8 @@ export interface StockRow {
   item_count: number;
   pack_count: number;
   totals: StockTotal[];
+  /** group_variants: > 0 = a template row summing this many variants in stock. */
+  variant_count: number;
 }
 
 export interface StockPage {
@@ -163,4 +167,6 @@ export const accessoryPackApi = {
   moves: (id: number) => api.request<PackMove[]>(`/accessory-packs/${id}/moves`),
   receive: (body: ReceivePacksIn) => api.request<ReceivePacksOut>('/accessory-packs/receive', 'POST', body),
   undoReceive: (postingId: number) => api.request<unknown>(`/accessory-packs/receive/${postingId}/undo`, 'POST'),
+  /** Undo one received pack: back to 0, off its delivery line (receiver or admin, while unused). */
+  undoReceivePack: (packId: number) => api.request<unknown>(`/accessory-packs/receive/pack/${packId}/undo`, 'POST'),
 };

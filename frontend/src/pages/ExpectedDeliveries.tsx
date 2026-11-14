@@ -15,6 +15,8 @@ import { Combobox } from "@/components/Combobox";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { useWarehouse } from "@/hooks/useWarehouse";
+import { DeliveryFlagBadges } from "@/components/accessory-items/AccessoryDeliveryLines";
 import {
   clientApi, logicalLocationApi, expectedDeliveryApi,
   type Client, type LogicalLocation,
@@ -49,6 +51,9 @@ export default function ExpectedDeliveries() {
   const { t } = useTranslation();
   useLanguage();
   const { can } = useCurrentUser();
+  // Accessory warehouses also show lines complete and the item-18 flags.
+  const { warehouse } = useWarehouse();
+  const isAccessory = warehouse?.type === "Accessory";
 
   const [deliveries, setDeliveries] = useState<ExpectedDelivery[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,7 +99,9 @@ export default function ExpectedDeliveries() {
   }, []);
 
   const filtered = deliveries.filter(d => {
-    if (statusFilter !== "all" && d.status !== statusFilter) return false;
+    if (statusFilter === "flag:over_received") { if (!d.over_received) return false; }
+    else if (statusFilter === "flag:closed_short") { if (!d.closed_short) return false; }
+    else if (statusFilter !== "all" && d.status !== statusFilter) return false;
     // Substring filter on the display name resolved by the API
     if (supplierSearch && !(d.supplier_name ?? "").toLowerCase().includes(supplierSearch.toLowerCase())) return false;
     return true;
@@ -189,6 +196,8 @@ export default function ExpectedDeliveries() {
                 <SelectItem value="partial">{t("statusPartial")}</SelectItem>
                 <SelectItem value="received">{t("statusReceived")}</SelectItem>
                 <SelectItem value="cancelled">{t("statusCancelled")}</SelectItem>
+                {isAccessory && <SelectItem value="flag:over_received">{t("lineOver")}</SelectItem>}
+                {isAccessory && <SelectItem value="flag:closed_short">{t("deliveryClosedShort")}</SelectItem>}
               </SelectContent>
             </Select>
           </div>
@@ -215,6 +224,7 @@ export default function ExpectedDeliveries() {
                       <TableHead>{t("deliveryStatus")}</TableHead>
                       <TableHead>{t("expectedDate")}</TableHead>
                       <TableHead className="text-center w-20">{t("itemCount")}</TableHead>
+                      {isAccessory && <TableHead className="text-center">{t("accLinesCompleteCol")}</TableHead>}
                       <TableHead>{t("created")}</TableHead>
                       <TableHead className="w-24">{t("actions")}</TableHead>
                     </TableRow>
@@ -229,10 +239,18 @@ export default function ExpectedDeliveries() {
                         <TableCell className="font-mono text-sm font-medium">#{d.id}</TableCell>
                         <TableCell className="font-medium">{d.supplier_name ?? "—"}</TableCell>
                         <TableCell>
-                          <StatusBadge status={d.status} label={statusLabel[d.status]} />
+                          <div className="flex items-center gap-1 flex-wrap">
+                            <StatusBadge status={d.status} label={statusLabel[d.status]} />
+                            <DeliveryFlagBadges delivery={d} />
+                          </div>
                         </TableCell>
                         <TableCell className="text-sm">{fmtDate(d.expected_date)}</TableCell>
                         <TableCell className="text-center text-sm">{d.items.length}</TableCell>
+                        {isAccessory && (
+                          <TableCell className="text-center text-sm font-mono" dir="ltr">
+                            {d.lines_total ? `${d.lines_complete ?? 0} / ${d.lines_total}` : "—"}
+                          </TableCell>
+                        )}
                         <TableCell className="text-sm text-muted-foreground">{fmtDate(d.created_at)}</TableCell>
                         <TableCell onClick={e => e.stopPropagation()}>
                           <div className="flex gap-1">

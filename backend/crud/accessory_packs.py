@@ -17,7 +17,7 @@ from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
 from fastapi import HTTPException, status
-from sqlalchemy import distinct, func, select
+from sqlalchemy import case, distinct, func, literal, select
 from sqlalchemy.orm import Session
 
 from backend.core.warehouse_modules import ensure_module
@@ -169,10 +169,10 @@ def move_pack(db: Session, pack: AccessoryPack, rack_id: Optional[int], moved_by
     moved (nothing is left in it); moving to the rack it's already on is
     refused so the history only holds real moves. Commits."""
     if pack.status == "empty":
-        raise _bad(f"Pack {pack.barcode} is empty")
+        raise _bad(f"Pack {pack.id} is empty")
     if rack_id == pack.rack_id:
         where = f"rack {pack.rack_code}" if rack_id is not None else "no rack"
-        raise _bad(f"Pack {pack.barcode} is already on {where}")
+        raise _bad(f"Pack {pack.id} is already on {where}")
     ensure_module(db, pack.warehouse_id, MODULE)
     if rack_id is not None:
         _rack_in_warehouse(db, rack_id, pack.warehouse_id)
@@ -213,6 +213,17 @@ def stock_summary(db: Session, search: AccessoryStockSearch) -> Tuple[List[dict]
     if not search.include_empty:
         conditions.append(_STOCK.on_hand > 0)
 
+    # Variants folded under their template: key = the template (or the item
+    # itself when it isn't a variant).
+    source = accessory_stock
+    variants = literal(0)
+    if search.group_by == "item" and search.group_variants and search.template_id is None:
+        source = accessory_stock.join(AccessoryItem, AccessoryItem.id == _STOCK.accessory_item_id)
+        key = func.coalesce(AccessoryItem.parent_template_id, _STOCK.accessory_item_id)
+        variants = func.count(distinct(case(
+            (AccessoryItem.parent_template_id.is_not(None), _STOCK.accessory_item_id),
+        )))
+
     grouped = db.execute(
         select(
             key.label("key"),
@@ -220,15 +231,19 @@ def stock_summary(db: Session, search: AccessoryStockSearch) -> Tuple[List[dict]
             func.count(distinct(_STOCK.accessory_item_id)),
             func.count(),
             func.sum(_STOCK.on_hand),
-        ).where(*conditions).group_by(key, _STOCK.base_uom_id)
+            variants,
+        ).select_from(source).where(*conditions).group_by(key, _STOCK.base_uom_id)
     ).all()
 
-    rows: Dict[Optional[int], dict] = defaultdict(lambda: {"item_count": 0, "pack_count": 0, "totals": []})
-    for k, uom_id, items, packs, qty in grouped:
+    rows: Dict[Optional[int], dict] = defaultdict(
+        lambda: {"item_count": 0, "pack_count": 0, "totals": [], "variant_count": 0}
+    )
+    for k, uom_id, items, packs, qty, variant_count in grouped:
         row = rows[k]
         row["key"] = k
         row["item_count"] += items  # an item has one base unit, so no double counting
         row["pack_count"] += packs
+        row["variant_count"] += variant_count
         row["totals"].append((uom_id, Decimal(qty)))
 
     keys = sorted(rows, key=_sort_key(db, search.group_by, [k for k in rows if k is not None]))
