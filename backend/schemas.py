@@ -537,6 +537,7 @@ class AccessoryLedgerEntry(BaseModel):
     job_order_id: Optional[int] = None
     accessory_receipt_item_id: Optional[int] = None
     reversal_of: Optional[int] = None
+    jo_requirement_id: Optional[int] = None  # item 19
     is_reversed: bool
     reason: Optional[str] = None
     created_by: int
@@ -546,6 +547,41 @@ class AccessoryLedgerEntry(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class AccessoryRequirement(BaseModel):
+    """A job order's accessory requirement line (item 19, read only: written by
+    the planning system). Quantities in the item's base unit; issued /
+    returned / used / remaining come from the ledger."""
+    id: int
+    job_order_id: int
+    job_order_number: str
+    job_order_client_id: Optional[int] = None
+    job_order_client_name: Optional[str] = None
+    accessory_item_id: int
+    item_code: str
+    item_description: str
+    item_color: Optional[str] = None
+    item_size: Optional[str] = None
+    value_lines: List[AccessoryValueLine] = []
+    uom_code: str
+    other_client: bool
+    qty_needed: Decimal
+    issued: Decimal
+    returned: Decimal
+    used: Decimal
+    remaining: Decimal
+    status: str
+    remarks: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AccessoryRequirementPage(BaseModel):
+    items: List[AccessoryRequirement]
+    total: int
 
 
 class AccessoryPosting(BaseModel):
