@@ -27,6 +27,7 @@ import {
   type ReceiptKind,
 } from "@/lib/api";
 import { toast } from "sonner";
+import AccessoryRequirementsPanel from "@/components/accessory-requirements/AccessoryRequirementsPanel";
 
 function FulfilledBadge({ fulfilled, label }: Readonly<{ fulfilled: boolean; label: string }>) {
   const style = fulfilled
@@ -52,6 +53,7 @@ export default function MaterialRequests() {
   const { isAdmin } = useCurrentUser();
   // The page is behind RequireModule, so a warehouse is always selected.
   const { warehouse: currentWarehouse } = useWarehouse();
+  const isAccessory = currentWarehouse?.type === "Accessory";
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const warehouseParam = searchParams.get("warehouse");
@@ -289,11 +291,13 @@ export default function MaterialRequests() {
               {t("materialRequests")}
             </h1>
             <p className="text-muted-foreground text-sm mt-1">{t("materialRequestsDesc")}</p>
-            {currentWarehouse?.type === "Accessory" && (
-              <p className="text-sm mt-2 rounded-md border bg-muted/50 px-3 py-2">{t("accessoryRequirementsComingSoon")}</p>
-            )}
           </div>
 
+          {/* Accessory warehouses: job order accessory requirements (item 19);
+              fabric requests belong to Fabric warehouses */}
+          {isAccessory ? (
+            <AccessoryRequirementsPanel warehouseId={currentWarehouse?.id ?? null} />
+          ) : (
           <Tabs defaultValue="job-orders">
             <TabsList>
               <TabsTrigger value="job-orders">{t("jobOrdersTab")}</TabsTrigger>
@@ -461,6 +465,7 @@ export default function MaterialRequests() {
               </Card>
             </TabsContent>
           </Tabs>
+          )}
         </main>
       </div>
 
