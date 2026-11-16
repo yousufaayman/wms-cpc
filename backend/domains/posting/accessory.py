@@ -30,8 +30,8 @@ or both halves of a split, are saved together or not at all.
 
 The receipt hooks (`AccessoryAdapter`) plug this into the shared posting
 service (service.py): a posted receipt line can't be deleted, and reversing a
-receipt reverses its postings. Posting accessory lines on confirm is item 20
-(the lines don't carry a pack and quantity yet).
+receipt reverses its postings. Confirming an issue receipt posts its lines
+(item 20, `domains/accessories/issuing.py`).
 """
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
@@ -410,10 +410,20 @@ def pack_history(db: Session, pack_id: int) -> List[models.AccessoryLedgerEntry]
 # ── Receipt hooks ────────────────────────────────────────────────────────────
 
 class AccessoryAdapter(PostingAdapter):
-    """Accessory receipts: a posted line can't be deleted, and reversing a
-    receipt reverses its postings. Line checks and posting on confirm come
-    with issuing (item 20: pack active with enough quantity, item matches the
-    JO's client, the line names a JO requirement; one `issue` row per line)."""
+    """Accessory receipts: lines are added by `domains/accessories/issuing.py`
+    (item 20: pack, quantity, JO requirement, client-match, over-issue);
+    confirming an issue posts one `issue` row per line; a posted line can't be
+    deleted, and reversing a receipt reverses its postings."""
+
+    def validate_line(self, db: Session, receipt_kind: str, receipt_id: int, line_in) -> None:
+        raise ValueError("Accessory lines are added through issuing (accessory-items endpoint)")
+
+    def post_confirm(self, db: Session, receipt_kind: str, receipt, actor_id: int) -> None:
+        if receipt_kind != "internal":
+            return
+        from ..accessories import issuing  # issuing imports this module
+
+        issuing.confirm(db, receipt, actor_id)
 
     def on_line_removed(self, db: Session, line) -> None:
         posted = db.scalar(select(

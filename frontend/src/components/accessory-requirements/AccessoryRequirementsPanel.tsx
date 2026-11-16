@@ -6,10 +6,15 @@
  * Per line: needed / issued / returned / used / remaining in the item's base
  * unit, worked out on the server from the stock ledger, and a status badge.
  * Lines are grouped under their job order. Clicking a line opens its issue
- * history (the ledger rows counted against it). Issuing comes with item 20.
+ * history (the ledger rows counted against it).
+ *
+ * Item 20: each job order has an Issue button (starts an issue receipt,
+ * then the scan page); over-issued lines are shown in red, and their reason
+ * shows in the history; a second tab holds the shortage report.
  */
 import { useEffect, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { AlertTriangle, Loader2, PackageMinus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +22,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueChips, fmtQty } from "@/components/accessory-items/AccessoryItemPicker";
+import { NewIssueDialog, type PresetJobOrder } from "@/components/accessory-issue/NewIssueForm";
+import AccessoryShortages from "@/components/accessory-requirements/AccessoryShortages";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslation } from "@/hooks/useTranslation";
 import {
   accessoryRequirementApi,
@@ -123,6 +132,7 @@ function HistoryDialog({ req, onClose }: Readonly<{ req: AccessoryRequirement | 
                     <TableHead>{t("accTypeDate")}</TableHead>
                     <TableHead>{t("accLineType")}</TableHead>
                     <TableHead>{t("accInvPack")}</TableHead>
+                    <TableHead>{t("accIssueReceipt")}</TableHead>
                     <TableHead className="text-right">{t("accInvChange")}</TableHead>
                     <TableHead>{t("accInvReason")}</TableHead>
                     <TableHead>{t("accInvBy")}</TableHead>
@@ -130,20 +140,37 @@ function HistoryDialog({ req, onClose }: Readonly<{ req: AccessoryRequirement | 
                 </TableHeader>
                 <TableBody>
                   {entries.length === 0 && (
-                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-6">—</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-6">—</TableCell></TableRow>
                   )}
                   {entries.map((e) => (
-                    <TableRow key={e.id} className={e.is_reversed || e.reversal_of !== null ? "text-muted-foreground" : undefined}>
+                    <TableRow
+                      key={e.id}
+                      className={e.is_reversed || e.reversal_of !== null ? "text-muted-foreground"
+                        : e.over_issue_reason ? "bg-red-50 hover:bg-red-100/70 dark:bg-red-950/30" : undefined}
+                    >
                       <TableCell className="whitespace-nowrap">{fmtDate(e.created_at)}</TableCell>
                       <TableCell>
                         {t(`accEntry_${e.entry_type}` as TranslationKey)}
                         {e.is_reversed && <Badge variant="outline" className="ml-2 rtl:ml-0 rtl:mr-2">{t("accInvReversed")}</Badge>}
                       </TableCell>
                       <TableCell className="font-mono">{e.pack_id}</TableCell>
+                      <TableCell>
+                        {e.internal_receipt_id !== null
+                          ? <Link to={`/receipts/internal/${e.internal_receipt_id}`} className="text-primary hover:underline">#{e.internal_receipt_id}</Link>
+                          : ""}
+                      </TableCell>
                       <TableCell className="text-right" dir="ltr">
                         {Number(e.qty_delta) > 0 ? "+" : ""}{fmtQty(e.qty_delta)}
                       </TableCell>
-                      <TableCell>{e.reason ?? ""}</TableCell>
+                      <TableCell>
+                        {e.reason ?? ""}
+                        {e.over_issue_reason && (
+                          <span className="inline-flex items-start gap-1 text-red-700">
+                            <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                            <span><span className="font-medium">{t("accReqOver")}:</span> {e.over_issue_reason}</span>
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell>{e.created_by_name ?? e.created_by}</TableCell>
                     </TableRow>
                   ))}
@@ -157,8 +184,11 @@ function HistoryDialog({ req, onClose }: Readonly<{ req: AccessoryRequirement | 
   );
 }
 
-export default function AccessoryRequirementsPanel({ warehouseId }: Readonly<{ warehouseId: number | null }>) {
+function RequirementLines({ warehouseId }: Readonly<{ warehouseId: number | null }>) {
   const { t } = useTranslation();
+  const { can } = useCurrentUser();
+  const canIssue = can("issue_accessories") && can("create_receipts");
+  const [issueFor, setIssueFor] = useState<PresetJobOrder | null>(null);
   const [rows, setRows] = useState<AccessoryRequirement[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -201,11 +231,6 @@ export default function AccessoryRequirementsPanel({ warehouseId }: Readonly<{ w
 
   return (
     <div className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">{t("accReqTitle")}</h2>
-        <p className="text-sm text-muted-foreground">{t("accReqReadOnly")}</p>
-      </div>
-
       <div className="flex gap-3 flex-wrap">
         <Input placeholder={t("accReqSearch")} value={search} onChange={(e) => setSearch(e.target.value)} className="w-64" />
         <Select value={status} onValueChange={(v) => { setStatus(v as RequirementStatus | "all"); setPage(1); }}>
@@ -243,11 +268,22 @@ export default function AccessoryRequirementsPanel({ warehouseId }: Readonly<{ w
               {!loading && groups.map((g) => [
                 <TableRow key={`jo-${g.key}`} className="bg-muted/50 hover:bg-muted/50">
                   <TableCell colSpan={7} className="py-2 font-medium">
-                    {g.number}{g.client && <span className="text-muted-foreground font-normal"> · {g.client}</span>}
+                    <div className="flex items-center justify-between gap-2">
+                      <span>{g.number}{g.client && <span className="text-muted-foreground font-normal"> · {g.client}</span>}</span>
+                      {canIssue && warehouseId !== null && (
+                        <Button size="sm" variant="outline" onClick={() => setIssueFor({ job_order_id: g.key, job_order_number: g.number })}>
+                          <PackageMinus className="h-4 w-4 mr-1.5 rtl:mr-0 rtl:ml-1.5" />{t("accIssueAction")}
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>,
                 ...g.rows.map((r) => (
-                  <TableRow key={r.id} className="cursor-pointer" onClick={() => setOpen(r)}>
+                  <TableRow
+                    key={r.id}
+                    className={`cursor-pointer ${r.status === "over_issued" ? "bg-red-50 hover:bg-red-100/70 dark:bg-red-950/30" : ""}`}
+                    onClick={() => setOpen(r)}
+                  >
                     <TableCell><ItemCell r={r} /></TableCell>
                     <TableCell className="text-right"><Qty value={r.qty_needed} unit={r.uom_code} /></TableCell>
                     <TableCell className="text-right"><Qty value={r.issued} unit={r.uom_code} /></TableCell>
@@ -274,6 +310,27 @@ export default function AccessoryRequirementsPanel({ warehouseId }: Readonly<{ w
       )}
 
       <HistoryDialog req={open} onClose={() => setOpen(null)} />
+      <NewIssueDialog warehouseId={warehouseId} jobOrder={issueFor} onClose={() => setIssueFor(null)} />
+    </div>
+  );
+}
+
+export default function AccessoryRequirementsPanel({ warehouseId }: Readonly<{ warehouseId: number | null }>) {
+  const { t } = useTranslation();
+  return (
+    <div className="space-y-4">
+      <div>
+        <h2 className="text-lg font-semibold">{t("accReqTitle")}</h2>
+        <p className="text-sm text-muted-foreground">{t("accReqReadOnly")}</p>
+      </div>
+      <Tabs defaultValue="lines">
+        <TabsList>
+          <TabsTrigger value="lines">{t("accReqTabLines")}</TabsTrigger>
+          <TabsTrigger value="shortages">{t("accShortageTab")}</TabsTrigger>
+        </TabsList>
+        <TabsContent value="lines"><RequirementLines warehouseId={warehouseId} /></TabsContent>
+        <TabsContent value="shortages"><AccessoryShortages warehouseId={warehouseId} /></TabsContent>
+      </Tabs>
     </div>
   );
 }

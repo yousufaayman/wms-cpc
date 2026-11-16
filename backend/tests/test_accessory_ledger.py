@@ -352,7 +352,9 @@ def issue_receipt(db, stock, place):
     receipt = models.InternalReceipt(source_warehouse_id=place["acc"].id, target_logical_location_id=loc.id)
     db.add(receipt)
     db.flush()
-    line = models.AccessoryReceiptItem(internal_receipt_id=receipt.id, accessory_item_id=stock["item"])
+    _, (held,) = _receive(db, stock, 1)  # item 20: a line names a pack and a quantity
+    line = models.AccessoryReceiptItem(internal_receipt_id=receipt.id, pack_id=held.id,
+                                       accessory_item_id=stock["item"], qty=1)
     db.add(line)
     db.flush()
     return receipt, line
@@ -387,7 +389,7 @@ def test_receipt_reference_rules(db, stock, issue_receipt, place):
     db.flush()
     _refused(lambda: ledger.issue(db, u, a.id, 1, s["jo"], receipt_kind="internal", receipt_id=other.id),
              text="receipt's warehouse")
-    other_line = models.AccessoryReceiptItem(internal_receipt_id=other.id, accessory_item_id=s["item"])
+    other_line = models.AccessoryReceiptItem(internal_receipt_id=other.id, pack_id=a.id, accessory_item_id=s["item"], qty=1)
     db.add(other_line)
     db.flush()
     _refused(lambda: ledger.issue(db, u, a.id, 1, s["jo"], receipt_kind="internal", receipt_id=receipt.id,

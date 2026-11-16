@@ -12,16 +12,24 @@ export interface InternalReceipt {
   closed_by?: number | null;
   issued_at: string;
   confirmed_by?: number | null;
+  /** Accessory issues (item 20): the job order the trims go to. */
+  job_order_id?: number | null;
+  job_order_number?: string | null;
+  /** Accessory issues: lines past their requirement's remaining (D-2). */
+  over_issue_count?: number;
 }
 
 export interface InternalReceiptCreate {
   source_warehouse_id: number;
   target_logical_location_id: number;
+  /** Required in Accessory warehouses, not allowed elsewhere. */
+  job_order_id?: number | null;
 }
 
 export interface InternalReceiptUpdate {
   source_warehouse_id?: number;
   target_logical_location_id?: number;
+  job_order_id?: number | null;
 }
 
 export interface InternalReceiptFilters {

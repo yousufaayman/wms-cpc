@@ -69,9 +69,14 @@ def test_internal_receipt_can_target_a_production_line(client, auth_headers, db,
     db.flush()
     h = auth_headers(role="W_Manager")
     for warehouse in warehouses:
-        r = client.post(
-            "/api/v1/internal-receipts/",
-            json={"source_warehouse_id": warehouse.id, "target_logical_location_id": line.id},
-            headers=h,
-        )
+        body = {"source_warehouse_id": warehouse.id, "target_logical_location_id": line.id}
+        if warehouse.type == "Accessory":  # item 20: an issue names its job order
+            style = models.Model(model_name=f"pytest_shell_model_{n}")
+            db.add(style)
+            db.flush()
+            jo = models.JobOrder(job_order_number=f"pytest-shell-jo-{n}", model_id=style.model_id)
+            db.add(jo)
+            db.flush()
+            body["job_order_id"] = jo.job_order_id
+        r = client.post("/api/v1/internal-receipts/", json=body, headers=h)
         assert r.status_code == 201, (warehouse.type, r.text)

@@ -33,6 +33,8 @@ export interface AccessoryRequirement {
   returned: string;
   used: string;
   remaining: string;
+  /** Item 20: on issues not confirmed yet (not in issued / remaining). */
+  pending: string;
   status: RequirementStatus;
   remarks: string | null;
   created_at: string;
@@ -54,11 +56,41 @@ export interface RequirementQuery {
 }
 
 /** A ledger row counted against a requirement (issue, return, or a reversal of one). */
-export type RequirementEntry = PackLedgerEntry & { pack_id: number; jo_requirement_id: number | null };
+export type RequirementEntry = PackLedgerEntry & {
+  pack_id: number;
+  jo_requirement_id: number | null;
+  /** Item 20: the issue receipt, and its over-issue reason if any. */
+  internal_receipt_id: number | null;
+  over_issue_reason: string | null;
+};
+
+/** A job order with requirement lines (the issue's JO picker). */
+export interface RequirementJobOrder {
+  job_order_id: number;
+  job_order_number: string;
+  client_name: string | null;
+  lines: number;
+}
+
+/** Item 20 shortage row, base unit: open JOs' remaining vs on hand here; short = remaining - on_hand. */
+export interface AccessoryShortage {
+  accessory_item_id: number;
+  item_code: string;
+  item_description: string;
+  uom_code: string;
+  job_orders: number;
+  remaining: string;
+  on_hand: string;
+  short: string;
+}
 
 export const accessoryRequirementApi = {
   list: (params: RequirementQuery = {}) =>
     api.request<AccessoryRequirementPage>(`/accessory-requirements/${toQuery({ ...params })}`),
   get: (id: number) => api.request<AccessoryRequirement>(`/accessory-requirements/${id}`),
   entries: (id: number) => api.request<RequirementEntry[]>(`/accessory-requirements/${id}/entries`),
+  jobOrders: (search?: string) =>
+    api.request<RequirementJobOrder[]>(`/accessory-requirements/job-orders${toQuery({ search: search || undefined })}`),
+  shortages: (warehouseId: number) =>
+    api.request<AccessoryShortage[]>(`/accessory-requirements/shortages${toQuery({ warehouse_id: warehouseId })}`),
 };
