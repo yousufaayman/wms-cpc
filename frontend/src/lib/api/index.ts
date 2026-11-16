@@ -265,3 +265,11 @@ export {
   type ReceivePacksIn,
   type ReceivePacksOut,
 } from './accessory-packs';
+export {
+  accessoryRequirementApi,
+  type AccessoryRequirement,
+  type AccessoryRequirementPage,
+  type RequirementQuery,
+  type RequirementStatus,
+  type RequirementEntry,
+} from './accessory-requirements';

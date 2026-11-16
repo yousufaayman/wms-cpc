@@ -73,6 +73,10 @@ class LedgerLine:
     qty_delta: Decimal
     job_order_id: Optional[int] = None
     receipt_line_id: Optional[int] = None  # wms.accessory_receipt_items.id
+    # core.job_order_accessory_requirements.id (item 19): the requirement line
+    # this issue / return counts against. Needs the row's job order, and the
+    # requirement must be for that job order and the pack's item (also a DB FK).
+    jo_requirement_id: Optional[int] = None
 
 
 @dataclass
@@ -137,6 +141,23 @@ def _check_line_rules(line: LedgerLine, is_reversal: bool, reason: Optional[str]
             raise _bad(f"A {line.entry_type.replace('_', ' ')} needs a reason")
     if line.entry_type in NEEDS_JOB_ORDER and line.job_order_id is None:
         raise _bad(f"A {line.entry_type} needs a job order")
+    if line.jo_requirement_id is not None and line.job_order_id is None:
+        raise _bad("A requirement line needs its job order")
+
+
+def _check_requirements(db: Session, lines: Sequence[LedgerLine], packs: Dict[int, models.AccessoryPack]) -> None:
+    """A requirement named on a row must exist, be for the row's job order and
+    for the pack's exact item (the DB FK checks the same; this gives a clear message)."""
+    for line in lines:
+        if line.jo_requirement_id is None:
+            continue
+        req = db.get(models.JobOrderAccessoryRequirement, line.jo_requirement_id)
+        if req is None:
+            raise _bad(f"Requirement {line.jo_requirement_id} not found", status.HTTP_404_NOT_FOUND)
+        if req.job_order_id != line.job_order_id:
+            raise _bad(f"Requirement {req.id} is for another job order")
+        if req.accessory_item_id != packs[line.pack_id].accessory_item_id:
+            raise _bad(f"Requirement {req.id} is for another item than pack {line.pack_id}")
 
 
 def _check_receipt(
@@ -200,6 +221,7 @@ def post(
         if db.get(models.JobOrder, job_order_id) is None:
             raise _bad(f"Job order {job_order_id} not found", status.HTTP_404_NOT_FOUND)
     _check_receipt(db, receipt_kind, receipt_id, lines, packs)
+    _check_requirements(db, lines, packs)
 
     balance = {pack_id: pack_quantity(db, pack_id) for pack_id in packs}
     for line in lines:
@@ -226,6 +248,7 @@ def post(
             qty_delta=line.qty_delta,
             job_order_id=line.job_order_id,
             accessory_receipt_item_id=line.receipt_line_id,
+            jo_requirement_id=line.jo_requirement_id,
             reversal_of=_reversal_of[i] if _reversal_of else None,
         ))
     for pack_id, pack in packs.items():
@@ -266,23 +289,29 @@ def receive(
 def issue(
     db: Session, actor_id: int, pack_id: int, qty, job_order_id: int, *,
     receipt_kind: Optional[str] = None, receipt_id: Optional[int] = None, receipt_line_id: Optional[int] = None,
+    jo_requirement_id: Optional[int] = None,
 ) -> models.AccessoryPosting:
-    """Take `qty` (> 0) out of a pack for a job order (item 20)."""
+    """Take `qty` (> 0) out of a pack for a job order (item 20), optionally
+    against one of its requirement lines."""
     if _qty(qty) <= 0:
         raise _bad("An issued quantity must be more than 0")
     return post(
         db, actor_id,
-        [LedgerLine(pack_id, "issue", -_qty(qty), job_order_id=job_order_id, receipt_line_id=receipt_line_id)],
+        [LedgerLine(pack_id, "issue", -_qty(qty), job_order_id=job_order_id, receipt_line_id=receipt_line_id,
+                    jo_requirement_id=jo_requirement_id)],
         receipt_kind=receipt_kind, receipt_id=receipt_id,
     )
 
 
-def return_to_pack(db: Session, actor_id: int, pack_id: int, qty, job_order_id: int) -> models.AccessoryPosting:
+def return_to_pack(
+    db: Session, actor_id: int, pack_id: int, qty, job_order_id: int, *, jo_requirement_id: Optional[int] = None,
+) -> models.AccessoryPosting:
     """Unused trims back from a job order into a pack (item 21); an empty
     pack becomes active again."""
     if _qty(qty) <= 0:
         raise _bad("A returned quantity must be more than 0")
-    return post(db, actor_id, [LedgerLine(pack_id, "return", _qty(qty), job_order_id=job_order_id)])
+    return post(db, actor_id, [LedgerLine(pack_id, "return", _qty(qty), job_order_id=job_order_id,
+                                          jo_requirement_id=jo_requirement_id)])
 
 
 def transfer(db: Session, actor_id: int, from_pack_id: int, to_pack_id: int, qty) -> models.AccessoryPosting:
@@ -330,7 +359,7 @@ def reverse_posting(db: Session, actor_id: int, posting_id: int, reason: str) ->
     rows = list(original.entries)
     return post(
         db, actor_id,
-        [LedgerLine(r.pack_id, r.entry_type, -r.qty_delta, r.job_order_id, r.accessory_receipt_item_id) for r in rows],
+        [LedgerLine(r.pack_id, r.entry_type, -r.qty_delta, r.job_order_id, r.accessory_receipt_item_id, r.jo_requirement_id) for r in rows],
         reason=reason,
         receipt_kind=receipt_kind,
         receipt_id=getattr(original, _RECEIPT_FK[receipt_kind]) if receipt_kind else None,
@@ -357,7 +386,7 @@ def reverse_entries(
             raise _bad("Already reversed", status.HTTP_409_CONFLICT)
     return post(
         db, actor_id,
-        [LedgerLine(r.pack_id, r.entry_type, -r.qty_delta, r.job_order_id, r.accessory_receipt_item_id) for r in entries],
+        [LedgerLine(r.pack_id, r.entry_type, -r.qty_delta, r.job_order_id, r.accessory_receipt_item_id, r.jo_requirement_id) for r in entries],
         reason=reason,
         _reversal_of=[r.id for r in entries],
     )

@@ -33,6 +33,7 @@ from .endpoints import (
     accessory_items,
     accessory_packs,
     accessory_postings,
+    accessory_requirements,
 )
 
 api_router = APIRouter()
@@ -76,3 +77,4 @@ api_router.include_router(accessory_categories.router, prefix="/accessory-catego
 api_router.include_router(accessory_items.router, prefix="/accessory-items", tags=["accessory-items"], dependencies=_ACCESSORIES)
 api_router.include_router(accessory_packs.router, prefix="/accessory-packs", tags=["accessory-packs"], dependencies=_ACCESSORIES)
 api_router.include_router(accessory_postings.router, prefix="/accessory-postings", tags=["accessory-postings"], dependencies=_ACCESSORIES)
+api_router.include_router(accessory_requirements.router, prefix="/accessory-requirements", tags=["accessory-requirements"], dependencies=_ACCESSORIES)

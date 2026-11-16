@@ -141,14 +141,15 @@ class JobOrder(Base):
     __table_args__ = {'schema': 'core'}
 
     job_order_id = Column(Integer, primary_key=True, index=True)
-    model_id = Column(Integer, ForeignKey("core.models.model_id"), nullable=True)
+    model_id = Column(Integer, ForeignKey("core.models.model_id"), nullable=False)
     job_order_number = Column(String(100), nullable=False)
-    client_id = Column(Integer, ForeignKey(_FK_CLIENTS), nullable=False)
-    image_url = Column(String(500), nullable=True)
+    client_id = Column(Integer, ForeignKey(_FK_CLIENTS), nullable=True)
+    image_url = Column(String(255), nullable=True)
     notes = Column(Text, nullable=True)
     print_config = Column(JSONB, nullable=True)
-    date_created = Column(TIMESTAMP, nullable=True)
+    date_created = Column(TIMESTAMP, nullable=False, server_default=func.now())
     priority = Column(Integer, nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
 
     id = synonym("job_order_id")
     order_number = synonym("job_order_number")
@@ -589,6 +590,117 @@ class MaterialRequestFulfillment(Base):
 
     def __repr__(self):
         return f"<MaterialRequestFulfillment {self.id} request={self.material_request_id}>"
+
+
+class JobOrderAccessoryRequirement(Base):
+    """What one job order needs of one accessory item (item 19), in the item's
+    base unit. **Written by the planning system (POMS), never by WMS**: WMS
+    only reads these rows and issues against them (item 20). Issued /
+    returned / remaining come from the accessory ledger rows that name the
+    requirement (`crud/accessory_requirements.py`); nothing is stored here.
+    One line per item per job order; the item is the exact item (a variant,
+    never a template), so the ledger's FK can check JO + item together."""
+    __tablename__ = "job_order_accessory_requirements"
+    __table_args__ = (
+        CheckConstraint("qty_needed > 0", name="ck_jo_acc_req_qty"),
+        UniqueConstraint("job_order_id", "accessory_item_id", name="uq_jo_acc_req_item"),
+        # Target of the ledger's composite FK (requirement + JO + item agree)
+        UniqueConstraint("id", "job_order_id", "accessory_item_id", name="uq_jo_acc_req_id_jo_item"),
+        Index("ix_jo_acc_req_item", "accessory_item_id"),
+        {"schema": "core"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    job_order_id = Column(
+        Integer, ForeignKey("core.job_orders.job_order_id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    accessory_item_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    qty_needed = Column(NUMERIC(14, 4), nullable=False)
+    remarks = Column(String(500), nullable=True)
+    # NULL allowed: the planning system may not write as a WMS user
+    created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), nullable=True)
+
+    job_order = relationship("JobOrder", foreign_keys=[job_order_id], lazy="joined")
+    accessory_item = relationship("AccessoryItem", foreign_keys=[accessory_item_id], lazy="joined")
+
+    # Filled in by crud.accessory_requirements (never stored)
+    issued = None
+    returned = None
+
+    @property
+    def used(self):
+        """Issued minus returned (what production kept)."""
+        if self.issued is None:
+            return None
+        return self.issued - (self.returned or 0)
+
+    @property
+    def remaining(self):
+        """Still to issue; below 0 = over-issued."""
+        used = self.used
+        return None if used is None else self.qty_needed - used
+
+    @property
+    def status(self):
+        """not_started | partly_issued | fully_issued | over_issued (same rule as the list filter)."""
+        if self.issued is None:
+            return None
+        if self.issued == 0:
+            return "not_started"
+        if self.used < self.qty_needed:
+            return "partly_issued"
+        return "fully_issued" if self.used == self.qty_needed else "over_issued"
+
+    @property
+    def job_order_number(self):
+        return self.job_order.job_order_number
+
+    @property
+    def job_order_client_id(self):
+        return self.job_order.client_id
+
+    @property
+    def job_order_client_name(self):
+        client = self.job_order.client
+        return client.client_name if client is not None else None
+
+    @property
+    def other_client(self) -> bool:
+        """The item belongs to a client that isn't the job order's (item 20
+        refuses issuing it; here it is only flagged)."""
+        item_client = self.accessory_item.client_id
+        return item_client is not None and item_client != self.job_order.client_id
+
+    @property
+    def item_code(self):
+        return self.accessory_item.code
+
+    @property
+    def item_description(self):
+        return self.accessory_item.description
+
+    @property
+    def item_color(self):
+        return self.accessory_item.color
+
+    @property
+    def item_size(self):
+        return self.accessory_item.size
+
+    @property
+    def value_lines(self):
+        return self.accessory_item.value_lines
+
+    @property
+    def uom_code(self):
+        return self.accessory_item.base_uom.code
+
+    def __repr__(self):
+        return f"<JobOrderAccessoryRequirement {self.id} jo={self.job_order_id} item={self.accessory_item_id}>"
 
 
 # User model (matches new core.users table structure)
@@ -1365,6 +1477,22 @@ class AccessoryLedgerEntry(Base):
         CheckConstraint(
             "entry_type NOT IN ('issue', 'return') OR job_order_id IS NOT NULL", name="ck_accessory_ledger_jo"
         ),
+        # Item 19: the requirement must be for this row's JO and item. A
+        # composite FK skips its check when any column is NULL, hence the CHECK.
+        ForeignKeyConstraint(
+            ["jo_requirement_id", "job_order_id", "accessory_item_id"],
+            [
+                "core.job_order_accessory_requirements.id",
+                "core.job_order_accessory_requirements.job_order_id",
+                "core.job_order_accessory_requirements.accessory_item_id",
+            ],
+            name="fk_accessory_ledger_jo_requirement",
+            ondelete=_ON_DELETE_RESTRICT,
+        ),
+        CheckConstraint(
+            "jo_requirement_id IS NULL OR job_order_id IS NOT NULL", name="ck_accessory_ledger_jo_requirement"
+        ),
+        Index("ix_accessory_ledger_jo_requirement", "jo_requirement_id"),
         Index("ix_accessory_ledger_pack", "pack_id", "id"),
         Index("ix_accessory_ledger_posting", "posting_id"),
         Index("ix_accessory_ledger_job_order", "job_order_id"),
@@ -1387,6 +1515,8 @@ class AccessoryLedgerEntry(Base):
         Integer, ForeignKey("wms.accessory_receipt_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=True
     )
     reversal_of = Column(BigInteger, ForeignKey("wms.accessory_ledger.id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    # Item 19: the JO requirement line this issue / return counts against
+    jo_requirement_id = Column(BigInteger, nullable=True)
 
     posting = relationship("AccessoryPosting", back_populates="entries")
     job_order = relationship("JobOrder", foreign_keys=[job_order_id])
