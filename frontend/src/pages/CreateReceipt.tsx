@@ -15,6 +15,8 @@ import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
 import LanguageToggle from "@/components/LanguageToggle";
 import { ReceiverField } from "@/components/ReceiverField";
+import AccessoryIssueScan from "@/components/accessory-issue/AccessoryIssueScan";
+import { NewIssueForm } from "@/components/accessory-issue/NewIssueForm";
 import {
   supplierReceiptApi,
   internalReceiptApi,
@@ -815,6 +817,34 @@ const CreateReceipt = () => {
           <div className="flex items-center justify-center h-screen">
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>
+        </div>
+      </PageTransition>
+    );
+  }
+
+  // Accessory warehouses (item 20): an internal receipt is an issue to a job
+  // order, with its own start form and pack scan page instead of rolls.
+  const issueWarehouseId = sourceWarehouseId ?? (warehouseParam ? Number(warehouseParam) : null);
+  if (resolvedKind === "internal" && warehouses.find(w => w.id === issueWarehouseId)?.type === "Accessory") {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex">
+          {receiptId === null && <Sidebar />}
+          <main className="flex-1 p-6">
+            {receiptId !== null ? (
+              <AccessoryIssueScan receiptId={receiptId} warehouseId={issueWarehouseId} />
+            ) : (
+              <div className="max-w-md mx-auto space-y-6">
+                <Button variant="ghost" onClick={() => navigate(`/receipts${warehouseQuery}`)}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />{t("receipts")}
+                </Button>
+                <Card>
+                  <CardHeader><CardTitle>{t("newInternalReceipt")}</CardTitle></CardHeader>
+                  <CardContent><NewIssueForm warehouseId={issueWarehouseId!} /></CardContent>
+                </Card>
+              </div>
+            )}
+          </main>
         </div>
       </PageTransition>
     );

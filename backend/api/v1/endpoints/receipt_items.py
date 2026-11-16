@@ -3,7 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List
 from ....database import get_db
 from ....core.deps import require_permission
-from ....core.authz import PERM_CREATE_RECEIPTS
+from ....core.authz import PERM_CREATE_RECEIPTS, PERM_ISSUE_ACCESSORIES
+from ....domains.accessories import issuing
 from .... import crud, schemas, models
 
 # Adding a line goes through the posting service, which also checks the line
@@ -63,21 +64,33 @@ def delete_box_item(item_id: int, db: Session = Depends(get_db), current_user: m
         raise HTTPException(status_code=404, detail="Box receipt item not found")
 
 
-# ── Accessory receipt items ───────────────────────────────────────────────────
+# ── Accessory receipt items (item 20: issue lines) ───────────────────────────
+# Scanning a pack onto an issue = domains/accessories/issuing.py (checks pack,
+# requirement, client-match, over-issue). Needs `issue_accessories`.
+
+_REQUIRE_ISSUE_ACCESSORIES = Depends(require_permission(PERM_ISSUE_ACCESSORIES))
+
 
 @router.get("/{kind}/{receipt_id}/accessory-items", response_model=List[schemas.AccessoryReceiptItem])
-def list_accessory_items(kind: str, receipt_id: int, skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_accessory_items(kind: str, receipt_id: int, db: Session = Depends(get_db)):
     _validate_kind(kind)
-    return crud.receipt_items.get_accessory_items_for_receipt(db, kind, receipt_id, skip, limit)
+    return issuing.list_lines(db, kind, receipt_id)
 
 
 @router.post("/{kind}/{receipt_id}/accessory-items", response_model=schemas.AccessoryReceiptItem, status_code=status.HTTP_201_CREATED)
-def add_accessory_item(kind: str, receipt_id: int, item: schemas.AccessoryReceiptItemCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_CREATE_RECEIPTS):
+def add_accessory_item(kind: str, receipt_id: int, item: schemas.AccessoryReceiptItemCreate, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_ISSUE_ACCESSORIES):
     _validate_kind(kind)
-    return crud.receipt_items.create_accessory_receipt_item(db, kind, receipt_id, item)
+    if (item.pack_id is None) == (item.barcode is None):
+        raise HTTPException(status_code=422, detail="Give the pack barcode or the pack id")
+    line = issuing.add_line(db, kind, receipt_id, item, current_user.id)
+    db.commit()
+    db.refresh(line)
+    line.posted = False  # just scanned: not confirmed yet
+    return line
 
 
 @router.delete("/accessory-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_accessory_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_CREATE_RECEIPTS):
-    if not crud.receipt_items.delete_accessory_receipt_item(db, item_id):
-        raise HTTPException(status_code=404, detail="Accessory receipt item not found")
+def delete_accessory_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_ISSUE_ACCESSORIES):
+    line = issuing.get_line_or_404(db, item_id)
+    issuing.check_line_removable(db, line)
+    crud.receipt_items.delete_accessory_receipt_item(db, item_id)

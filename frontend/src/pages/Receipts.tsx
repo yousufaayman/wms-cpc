@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Search, Loader2, Eye, Calendar, Plus, Package } from "lucide-react";
+import { FileText, Search, Loader2, Eye, Calendar, Plus, Package, AlertTriangle } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -190,6 +190,7 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
   const [dateTo, setDateTo] = useState("");
 
   const internalLocations = logicalLocations.filter(isInternalTarget);
+  const hasJobOrders = receipts.some(r => r.job_order_number);
 
   useEffect(() => {
     setLoading(true);
@@ -281,6 +282,7 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                   <TableHead>{t("idColumn")}</TableHead>
                   <TableHead>{t("sourceWarehouse")}</TableHead>
                   <TableHead>{t("targetLocation")}</TableHead>
+                  {hasJobOrders && <TableHead>{t("accIssueJobOrder")}</TableHead>}
                   <TableHead>{t("status")}</TableHead>
                   <TableHead>{t("closedReceipt")}</TableHead>
                   <TableHead>{t("issuedAt")}</TableHead>
@@ -289,10 +291,21 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
               </TableHeader>
               <TableBody>
                 {filtered.map(r => (
-                  <TableRow key={r.id}>
-                    <TableCell><Badge variant="outline">#{r.id}</Badge></TableCell>
+                  // Accessory issues with over-issued lines (item 20, D-2) are highlighted
+                  <TableRow key={r.id} className={r.over_issue_count ? "bg-red-50 hover:bg-red-100/70 dark:bg-red-950/30" : undefined}>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline">#{r.id}</Badge>
+                        {!!r.over_issue_count && (
+                          <Badge variant="outline" className="border-red-300 bg-red-100 text-red-800 gap-1">
+                            <AlertTriangle className="h-3 w-3" />{t("accReqOver")}
+                          </Badge>
+                        )}
+                      </div>
+                    </TableCell>
                     <TableCell>{warehouses.find(w => w.id === r.source_warehouse_id)?.name ?? `#${r.source_warehouse_id}`}</TableCell>
                     <TableCell>{logicalLocations.find(l => l.id === r.target_logical_location_id)?.name ?? `#${r.target_logical_location_id}`}</TableCell>
+                    {hasJobOrders && <TableCell>{r.job_order_number ?? "—"}</TableCell>}
                     <TableCell><StatusBadge status={r.status} /></TableCell>
                     <TableCell><ClosedBadge closed={r.closed} /></TableCell>
                     <TableCell><div className="flex items-center gap-1"><Calendar className="h-3 w-3 text-muted-foreground" />{formatDate(r.issued_at)}</div></TableCell>

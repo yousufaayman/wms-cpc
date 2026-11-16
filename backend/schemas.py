@@ -538,6 +538,8 @@ class AccessoryLedgerEntry(BaseModel):
     accessory_receipt_item_id: Optional[int] = None
     reversal_of: Optional[int] = None
     jo_requirement_id: Optional[int] = None  # item 19
+    internal_receipt_id: Optional[int] = None  # item 20: the issue receipt
+    over_issue_reason: Optional[str] = None  # item 20
     is_reversed: bool
     reason: Optional[str] = None
     created_by: int
@@ -571,12 +573,35 @@ class AccessoryRequirement(BaseModel):
     returned: Decimal
     used: Decimal
     remaining: Decimal
+    # Item 20: on issue receipts not confirmed yet (not in issued / remaining)
+    pending: Decimal = Decimal(0)
     status: str
     remarks: Optional[str] = None
     created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class AccessoryRequirementJobOrder(BaseModel):
+    """A job order that has accessory requirement lines (issue: pick the JO)."""
+    job_order_id: int
+    job_order_number: str
+    client_name: Optional[str] = None
+    lines: int
+
+
+class AccessoryShortage(BaseModel):
+    """Item 20 shortage report, one row per item, base unit: what open job
+    orders still need vs what this warehouse has. short = remaining - on_hand."""
+    accessory_item_id: int
+    item_code: str
+    item_description: str
+    uom_code: str
+    job_orders: int
+    remaining: Decimal
+    on_hand: Decimal
+    short: Decimal
 
 
 class AccessoryRequirementPage(BaseModel):
@@ -945,6 +970,8 @@ class SupplierReceipt(SupplierReceiptInDB):
 class InternalReceiptBase(BaseModel):
     source_warehouse_id: int
     target_logical_location_id: int
+    # Accessory issues (item 20): required there, not allowed on fabric
+    job_order_id: Optional[int] = None
 
 class InternalReceiptCreate(InternalReceiptBase):
     pass
@@ -952,6 +979,7 @@ class InternalReceiptCreate(InternalReceiptBase):
 class InternalReceiptUpdate(BaseModel):
     source_warehouse_id: Optional[int] = None
     target_logical_location_id: Optional[int] = None
+    job_order_id: Optional[int] = None
 
 class InternalReceiptInDB(InternalReceiptBase):
     id: int
@@ -961,6 +989,9 @@ class InternalReceiptInDB(InternalReceiptBase):
     closed_by: Optional[int] = None
     issued_at: datetime
     confirmed_by: Optional[int] = None
+    job_order_number: Optional[str] = None
+    # Accessory issues: lines past their requirement's remaining (D-2)
+    over_issue_count: int = 0
 
     class Config:
         from_attributes = True
@@ -1049,23 +1080,46 @@ class BoxReceiptItem(BoxReceiptItemInDB):
 
 # ── Accessory Receipt Item schemas ───────────────────────────────────────────
 
-class AccessoryReceiptItemBase(BaseModel):
-    accessory_item_id: Optional[int] = None
+class AccessoryReceiptItemCreate(BaseModel):
+    """Scan a pack onto an issue receipt (item 20). Give the scanned `barcode`
+    (`1042*ACC`) or the `pack_id`. `qty` is in `uom_id` (None = the item's
+    base unit). The job order comes from the receipt and the requirement line
+    from the pack's item. `over_issue_reason` is required when the line takes
+    the requirement past its remaining quantity, and ignored otherwise."""
+    barcode: Optional[str] = Field(None, max_length=50)
+    pack_id: Optional[int] = None
+    qty: Decimal = Field(..., gt=0)
+    uom_id: Optional[int] = None
+    over_issue_reason: Optional[str] = Field(None, max_length=500)
 
-class AccessoryReceiptItemCreate(AccessoryReceiptItemBase):
-    pass
 
-class AccessoryReceiptItemInDB(AccessoryReceiptItemBase):
+class AccessoryReceiptItem(BaseModel):
+    """A pack line of an accessory receipt; `qty` in the item's base unit.
+    `posted` = taken out of stock (the receipt is confirmed)."""
     id: int
     supplier_receipt_id: Optional[int] = None
     internal_receipt_id: Optional[int] = None
     external_receipt_id: Optional[int] = None
+    pack_id: int
+    accessory_item_id: int
+    item_code: str
+    item_description: str
+    item_color: Optional[str] = None
+    item_size: Optional[str] = None
+    value_lines: List[AccessoryValueLine] = []
+    uom_code: str
+    qty: Decimal
+    job_order_id: Optional[int] = None
+    job_order_number: Optional[str] = None
+    jo_requirement_id: Optional[int] = None
+    over_issue: bool
+    over_issue_reason: Optional[str] = None
+    posted: bool
+    created_by: Optional[int] = None
+    created_at: datetime
 
     class Config:
         from_attributes = True
-
-class AccessoryReceiptItem(AccessoryReceiptItemInDB):
-    pass
 
 # ── Single Transaction schemas ──────────────────────────────────────────────
 

@@ -630,6 +630,7 @@ class JobOrderAccessoryRequirement(Base):
     # Filled in by crud.accessory_requirements (never stored)
     issued = None
     returned = None
+    pending = 0  # item 20: on issue receipts not confirmed yet
 
     @property
     def used(self):
@@ -970,12 +971,23 @@ class InternalReceipt(Base):
     closed_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
     issued_at = Column(TIMESTAMP, default=func.current_timestamp())
     confirmed_by = Column(Integer, ForeignKey(_FK_USERS), nullable=True)
+    # Accessory issues (item 20): the job order the trims go to. Fabric: NULL
+    job_order_id = Column(Integer, ForeignKey("core.job_orders.job_order_id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
 
     source_warehouse = relationship("Warehouse", foreign_keys=[source_warehouse_id])
     target_logical_location = relationship("LogicalLocation", foreign_keys=[target_logical_location_id])
     issuer = relationship("User", foreign_keys=[issued_by])
     closer = relationship("User", foreign_keys=[closed_by])
     confirmer = relationship("User", foreign_keys=[confirmed_by])
+    job_order = relationship("JobOrder", foreign_keys=[job_order_id])
+
+    # Filled in by the list/detail endpoints for accessory issues (never stored)
+    over_issue_count = 0
+
+    @property
+    def job_order_number(self):
+        return self.job_order.job_order_number if self.job_order is not None else None
+
     def __repr__(self):
         return f"<InternalReceipt {self.id}>"
 
@@ -1051,17 +1063,95 @@ class BoxReceiptItem(Base):
 
 # Accessory Receipt Item — accessory items on any receipt type
 class AccessoryReceiptItem(Base):
+    """One pack line on an accessory receipt (item 20): which pack, how much
+    (item's base unit) and, on an issue, for which job order and requirement
+    line. Stock moves only when the receipt is confirmed (one `issue` ledger
+    row per line); until then the line only holds the quantity back from
+    other issues. `over_issue_reason` set = the line takes the requirement
+    past its remaining quantity (D-2: allowed with a reason, flagged)."""
     __tablename__ = "accessory_receipt_items"
     __table_args__ = (
         CheckConstraint(_CK_ONE_RECEIPT, name="ck_accessory_receipt_items_one_receipt"),
+        CheckConstraint("qty > 0", name="ck_accessory_receipt_items_qty"),
+        CheckConstraint(
+            "jo_requirement_id IS NULL OR job_order_id IS NOT NULL", name="ck_accessory_receipt_items_jo_requirement"
+        ),
+        ForeignKeyConstraint(
+            ["pack_id", "accessory_item_id"],
+            ["wms.accessory_packs.id", "wms.accessory_packs.accessory_item_id"],
+            name="fk_accessory_receipt_items_pack_item",
+            ondelete=_ON_DELETE_RESTRICT,
+        ),
+        ForeignKeyConstraint(
+            ["jo_requirement_id", "job_order_id", "accessory_item_id"],
+            [
+                "core.job_order_accessory_requirements.id",
+                "core.job_order_accessory_requirements.job_order_id",
+                "core.job_order_accessory_requirements.accessory_item_id",
+            ],
+            name="fk_accessory_receipt_items_jo_requirement",
+            ondelete=_ON_DELETE_RESTRICT,
+        ),
+        Index("ix_accessory_receipt_items_internal", "internal_receipt_id"),
+        Index("ix_accessory_receipt_items_pack", "pack_id"),
+        Index("ix_accessory_receipt_items_jo_requirement", "jo_requirement_id"),
         {'schema': 'wms'},
     )
 
-    id                   = Column(Integer, primary_key=True, index=True)
+    id                   = Column(Integer, primary_key=True)
     supplier_receipt_id  = Column(Integer, ForeignKey(_FK_SUPPLIER_RECEIPTS,  ondelete=_ON_DELETE_CASCADE), nullable=True)
     internal_receipt_id  = Column(Integer, ForeignKey(_FK_INTERNAL_RECEIPTS,  ondelete=_ON_DELETE_CASCADE), nullable=True)
     external_receipt_id  = Column(Integer, ForeignKey(_FK_EXTERNAL_RECEIPTS,  ondelete=_ON_DELETE_CASCADE), nullable=True)
-    accessory_item_id    = Column(Integer, nullable=True)
+    pack_id              = Column(BigInteger, nullable=False)
+    accessory_item_id    = Column(BigInteger, nullable=False)
+    qty                  = Column(NUMERIC(14, 4), nullable=False)
+    job_order_id         = Column(Integer, ForeignKey("core.job_orders.job_order_id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    jo_requirement_id    = Column(BigInteger, nullable=True)
+    over_issue_reason    = Column(String(500), nullable=True)
+    created_by           = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    created_at           = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    pack = relationship(
+        "AccessoryPack", primaryjoin="AccessoryReceiptItem.pack_id == AccessoryPack.id",
+        foreign_keys=[pack_id], lazy="joined", viewonly=True,
+    )
+    job_order = relationship("JobOrder", foreign_keys=[job_order_id])
+
+    # Filled in by domains.accessories.issuing (never stored): the line's
+    # `issue` ledger row exists (= the receipt was confirmed)
+    posted = False
+
+    @property
+    def over_issue(self) -> bool:
+        return self.over_issue_reason is not None
+
+    @property
+    def item_code(self):
+        return self.pack.item_code
+
+    @property
+    def item_description(self):
+        return self.pack.item_description
+
+    @property
+    def item_color(self):
+        return self.pack.item_color
+
+    @property
+    def item_size(self):
+        return self.pack.item_size
+
+    @property
+    def value_lines(self):
+        return self.pack.value_lines
+
+    @property
+    def uom_code(self):
+        return self.pack.item.base_uom.code
+
+    @property
+    def job_order_number(self):
+        return self.job_order.job_order_number if self.job_order is not None else None
 
     def __repr__(self):
         return f"<AccessoryReceiptItem {self.id}>"
@@ -1520,6 +1610,16 @@ class AccessoryLedgerEntry(Base):
 
     posting = relationship("AccessoryPosting", back_populates="entries")
     job_order = relationship("JobOrder", foreign_keys=[job_order_id])
+    receipt_line = relationship("AccessoryReceiptItem", foreign_keys=[accessory_receipt_item_id])
+
+    @property
+    def internal_receipt_id(self):
+        """Item 20: the issue receipt this row came from (issue history)."""
+        return self.receipt_line.internal_receipt_id if self.receipt_line is not None else None
+
+    @property
+    def over_issue_reason(self):
+        return self.receipt_line.over_issue_reason if self.receipt_line is not None else None
 
     # Filled in by the pack history (quantity after this row); not a column.
     balance = None

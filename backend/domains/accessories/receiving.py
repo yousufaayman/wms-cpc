@@ -49,7 +49,7 @@ def _bad(detail: str, code: int = status.HTTP_400_BAD_REQUEST) -> HTTPException:
     return HTTPException(status_code=code, detail=detail)
 
 
-def _qty_in_base(db: Session, item: models.AccessoryItem, qty, uom_id: Optional[int]) -> Decimal:
+def qty_in_base(db: Session, item: models.AccessoryItem, qty, uom_id: Optional[int]) -> Decimal:
     """`qty` typed in `uom_id` (None = base) → base units, checked for whole numbers."""
     base = item.base_uom
     if uom_id is None or uom_id == item.base_uom_id:
@@ -129,7 +129,7 @@ def receive_packs(
 ) -> Tuple[models.AccessoryPosting, List[models.AccessoryPack]]:
     item = get_item_or_404(db, payload.accessory_item_id)
     ensure_stockable(item)
-    qty = _qty_in_base(db, item, payload.qty_per_pack, payload.uom_id)
+    qty = qty_in_base(db, item, payload.qty_per_pack, payload.uom_id)
     supplier = (payload.supplier_type, payload.client_supplier_id)
 
     if payload.expected_delivery_item_id is not None:

@@ -65,9 +65,15 @@ def update_internal_receipt(db: Session, receipt_id: int, receipt: InternalRecei
 def confirm_internal_receipt(db: Session, receipt_id: int, confirmed_by: int) -> Optional[InternalReceipt]:
     db_receipt = get_internal_receipt(db, receipt_id)
     if db_receipt and db_receipt.status == 'issued':
+        # Stock first (accessory issues post their lines, item 20): a refusal
+        # leaves the receipt untouched.
+        try:
+            posting.post_confirm(db, "internal", db_receipt, confirmed_by)
+        except Exception:
+            db.rollback()
+            raise
         db_receipt.status = 'confirmed'
         db_receipt.confirmed_by = confirmed_by
-        posting.post_confirm(db, "internal", db_receipt, confirmed_by)
         db.commit()
         db.refresh(db_receipt)
     return db_receipt

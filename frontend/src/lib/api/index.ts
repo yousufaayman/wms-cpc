@@ -272,4 +272,6 @@ export {
   type RequirementQuery,
   type RequirementStatus,
   type RequirementEntry,
+  type RequirementJobOrder,
+  type AccessoryShortage,
 } from './accessory-requirements';

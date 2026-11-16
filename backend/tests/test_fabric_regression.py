@@ -313,7 +313,7 @@ def test_posting_service_refuses_wrong_line_kind(client, db, mgr, fab):
     receipt's warehouse, so future callers can't skip it."""
     rid = _receipt(client, mgr, fab, "internal")
     with pytest.raises(HTTPException) as e:
-        posting.add_line(db, "internal", rid, "accessory", schemas.AccessoryReceiptItemCreate())
+        posting.add_line(db, "internal", rid, "accessory", schemas.AccessoryReceiptItemCreate(pack_id=1, qty=1))
     assert e.value.status_code == 400
     with pytest.raises(HTTPException) as e:
         posting.add_line(db, "internal", 987_654_321, "fabric",

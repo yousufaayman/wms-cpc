@@ -13,6 +13,11 @@ against each line, from the accessory ledger rows that name it:
 
 Nothing of that is stored, so it is always right. All quantities are in the
 item's base unit.
+
+Item 20 adds:
+- pending = on issue receipts not confirmed yet (not in issued / remaining)
+- `requirement_job_orders`: the job orders with lines (issue: pick the JO)
+- `shortages`: per item, what open job orders still need vs on hand
 """
 from decimal import Decimal
 from typing import List, Optional, Tuple
@@ -96,7 +101,16 @@ def list_requirements(
         req.issued = Decimal(issued or 0)
         req.returned = Decimal(returned or 0)
         result.append(req)
+    _fill_pending(db, result)
     return result, total
+
+
+def _fill_pending(db: Session, reqs) -> None:
+    from ..domains.accessories.issuing import pending_by_requirement  # issuing imports crud modules
+
+    pending = pending_by_requirement(db, (r.id for r in reqs))
+    for req in reqs:
+        req.pending = pending.get(req.id, Decimal(0))
 
 
 def get_requirement(db: Session, requirement_id: int) -> models.JobOrderAccessoryRequirement:
@@ -110,6 +124,7 @@ def get_requirement(db: Session, requirement_id: int) -> models.JobOrderAccessor
         ).where(_Led.jo_requirement_id == requirement_id)
     ).one()
     req.issued, req.returned = Decimal(totals[0]), Decimal(totals[1])
+    _fill_pending(db, [req])
     return req
 
 
@@ -120,3 +135,65 @@ def requirement_entries(db: Session, requirement_id: int) -> List[models.Accesso
     return list(db.scalars(
         select(_Led).where(_Led.jo_requirement_id == requirement_id).order_by(_Led.id)
     ).all())
+
+
+def requirement_job_orders(db: Session, search: Optional[str] = None, limit: int = 50) -> List[dict]:
+    """Job orders that have requirement lines, newest first (the issue page's
+    JO picker: only those can be issued to)."""
+    query = (
+        select(models.JobOrder.job_order_id, models.JobOrder.job_order_number, models.Client.client_name,
+               func.count(_Req.id).label("lines"))
+        .join(_Req, _Req.job_order_id == models.JobOrder.job_order_id)
+        .outerjoin(models.Client, models.Client.client_id == models.JobOrder.client_id)
+        .group_by(models.JobOrder.job_order_id, models.JobOrder.job_order_number, models.Client.client_name)
+    )
+    if search and search.strip():
+        query = query.where(models.JobOrder.job_order_number.ilike(f"%{search.strip()}%"))
+    rows = db.execute(query.order_by(models.JobOrder.job_order_id.desc()).limit(limit)).all()
+    return [dict(row._mapping) for row in rows]
+
+
+def shortages(db: Session, warehouse_id: int) -> List[dict]:
+    """Per item: remaining across open job orders (not archived; an
+    over-issued line counts 0, not minus) vs on hand in this warehouse.
+    Only items that are short, most short first. No reservations: remaining
+    is demand, not a hold on stock (Tab 1)."""
+    totals = _totals_subquery()
+    used = func.coalesce(totals.c.issued, 0) - func.coalesce(totals.c.returned, 0)
+    left = func.greatest(_Req.qty_needed - used, 0)
+    demand = (
+        select(
+            _Req.accessory_item_id.label("item_id"),
+            func.sum(left).label("remaining"),
+            func.count(func.distinct(_Req.job_order_id)).filter(left > 0).label("job_orders"),
+        )
+        .join(models.JobOrder, models.JobOrder.job_order_id == _Req.job_order_id)
+        .outerjoin(totals, totals.c.req_id == _Req.id)
+        .where(models.JobOrder.archived_at.is_(None))
+        .group_by(_Req.accessory_item_id)
+        .subquery()
+    )
+    stock = models.accessory_stock.c
+    on_hand = (
+        select(stock.accessory_item_id.label("item_id"), func.sum(stock.on_hand).label("on_hand"))
+        .where(stock.warehouse_id == warehouse_id)
+        .group_by(stock.accessory_item_id)
+        .subquery()
+    )
+    have = func.coalesce(on_hand.c.on_hand, 0)
+    short = demand.c.remaining - have
+    rows = db.execute(
+        select(models.AccessoryItem, demand.c.job_orders, demand.c.remaining, have.label("on_hand"), short.label("short"))
+        .join(demand, demand.c.item_id == models.AccessoryItem.id)
+        .outerjoin(on_hand, on_hand.c.item_id == models.AccessoryItem.id)
+        .where(short > 0)
+        .order_by(short.desc(), models.AccessoryItem.code)
+    ).all()
+    return [
+        {
+            "accessory_item_id": item.id, "item_code": item.code, "item_description": item.description,
+            "uom_code": item.base_uom.code, "job_orders": job_orders, "remaining": Decimal(remaining),
+            "on_hand": Decimal(on_hand_qty), "short": Decimal(short_qty),
+        }
+        for item, job_orders, remaining, on_hand_qty, short_qty in rows
+    ]

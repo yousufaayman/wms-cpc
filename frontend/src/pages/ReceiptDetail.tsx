@@ -5,11 +5,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { ArrowLeft, FileText, Calendar, User, Loader2, CheckCircle, XCircle, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, FileText, Calendar, User, Loader2, CheckCircle, XCircle, Plus, Trash2, AlertTriangle } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { IssueLinesTable } from "@/components/accessory-issue/AccessoryIssueScan";
+import { accessoryReceiptItemApi, type AccessoryReceiptItem } from "@/lib/api";
+import { toast } from "sonner";
 import LanguageToggle from "@/components/LanguageToggle";
 import {
   supplierReceiptApi, type SupplierReceipt,
@@ -190,6 +193,9 @@ const ReceiptDetail = () => {
   const [rollDetails, setRollDetails] = useState<Map<number, FabricRollDetail>>(new Map());
   const [undyedRollDetails, setUndyedRollDetails] = useState<Map<number, UndyedFabricRollDetail>>(new Map());
   const [itemsLoading, setItemsLoading] = useState(false);
+  // Accessory issues (item 20): pack lines instead of rolls
+  const [isAccessory, setIsAccessory] = useState(false);
+  const [accLines, setAccLines] = useState<AccessoryReceiptItem[]>([]);
 
   async function loadItems(receiptId: number) {
     if (!kind) return;
@@ -218,7 +224,10 @@ const ReceiptDetail = () => {
       setLogicalLocations(lls);
       const data = await fetchReceiptByKind(kind, rid);
       setReceipt(data);
-      await loadItems(rid);
+      const accessory = ws.find(w => w.id === data.source_warehouse_id)?.type === "Accessory";
+      setIsAccessory(accessory);
+      if (accessory) setAccLines(await accessoryReceiptItemApi.list(kind, rid));
+      else await loadItems(rid);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("failedToLoadReceipt"));
     } finally {
@@ -231,6 +240,7 @@ const ReceiptDetail = () => {
   async function handleAction(op: () => Promise<unknown>) {
     setActionLoading(true);
     try { await op(); loadReceipt(); }
+    catch (e) { toast.error((e as Error).message); }
     finally { setActionLoading(false); }
   }
 
@@ -350,6 +360,12 @@ const ReceiptDetail = () => {
                       </span>
                     </div>
                   )}
+                  {internalReceipt?.job_order_number && (
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-sm">{t("accIssueJobOrder")}</span>
+                      <span className="font-medium">{internalReceipt.job_order_number}</span>
+                    </div>
+                  )}
                   {externalReceipt && (
                     <div className="flex items-center gap-2">
                       <span className="text-muted-foreground text-sm">{t("receiver")}</span>
@@ -409,10 +425,23 @@ const ReceiptDetail = () => {
               </CardContent>
             </Card>
 
+            {/* Accessory issue with over-issued lines (D-2): highlighted */}
+            {(internalReceipt?.over_issue_count ?? 0) > 0 && (
+              <div className="flex items-center gap-2 rounded-md border border-red-300 bg-red-50 dark:bg-red-950/30 px-4 py-2 text-sm text-red-800 dark:text-red-300">
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                {t("accReqOver")}: {internalReceipt!.over_issue_count}
+              </div>
+            )}
+
             {/* Actions — no header, one row */}
             <div className="flex flex-wrap items-center gap-2 px-1">
-              {internalReceipt && internalReceipt.status === "issued" && can('confirm_receipts') && (
-                <Button onClick={() => handleAction(() => internalReceiptApi.confirm(receipt.id))} disabled={actionLoading}>
+              {internalReceipt && internalReceipt.status === "issued"
+                && can(isAccessory ? 'confirm_accessory_receipts' : 'confirm_receipts') && (
+                <Button
+                  onClick={() => handleAction(() => internalReceiptApi.confirm(receipt.id))}
+                  disabled={actionLoading || (isAccessory && accLines.length === 0)}
+                  title={isAccessory && accLines.length === 0 ? t("accIssueNoLines") : undefined}
+                >
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                   {t("confirmReceipt")}
                 </Button>
@@ -468,7 +497,8 @@ const ReceiptDetail = () => {
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle>{t("receiptItems")}</CardTitle>
-                  {!receipt.closed && can('create_receipts') && (
+                  {!receipt.closed && can('create_receipts')
+                    && (!isAccessory || (can('issue_accessories') && internalReceipt?.status === "issued")) && (
                     <Button
                       size="sm"
                       onClick={() =>
@@ -481,14 +511,23 @@ const ReceiptDetail = () => {
                 </div>
               </CardHeader>
               <CardContent>
-                <ItemsContent
-                  itemsLoading={itemsLoading}
-                  fabricGroups={fabricGroups}
-                  fabricSummaries={fabricSummaries}
-                  grandLength={grandLength}
-                  grandWeight={grandWeight}
-                  t={t}
-                />
+                {isAccessory ? (
+                  <div className="space-y-2">
+                    {internalReceipt?.status === "issued" && (
+                      <p className="text-sm text-muted-foreground">{t("accIssueNotPosted")}</p>
+                    )}
+                    <IssueLinesTable lines={accLines} />
+                  </div>
+                ) : (
+                  <ItemsContent
+                    itemsLoading={itemsLoading}
+                    fabricGroups={fabricGroups}
+                    fabricSummaries={fabricSummaries}
+                    grandLength={grandLength}
+                    grandWeight={grandWeight}
+                    t={t}
+                  />
+                )}
               </CardContent>
             </Card>
 

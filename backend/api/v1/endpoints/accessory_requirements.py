@@ -1,11 +1,13 @@
 """Accessory requirements of job orders (item 19): read-only API.
 
 The planning system (POMS) writes the requirement lines; WMS has no create,
-edit or delete here on purpose. Two reads:
+edit or delete here on purpose. Reads:
 - GET /accessory-requirements/            the lines with needed / issued /
   returned / used / remaining (Material Requests page, accessory mode)
 - GET /accessory-requirements/{id}/entries  the ledger rows counted against
   one line (its issue history)
+- GET /accessory-requirements/job-orders   job orders with lines (issue: pick the JO)
+- GET /accessory-requirements/shortages    per item: open JOs' remaining vs on hand (item 20)
 
 Same permission as the Material Requests page (`operations`; Viewer has
 none). The router is off (404) while FEATURE_ACCESSORIES is off (api.py).
@@ -20,7 +22,13 @@ from backend.core.authz import PERM_OPERATIONS
 from backend.core.deps import get_db, require_permission
 from backend.core.warehouse_modules import ACCESSORY, ensure_module
 from backend.crud import accessory_requirements as crud
-from backend.schemas import AccessoryLedgerEntry, AccessoryRequirement, AccessoryRequirementPage
+from backend.schemas import (
+    AccessoryLedgerEntry,
+    AccessoryRequirement,
+    AccessoryRequirementJobOrder,
+    AccessoryRequirementPage,
+    AccessoryShortage,
+)
 
 router = APIRouter()
 
@@ -41,13 +49,37 @@ def list_requirements(
     # Requirements belong to job orders, not to a warehouse. A warehouse given
     # must be one where accessory material requests are shown.
     if warehouse_id is not None:
-        wh = ensure_module(db, warehouse_id, "material_requests")
-        if getattr(wh.type, "value", wh.type) != ACCESSORY:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Accessory requirements are shown in Accessory warehouses")
+        _check_warehouse(db, warehouse_id)
     items, total = crud.list_requirements(
         db, job_order_id=job_order_id, search=search, status_filter=status_filter, limit=limit, offset=offset,
     )
     return {"items": items, "total": total}
+
+
+def _check_warehouse(db: Session, warehouse_id: int) -> None:
+    wh = ensure_module(db, warehouse_id, "material_requests")
+    if getattr(wh.type, "value", wh.type) != ACCESSORY:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Accessory requirements are shown in Accessory warehouses")
+
+
+@router.get("/job-orders", response_model=List[AccessoryRequirementJobOrder])
+def requirement_job_orders(
+    search: Optional[str] = Query(None, max_length=100),
+    limit: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_OPERATIONS,
+):
+    return crud.requirement_job_orders(db, search=search, limit=limit)
+
+
+@router.get("/shortages", response_model=List[AccessoryShortage])
+def shortages(
+    warehouse_id: int = Query(..., description="The Accessory warehouse whose stock is compared"),
+    db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_OPERATIONS,
+):
+    _check_warehouse(db, warehouse_id)
+    return crud.shortages(db, warehouse_id)
 
 
 @router.get("/{requirement_id}", response_model=AccessoryRequirement)

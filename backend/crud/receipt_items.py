@@ -91,20 +91,9 @@ def get_accessory_receipt_item(db: Session, item_id: int):
     return db.query(models.AccessoryReceiptItem).filter(models.AccessoryReceiptItem.id == item_id).first()
 
 
-def get_accessory_items_for_receipt(
-    db: Session, receipt_kind: str, receipt_id: int, skip: int = 0, limit: int = 100
-):
-    q = db.query(models.AccessoryReceiptItem)
-    return _accessory_filter(q, receipt_kind, receipt_id).offset(skip).limit(limit).all()
-
-
-def create_accessory_receipt_item(
-    db: Session, receipt_kind: str, receipt_id: int, item: schemas.AccessoryReceiptItemCreate
-):
-    return posting.add_line(db, receipt_kind, receipt_id, "accessory", item)
-
-
 def delete_accessory_receipt_item(db: Session, item_id: int):
+    """Issue lines are added/listed by domains/accessories/issuing.py; removing
+    one goes through the posting service (a posted line is refused)."""
     db_item = get_accessory_receipt_item(db, item_id)
     if not db_item:
         return None

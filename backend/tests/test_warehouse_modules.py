@@ -92,12 +92,24 @@ def wh(db):
     return out
 
 
-def _internal(client, headers, warehouse, loc):
-    return client.post(
-        "/api/v1/internal-receipts/",
-        json={"source_warehouse_id": warehouse.id, "target_logical_location_id": loc.id},
-        headers=headers,
-    )
+def _internal(client, headers, warehouse, loc, job_order_id=None):
+    body = {"source_warehouse_id": warehouse.id, "target_logical_location_id": loc.id}
+    if warehouse.type == "Accessory":  # item 20: an accessory internal receipt is an issue to a JO
+        body["job_order_id"] = job_order_id or _any_job_order(loc)
+    return client.post("/api/v1/internal-receipts/", json=body, headers=headers)
+
+
+def _any_job_order(loc):
+    from sqlalchemy.orm import object_session
+
+    db = object_session(loc)
+    style = models.Model(model_name=f"pytest_wm_model_{next(_seq)}")
+    db.add(style)
+    db.flush()
+    jo = models.JobOrder(job_order_number=f"pytest-wm-jo-{next(_seq)}", model_id=style.model_id)
+    db.add(jo)
+    db.flush()
+    return jo.job_order_id
 
 
 def test_receipts_per_warehouse_type(client, auth_headers, wh, monkeypatch):
@@ -126,11 +138,13 @@ def test_receipt_lines_match_warehouse_type(client, auth_headers, wh, accessorie
     r = client.post(f"/api/v1/receipts/internal/{acc_rid}/fabric-items", json=fabric_line, headers=h)
     assert r.status_code == 400 and "cannot hold fabric" in r.text
 
-    r = client.post(f"/api/v1/receipts/internal/{fabric_rid}/accessory-items", json={}, headers=h)
+    line = {"barcode": "999999999*ACC", "qty": 1}
+    r = client.post(f"/api/v1/receipts/internal/{fabric_rid}/accessory-items", json=line, headers=h)
     assert r.status_code == 400 and "cannot hold accessory" in r.text
 
-    r = client.post(f"/api/v1/receipts/internal/{acc_rid}/accessory-items", json={}, headers=h)
-    assert r.status_code == 201, r.text
+    # the kind check passes; the pack check comes next (item 20: test_accessory_issuing.py)
+    r = client.post(f"/api/v1/receipts/internal/{acc_rid}/accessory-items", json=line, headers=h)
+    assert r.status_code == 404 and "Pack 999999999 not found" in r.text, r.text
 
 
 def test_material_requests_filter_by_warehouse(client, auth_headers, wh, accessories_on):
