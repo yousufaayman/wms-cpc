@@ -45,6 +45,7 @@ WAREHOUSE_MODULES = {
         "dashboard": None,
         "accessory_inventory": "accessories",
         "receive_packs": "accessories",
+        "pack_operations": "accessories",
         "accessory_items": "accessories",
         "needle_exchange": "needles",
         "receipts": "accessories",
