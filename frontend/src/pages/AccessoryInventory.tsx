@@ -504,6 +504,7 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
                   <TableHead className="text-right">{t("accInvChange")}</TableHead>
                   <TableHead className="text-right">{t("accInvBalance")}</TableHead>
                   <TableHead>{t("accInvJobOrder")}</TableHead>
+                  <TableHead>{t("accInvFromTo")}</TableHead>
                   <TableHead>{t("accInvReason")}</TableHead>
                   <TableHead>{t("accInvBy")}</TableHead>
                   {isAdmin && <TableHead />}
@@ -522,6 +523,7 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
                     </TableCell>
                     <TableCell className="text-right" dir="ltr">{e.balance === null ? "" : fmtQty(e.balance)}</TableCell>
                     <TableCell>{e.job_order_number ?? ""}</TableCell>
+                    <TableCell>{e.location_name ?? ""}</TableCell>
                     <TableCell>{e.reason ?? ""}</TableCell>
                     <TableCell>{e.created_by_name ?? e.created_by}</TableCell>
                     {isAdmin && (

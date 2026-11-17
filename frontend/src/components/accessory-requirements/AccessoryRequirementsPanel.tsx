@@ -135,6 +135,7 @@ function HistoryDialog({ req, onClose }: Readonly<{ req: AccessoryRequirement | 
                     <TableHead>{t("accLineType")}</TableHead>
                     <TableHead>{t("accInvPack")}</TableHead>
                     <TableHead>{t("accIssueReceipt")}</TableHead>
+                    <TableHead>{t("accInvFromTo")}</TableHead>
                     <TableHead className="text-right">{t("accInvChange")}</TableHead>
                     <TableHead>{t("accInvReason")}</TableHead>
                     <TableHead>{t("accInvBy")}</TableHead>
@@ -142,7 +143,7 @@ function HistoryDialog({ req, onClose }: Readonly<{ req: AccessoryRequirement | 
                 </TableHeader>
                 <TableBody>
                   {entries.length === 0 && (
-                    <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-6">—</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={8} className="text-center text-muted-foreground py-6">—</TableCell></TableRow>
                   )}
                   {entries.map((e) => (
                     <TableRow
@@ -161,6 +162,7 @@ function HistoryDialog({ req, onClose }: Readonly<{ req: AccessoryRequirement | 
                           ? <Link to={`/receipts/internal/${e.internal_receipt_id}`} className="text-primary hover:underline">#{e.internal_receipt_id}</Link>
                           : ""}
                       </TableCell>
+                      <TableCell>{e.location_name ?? ""}</TableCell>
                       <TableCell className="text-right" dir="ltr">
                         {Number(e.qty_delta) > 0 ? "+" : ""}{fmtQty(e.qty_delta)}
                       </TableCell>

@@ -546,6 +546,7 @@ class AccessoryLedgerEntry(BaseModel):
     created_by_name: Optional[str] = None  # item 14
     created_at: datetime
     job_order_number: Optional[str] = None  # item 14
+    location_name: Optional[str] = None  # item 21: issued to / returned from
 
     class Config:
         from_attributes = True
@@ -657,6 +658,12 @@ class AccessoryReceiveOut(BaseModel):
 # Quantities are typed in `uom_id` (None = the item's base unit). The acting
 # user is the logged-in one. Rules: domains/accessories/pack_ops.py.
 
+class AccessoryReturnLocation(BaseModel):
+    """A place a requirement line's stock was issued to (a "returned from" choice)."""
+    id: int
+    name: str
+
+
 class AccessoryReturnableLine(BaseModel):
     """A JO requirement line with stock still out from this warehouse."""
     jo_requirement_id: int
@@ -669,6 +676,8 @@ class AccessoryReturnableLine(BaseModel):
     returned: Decimal
     out: Decimal  # issued - returned = the most that can come back
     last_location_id: Optional[int] = None  # where the latest issue went (default "returned from")
+    # Where this line's stock was issued to, latest first: the only choices for "returned from".
+    locations: List[AccessoryReturnLocation] = []
 
 
 class AccessoryReturnIn(BaseModel):
