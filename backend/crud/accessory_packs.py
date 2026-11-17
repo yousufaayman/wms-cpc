@@ -53,9 +53,13 @@ def _rack_in_warehouse(db: Session, rack_id: int, warehouse_id: int) -> Warehous
     return rack
 
 
-def _check_supplier(db: Session, supplier_type: Optional[str], supplier_id: Optional[int]) -> None:
+def _check_supplier(
+    db: Session, supplier_type: Optional[str], supplier_id: Optional[int], location_types=("supplier",)
+) -> None:
     """Same pair as expected deliveries: both or neither. A client, or a
-    supplier-type logical location."""
+    logical location of one of `location_types` (receiving: a supplier; a pack
+    returned from production (item 21): the internal location / production
+    line it came back from)."""
     if (supplier_type is None) != (supplier_id is None):
         raise _bad("Give both the supplier type and the supplier, or neither")
     if supplier_type is None:
@@ -67,8 +71,9 @@ def _check_supplier(db: Session, supplier_type: Optional[str], supplier_id: Opti
         location = db.get(LogicalLocation, supplier_id)
         if location is None:
             raise _bad("Supplier not found", status.HTTP_404_NOT_FOUND)
-        if getattr(location.location_type, "value", location.location_type) != "supplier":
-            raise _bad(f"{location.name} is not a supplier")
+        if getattr(location.location_type, "value", location.location_type) not in location_types:
+            raise _bad(f"{location.name} is not a supplier" if location_types == ("supplier",)
+                       else f"{location.name} can't be this pack's source")
     else:
         raise _bad("Supplier type must be 'client' or 'logical_location'")
 
@@ -83,6 +88,7 @@ def create_pack(
     expected_delivery_item_id: Optional[int] = None,
     supplier_type: Optional[str] = None,
     client_supplier_id: Optional[int] = None,
+    supplier_location_types=("supplier",),
 ) -> AccessoryPack:
     """A new, active pack. Only flushes: the caller adds the pack's ledger row
     and commits both together. `created_by` = the logged-in user."""
@@ -93,7 +99,7 @@ def create_pack(
         _rack_in_warehouse(db, rack_id, warehouse_id)
     if expected_delivery_item_id is not None and db.get(ExpectedDeliveryItem, expected_delivery_item_id) is None:
         raise _bad("Expected delivery line not found", status.HTTP_404_NOT_FOUND)
-    _check_supplier(db, supplier_type, client_supplier_id)
+    _check_supplier(db, supplier_type, client_supplier_id, supplier_location_types)
 
     pack = AccessoryPack(
         accessory_item_id=item.id,

@@ -250,6 +250,13 @@ export { featureApi, type Features } from './features';
 // Accessory packs + stock (items 12-14)
 export {
   accessoryPackApi,
+  packOpsApi,
+  accessoryPostingApi,
+  type ReturnableLine,
+  type ReturnIn,
+  type SplitIn,
+  type ReclassifyIn,
+  type PackFree,
   type AccessoryPack,
   type AccessoryPackPage,
   type PackQuery,

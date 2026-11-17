@@ -19,6 +19,8 @@
  * - Packs: one row per pack (its id; the label barcode adds `*ACC`), its rack or "Waiting for
  *   put-away", and how much it holds. Clicking a pack shows its quantity
  *   history (every ledger row with the balance after it) and its rack moves.
+ *   Admins get a Reverse button per action (item 21): it cancels the whole
+ *   posting (all its rows, on every pack) after asking for a reason.
  * Anyone with a WMS role can look (Tab 1: "everyone, including Viewer").
  */
 import { Fragment, useEffect, useMemo, useState } from "react";
@@ -30,12 +32,15 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ChevronDown, ChevronRight, X } from "lucide-react";
+import { ChevronDown, ChevronRight, Loader2, Undo2, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { toast } from "sonner";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { Combobox, type ComboItem } from "@/components/Combobox";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import {
-  accessoryCategoryApi, accessoryItemApi, accessoryPackApi, clientApi, logicalLocationApi, uomApi, valueSummary,
+  accessoryCategoryApi, accessoryItemApi, accessoryPackApi, accessoryPostingApi, clientApi, logicalLocationApi, uomApi, valueSummary,
   warehouseRackApi,
   type AccessoryCategory, type AccessoryItem, type AccessoryPack, type Client, type LogicalLocation,
   type PackLedgerEntry, type PackMove, type PackQuery, type StockGroupBy, type StockFilters, type StockRow,
@@ -414,6 +419,11 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
   const [history, setHistory] = useState<PackLedgerEntry[]>([]);
   const [moves, setMoves] = useState<PackMove[]>([]);
   const [loading, setLoading] = useState(false);
+  const { isAdmin } = useCurrentUser();
+  const [reversing, setReversing] = useState<PackLedgerEntry | null>(null);
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     if (!pack) return;
@@ -422,7 +432,23 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
       .then(([h, m]) => { setHistory(h); setMoves(m); })
       .catch(() => { setHistory([]); setMoves([]); })
       .finally(() => setLoading(false));
-  }, [pack]);
+  }, [pack, reload]);
+
+  const reverse = async () => {
+    if (!reversing || !reason.trim()) return;
+    setSaving(true);
+    try {
+      await accessoryPostingApi.reverse(reversing.posting_id, reason.trim());
+      toast.success(t("opsReversed"));
+      setReversing(null);
+      setReason("");
+      setReload((n) => n + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : t("error"));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const values = pack ? [pack.item_color, pack.item_size, valueSummary(pack.value_lines, language)].filter(Boolean).join(" · ") : "";
 
@@ -480,6 +506,7 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
                   <TableHead>{t("accInvJobOrder")}</TableHead>
                   <TableHead>{t("accInvReason")}</TableHead>
                   <TableHead>{t("accInvBy")}</TableHead>
+                  {isAdmin && <TableHead />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -497,6 +524,15 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
                     <TableCell>{e.job_order_number ?? ""}</TableCell>
                     <TableCell>{e.reason ?? ""}</TableCell>
                     <TableCell>{e.created_by_name ?? e.created_by}</TableCell>
+                    {isAdmin && (
+                      <TableCell>
+                        {!e.is_reversed && e.reversal_of === null && (
+                          <Button size="sm" variant="ghost" onClick={() => { setReversing(e); setReason(""); }}>
+                            <Undo2 className="h-4 w-4 mr-1 rtl:mr-0 rtl:ml-1" />{t("opsReverse")}
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
@@ -527,6 +563,22 @@ function PackDialog({ pack, onClose }: Readonly<{ pack: AccessoryPack | null; on
             </Table>
           </>}
         </>}
+        <Dialog open={reversing !== null} onOpenChange={(open) => { if (!open) setReversing(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader><DialogTitle>{t("opsReverseTitle")}</DialogTitle></DialogHeader>
+            <p className="text-sm text-muted-foreground">{t("opsReverseHint")}</p>
+            <div className="space-y-1.5">
+              <Label>{t("opsReasonRequired")}</Label>
+              <Input value={reason} onChange={(ev) => setReason(ev.target.value)} maxLength={500} autoFocus />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setReversing(null)}>{t("cancel")}</Button>
+              <Button variant="destructive" onClick={reverse} disabled={saving || !reason.trim()}>
+                {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5 rtl:mr-0 rtl:ml-1.5" />}{t("opsReverse")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </DialogContent>
     </Dialog>
   );

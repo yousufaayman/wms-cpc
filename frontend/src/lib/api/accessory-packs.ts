@@ -163,10 +163,87 @@ export const accessoryPackApi = {
   stock: (params: StockQuery) => api.request<StockPage>(`/accessory-packs/stock${toQuery({ ...params })}`),
   list: (params: PackQuery = {}) => api.request<AccessoryPackPage>(`/accessory-packs/${toQuery({ ...params })}`),
   get: (id: number) => api.request<AccessoryPack>(`/accessory-packs/${id}`),
+  /** The pack behind a scanned label, e.g. "1042*ACC" (a bare id works too). */
+  scan: (barcode: string) => api.request<AccessoryPack>(`/accessory-packs/scan${toQuery({ barcode })}`),
   ledger: (id: number) => api.request<PackLedgerEntry[]>(`/accessory-packs/${id}/ledger`),
   moves: (id: number) => api.request<PackMove[]>(`/accessory-packs/${id}/moves`),
   receive: (body: ReceivePacksIn) => api.request<ReceivePacksOut>('/accessory-packs/receive', 'POST', body),
   undoReceive: (postingId: number) => api.request<unknown>(`/accessory-packs/receive/${postingId}/undo`, 'POST'),
   /** Undo one received pack: back to 0, off its delivery line (receiver or admin, while unused). */
   undoReceivePack: (packId: number) => api.request<unknown>(`/accessory-packs/receive/pack/${packId}/undo`, 'POST'),
+};
+
+// ── Pack operations (item 21) ───────────────────────────────────────────────
+// Returns from production, split, merge (issue_accessories), reclassify (admin).
+// Quantities are typed in `uom_id` (omit = base unit). Each action is one
+// posting: an admin undoes it with `accessoryPostingApi.reverse`.
+
+/** A JO requirement line with stock still out from this warehouse. */
+export interface ReturnableLine {
+  jo_requirement_id: number;
+  job_order_id: number;
+  accessory_item_id: number;
+  item_code: string;
+  item_description: string;
+  uom_code: string;
+  issued: string;
+  returned: string;
+  out: string; // issued - returned = the most that can come back
+  last_location_id: number | null; // where the latest issue went
+}
+
+export interface ReturnIn {
+  warehouse_id: number;
+  job_order_id: number;
+  jo_requirement_id: number;
+  qty: string;
+  uom_id?: number | null;
+  from_location_id: number;
+  pack_id: number | null; // null = new pack
+  rack_id?: number | null;
+  reason?: string | null;
+}
+
+export interface SplitIn {
+  pack_count: number;
+  qty: string;
+  uom_id?: number | null;
+  keep_rack: boolean;
+  rack_id?: number | null;
+}
+
+export interface ReclassifyIn {
+  target_item_id: number;
+  qty?: string | null; // null = everything free
+  uom_id?: number | null;
+  reason: string;
+  keep_rack: boolean;
+  rack_id?: number | null;
+}
+
+export interface PackFree {
+  pack_id: number;
+  quantity: string;
+  held: string; // on open issue lines
+  free: string;
+}
+
+export const packOpsApi = {
+  returnable: (warehouseId: number, jobOrderId: number) =>
+    api.request<ReturnableLine[]>(`/accessory-pack-ops/returns${toQuery({ warehouse_id: warehouseId, job_order_id: jobOrderId })}`),
+  returnTrims: (body: ReturnIn) =>
+    api.request<{ posting_id: number; pack: AccessoryPack; created: boolean }>('/accessory-pack-ops/returns', 'POST', body),
+  free: (packId: number) => api.request<PackFree>(`/accessory-pack-ops/packs/${packId}/free`),
+  split: (packId: number, body: SplitIn) =>
+    api.request<{ posting_id: number; source: AccessoryPack; packs: AccessoryPack[] }>(`/accessory-pack-ops/packs/${packId}/split`, 'POST', body),
+  merge: (packId: number, fromPackIds: number[]) =>
+    api.request<{ posting_id: number; pack: AccessoryPack }>(`/accessory-pack-ops/packs/${packId}/merge`, 'POST', { from_pack_ids: fromPackIds }),
+  reclassify: (packId: number, body: ReclassifyIn) =>
+    api.request<{ posting_id: number; source: AccessoryPack; pack: AccessoryPack }>(`/accessory-pack-ops/packs/${packId}/reclassify`, 'POST', body),
+};
+
+/** Admin: cancel one whole action (all its rows on all its packs). */
+export const accessoryPostingApi = {
+  reverse: (postingId: number, reason: string) =>
+    api.request<unknown>(`/accessory-postings/${postingId}/reverse`, 'POST', { reason }),
 };

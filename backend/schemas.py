@@ -653,6 +653,91 @@ class AccessoryReceiveOut(BaseModel):
     packs: List[AccessoryPack]
 
 
+# ── Pack operations (item 21): returns, split, merge, reclassify ────────────
+# Quantities are typed in `uom_id` (None = the item's base unit). The acting
+# user is the logged-in one. Rules: domains/accessories/pack_ops.py.
+
+class AccessoryReturnableLine(BaseModel):
+    """A JO requirement line with stock still out from this warehouse."""
+    jo_requirement_id: int
+    job_order_id: int
+    accessory_item_id: int
+    item_code: str
+    item_description: str
+    uom_code: str
+    issued: Decimal
+    returned: Decimal
+    out: Decimal  # issued - returned = the most that can come back
+    last_location_id: Optional[int] = None  # where the latest issue went (default "returned from")
+
+
+class AccessoryReturnIn(BaseModel):
+    warehouse_id: int
+    job_order_id: int
+    jo_requirement_id: int
+    qty: Decimal = Field(..., gt=0)
+    uom_id: Optional[int] = None
+    from_location_id: int  # the internal location / production line it came back from
+    pack_id: Optional[int] = None  # None = a new pack (its source = from_location_id)
+    rack_id: Optional[int] = None  # new pack only; None = put away later
+    reason: Optional[str] = Field(None, max_length=500)
+
+
+class AccessoryReturnOut(BaseModel):
+    posting_id: int
+    pack: AccessoryPack
+    created: bool  # True = a new pack (print its label)
+
+
+class AccessorySplitIn(BaseModel):
+    """`pack_count` new packs, each with `qty`. Same rack as the source unless
+    `keep_rack` is false (then `rack_id`, None = no rack)."""
+    pack_count: int = Field(1, ge=1, le=100)
+    qty: Decimal = Field(..., gt=0)
+    uom_id: Optional[int] = None
+    keep_rack: bool = True
+    rack_id: Optional[int] = None
+
+
+class AccessorySplitOut(BaseModel):
+    posting_id: int
+    source: AccessoryPack
+    packs: List[AccessoryPack]
+
+
+class AccessoryMergeIn(BaseModel):
+    """Empty every pack of `from_pack_ids` into the kept pack (path)."""
+    from_pack_ids: List[int] = Field(..., min_length=1, max_length=100)
+
+
+class AccessoryMergeOut(BaseModel):
+    posting_id: int
+    pack: AccessoryPack
+
+
+class AccessoryReclassifyIn(BaseModel):
+    """Admin only. `qty` None = everything free in the pack."""
+    target_item_id: int
+    qty: Optional[Decimal] = Field(None, gt=0)
+    uom_id: Optional[int] = None
+    reason: str = Field(..., min_length=1, max_length=500)
+    keep_rack: bool = True
+    rack_id: Optional[int] = None
+
+
+class AccessoryReclassifyOut(BaseModel):
+    posting_id: int
+    source: AccessoryPack
+    pack: AccessoryPack
+
+
+class AccessoryPackFree(BaseModel):
+    pack_id: int
+    quantity: Decimal  # on hand
+    held: Decimal  # on open (unconfirmed) issue lines
+    free: Decimal  # quantity - held
+
+
 class AccessoryPackPage(BaseModel):
     items: List[AccessoryPack]
     total: int

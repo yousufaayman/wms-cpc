@@ -20,6 +20,7 @@ export type WarehouseModule =
   | "analytics"
   | "accessory_inventory"
   | "receive_packs"
+  | "pack_operations"
   | "accessory_items"
   | "needle_exchange";
 
@@ -45,6 +46,7 @@ export const WAREHOUSE_MODULES: Record<WarehouseType, Partial<Record<WarehouseMo
     dashboard: null,
     accessory_inventory: "accessories",
     receive_packs: "accessories",
+    pack_operations: "accessories",
     accessory_items: "accessories",
     needle_exchange: "needles",
     receipts: "accessories",

@@ -8,13 +8,15 @@
  * Lines are grouped under their job order. Clicking a line opens its issue
  * history (the ledger rows counted against it).
  *
+ * Item 21: a Return button per job order with stock out opens Pack Operations
+ * on its Return tab with the JO picked.
  * Item 20: each job order has an Issue button (starts an issue receipt,
  * then the scan page); over-issued lines are shown in red, and their reason
  * shows in the history; a second tab holds the shortage report.
  */
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { AlertTriangle, Loader2, PackageMinus } from "lucide-react";
+import { AlertTriangle, Loader2, PackageMinus, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -188,6 +190,7 @@ function RequirementLines({ warehouseId }: Readonly<{ warehouseId: number | null
   const { t } = useTranslation();
   const { can } = useCurrentUser();
   const canIssue = can("issue_accessories") && can("create_receipts");
+  const canReturn = can("issue_accessories");
   const [issueFor, setIssueFor] = useState<PresetJobOrder | null>(null);
   const [rows, setRows] = useState<AccessoryRequirement[]>([]);
   const [total, setTotal] = useState(0);
@@ -270,11 +273,20 @@ function RequirementLines({ warehouseId }: Readonly<{ warehouseId: number | null
                   <TableCell colSpan={7} className="py-2 font-medium">
                     <div className="flex items-center justify-between gap-2">
                       <span>{g.number}{g.client && <span className="text-muted-foreground font-normal"> · {g.client}</span>}</span>
-                      {canIssue && warehouseId !== null && (
-                        <Button size="sm" variant="outline" onClick={() => setIssueFor({ job_order_id: g.key, job_order_number: g.number })}>
-                          <PackageMinus className="h-4 w-4 mr-1.5 rtl:mr-0 rtl:ml-1.5" />{t("accIssueAction")}
-                        </Button>
-                      )}
+                      <div className="flex gap-2">
+                        {canReturn && warehouseId !== null && g.rows.some((r) => Number(r.issued) > Number(r.returned)) && (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link to={`/pack-operations?warehouse=${warehouseId}&tab=return&jo=${g.key}`}>
+                              <Undo2 className="h-4 w-4 mr-1.5 rtl:mr-0 rtl:ml-1.5" />{t("opsReturnButton")}
+                            </Link>
+                          </Button>
+                        )}
+                        {canIssue && warehouseId !== null && (
+                          <Button size="sm" variant="outline" onClick={() => setIssueFor({ job_order_id: g.key, job_order_number: g.number })}>
+                            <PackageMinus className="h-4 w-4 mr-1.5 rtl:mr-0 rtl:ml-1.5" />{t("accIssueAction")}
+                          </Button>
+                        )}
+                      </div>
                     </div>
                   </TableCell>
                 </TableRow>,
