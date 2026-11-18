@@ -1,4 +1,5 @@
-"""Pack operations (item 21): returns from production, split, merge, reclassify.
+"""Pack operations: returns from production, split, merge, reclassify (item
+21), adjustments and write-offs (item 22).
 
 What each one does, in plain words. Every action is one posting through the
 posting service (`domains/posting/accessory.py`), so the usual rules hold (a
@@ -23,10 +24,16 @@ admin can reverse it as a whole.
 - **Reclassify** (admin): part or all of a pack becomes another item with the
   same base unit (e.g. generic stock dedicated to a client). `reclassify` rows:
   minus on the old pack, plus on a new pack of the target item. Needs a reason.
+- **Adjustment** (admin, item 22): a count found a difference. The admin types
+  what was counted; one `adjustment` row posts the difference (+ or -). Works
+  on an empty pack too (stock found). Needs a reason.
+- **Write-off** (admin, item 22): damaged or obsolete stock leaves. One
+  `write_off` row (-). Needs a reason.
 
-Split, merge and reclassify only move a pack's **free** quantity: what it
-holds minus what open (not yet confirmed) issue lines hold back from it, so a
-later confirm of that issue can't fail.
+Split, merge, reclassify and write-off only move a pack's **free** quantity:
+what it holds minus what open lines hold back from it (issues not confirmed,
+supplier returns not sent), so a later confirm / send can't fail. For the same
+reason an adjustment can't count less than what is held.
 
 Nothing here commits; the endpoint commits once.
 """
@@ -308,3 +315,47 @@ def reclassify(db: Session, actor_id: int, pack_id: int, data) -> Tuple[models.A
         LedgerLine(new_pack.id, "reclassify", qty),
     ], reason=data.reason)
     return posting, new_pack
+
+
+# ── Adjustment / write-off (admin, item 22) ──────────────────────────────────
+
+def _reason(reason: Optional[str], action: str) -> str:
+    text = (reason or "").strip()
+    if not text:
+        raise _bad(f"An {action} needs a reason")
+    return text
+
+
+def adjust(db: Session, actor_id: int, pack_id: int, data) -> Tuple[models.AccessoryPosting, models.AccessoryPack]:
+    """`data`: counted (in uom_id, 0 = nothing left), uom_id, reason. Posts
+    counted - on hand as one `adjustment` row."""
+    pack = get_pack_or_404(db, pack_id)
+    ensure_module(db, pack.warehouse_id, MODULE)
+    reason = _reason(data.reason, "adjustment")
+    counted = Decimal(0) if Decimal(str(data.counted)) == 0 else qty_in_base(db, pack.item, data.counted, data.uom_id)
+    on_hand = posting_service.pack_quantity(db, pack.id)
+    held = pending_by_pack(db, [pack.id]).get(pack.id, Decimal(0))
+    if counted < held:
+        raise _bad(f"Pack {pack.id} has {_show(held)} {pack.uom_code} held by open issues or returns: "
+                   "confirm or remove those lines before counting less")
+    delta = counted - on_hand
+    if delta == 0:
+        raise _bad(f"Pack {pack.id} already holds {_show(on_hand)} {pack.uom_code}: nothing to adjust")
+    posting = posting_service.post(db, actor_id, [LedgerLine(pack.id, "adjustment", delta)], reason=reason)
+    return posting, pack
+
+
+def write_off(db: Session, actor_id: int, pack_id: int, data) -> Tuple[models.AccessoryPosting, models.AccessoryPack]:
+    """`data`: qty (None = everything free), uom_id, reason. One `write_off` row (-)."""
+    pack = get_pack_or_404(db, pack_id)
+    ensure_module(db, pack.warehouse_id, MODULE)
+    reason = _reason(data.reason, "write-off")
+    if data.qty is None:
+        qty = free_quantity(db, pack)
+        if qty <= 0:
+            raise _bad(f"Pack {pack.id} has nothing free to write off")
+    else:
+        qty = qty_in_base(db, pack.item, data.qty, data.uom_id)
+    _ensure_free(db, pack, qty)
+    posting = posting_service.post(db, actor_id, [LedgerLine(pack.id, "write_off", -qty)], reason=reason)
+    return posting, pack

@@ -256,6 +256,8 @@ export {
   type ReturnIn,
   type SplitIn,
   type ReclassifyIn,
+  type AdjustIn,
+  type WriteOffIn,
   type PackFree,
   type AccessoryPack,
   type AccessoryPackPage,

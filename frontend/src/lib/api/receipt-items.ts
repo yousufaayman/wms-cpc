@@ -85,6 +85,7 @@ export interface AccessoryReceiptItem {
   over_issue: boolean;
   over_issue_reason: string | null;
   posted: boolean;
+  reversed?: boolean; // item 22: an admin reversed it since
   created_by: number | null;
   created_at: string;
 }

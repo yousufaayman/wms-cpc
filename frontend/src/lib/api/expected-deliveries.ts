@@ -41,6 +41,8 @@ export interface ExpectedDeliveryItem {
   received_qty?: string | null;
   /** Item 18: where the line stands; over-receipts are allowed, only flagged. */
   receive_state?: LineReceiveState | null;
+  /** Item 22: sent back to the supplier from this line's packs; received doesn't change. */
+  returned_qty?: string | null;
   item_code?: string | null;
   item_description?: string | null;
   item_color?: string | null;
@@ -61,6 +63,7 @@ export interface DeliveryLinePack {
   id: number;
   status: "active" | "empty";
   received_qty: string;
+  returned_qty: string; // item 22: sent back to the supplier
   quantity: string;
   rack_code?: string | null;
   created_at: string;

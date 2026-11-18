@@ -6,9 +6,12 @@
 - POST /accessory-pack-ops/packs/{id}/split        part of a pack into new packs
 - POST /accessory-pack-ops/packs/{id}/merge        other packs emptied into this one
 - POST /accessory-pack-ops/packs/{id}/reclassify   part of a pack becomes another item (admin)
+- POST /accessory-pack-ops/packs/{id}/adjust       counted quantity -> difference posted (item 22)
+- POST /accessory-pack-ops/packs/{id}/write-off    damaged / obsolete stock out (item 22)
 
 Returns, split and merge need `issue_accessories` (W_Manager, W_Worker: Tab 1
-"returns from the floor, split and merge packs"); reclassify is admin only.
+"returns from the floor, split and merge packs"); reclassify is admin only;
+adjust and write-off need `adjust_accessories` (admin only, Tab 1 Roles).
 Each action is one posting, so an admin can undo it with
 `POST /accessory-postings/{id}/reverse`. The rules are in
 `domains/accessories/pack_ops.py`. The router is off (404) while
@@ -20,16 +23,18 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from backend import models
-from backend.core.authz import PERM_ISSUE_ACCESSORIES, ensure_admin
+from backend.core.authz import PERM_ADJUST_ACCESSORIES, PERM_ISSUE_ACCESSORIES, ensure_admin
 from backend.core.deps import get_db, require_permission
 from backend.crud.accessory_packs import get_pack_or_404
 from backend.domains.accessories import pack_ops
 from backend.domains.accessories.issuing import pending_by_pack
 from backend.domains.posting import accessory as accessory_posting
 from backend.schemas import (
+    AccessoryAdjustIn,
     AccessoryMergeIn,
     AccessoryMergeOut,
     AccessoryPackFree,
+    AccessoryPackPostingOut,
     AccessoryReclassifyIn,
     AccessoryReclassifyOut,
     AccessoryReturnableLine,
@@ -37,10 +42,12 @@ from backend.schemas import (
     AccessoryReturnOut,
     AccessorySplitIn,
     AccessorySplitOut,
+    AccessoryWriteOffIn,
 )
 
 router = APIRouter()
 _REQUIRE_ISSUE = Depends(require_permission(PERM_ISSUE_ACCESSORIES))
+_REQUIRE_ADJUST = Depends(require_permission(PERM_ADJUST_ACCESSORIES))
 
 
 def _fresh(db: Session, *packs: models.AccessoryPack) -> None:
@@ -123,3 +130,25 @@ def reclassify_pack(
     source = get_pack_or_404(db, pack_id)
     _fresh(db, source, new_pack)
     return {"posting_id": posting.id, "source": source, "pack": new_pack}
+
+
+@router.post("/packs/{pack_id}/adjust", response_model=AccessoryPackPostingOut, status_code=status.HTTP_201_CREATED)
+def adjust_pack(
+    pack_id: int, payload: AccessoryAdjustIn, db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_ADJUST,
+):
+    posting, pack = pack_ops.adjust(db, current_user.id, pack_id, payload)
+    db.commit()
+    _fresh(db, pack)
+    return {"posting_id": posting.id, "pack": pack}
+
+
+@router.post("/packs/{pack_id}/write-off", response_model=AccessoryPackPostingOut, status_code=status.HTTP_201_CREATED)
+def write_off_pack(
+    pack_id: int, payload: AccessoryWriteOffIn, db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_ADJUST,
+):
+    posting, pack = pack_ops.write_off(db, current_user.id, pack_id, payload)
+    db.commit()
+    _fresh(db, pack)
+    return {"posting_id": posting.id, "pack": pack}

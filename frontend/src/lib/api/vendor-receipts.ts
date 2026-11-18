@@ -60,6 +60,10 @@ export const supplierReceiptApi = {
   open: (id: number) =>
     api.request<SupplierReceipt>(`/supplier-receipts/${id}/open`, 'POST'),
 
+  /** Item 22, admin: undo a sent accessory supplier return (stock comes back). */
+  reverse: (id: number, reason: string) =>
+    api.request<SupplierReceipt>(`/supplier-receipts/${id}/reverse`, 'POST', { reason }),
+
   approve: (id: number, approvedBy: number) =>
     api.request<SupplierReceipt>(`/supplier-receipts/${id}/approve?approved_by=${approvedBy}`, 'POST'),
 

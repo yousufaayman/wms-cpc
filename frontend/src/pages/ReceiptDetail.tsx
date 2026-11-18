@@ -12,6 +12,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { IssueLinesTable } from "@/components/accessory-issue/AccessoryIssueScan";
 import { accessoryReceiptItemApi, type AccessoryReceiptItem } from "@/lib/api";
+import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
 import LanguageToggle from "@/components/LanguageToggle";
 import {
@@ -312,6 +313,11 @@ const ReceiptDetail = () => {
   const internalReceipt = kind === "internal" ? (receipt as InternalReceipt) : null;
   const supplierReceipt = kind === "supplier" ? (receipt as SupplierReceipt) : null;
   const externalReceipt = kind === "external" ? (receipt as ExternalReceipt) : null;
+  // Accessory supplier return (item 22): closing sends it (stock leaves);
+  // once sent it can't be reopened or deleted, only reversed by an admin.
+  const accReturn = isAccessory && kind === "supplier";
+  const accSent = accReturn && accLines.some((l) => l.posted);
+  const accReversed = accReturn && accLines.some((l) => l.reversed);
 
   return (
     <PageTransition>
@@ -446,19 +452,46 @@ const ReceiptDetail = () => {
                   {t("confirmReceipt")}
                 </Button>
               )}
-              {receipt.closed && isAdmin && (
+              {receipt.closed && isAdmin && !accSent && (
                 <Button variant="outline" onClick={() => handleAction(() => openReceiptByKind(kind, receipt.id))} disabled={actionLoading}>
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2" />}
                   {t("reopenReceipt")}
                 </Button>
               )}
-              {!receipt.closed && can('create_receipts') && (
+              {accReturn && !receipt.closed && can('confirm_accessory_receipts') && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button disabled={actionLoading || accLines.length === 0}
+                      title={accLines.length === 0 ? t("accIssueNoLines") : undefined}>
+                      {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4 mr-2 rtl:mr-0 rtl:ml-2" />}
+                      {t("accSrSend")}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t("accSrSend")}</AlertDialogTitle>
+                      <AlertDialogDescription>{t("accSrSendDesc")}</AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+                      <AlertDialogAction onClick={() => handleAction(() => closeReceiptByKind(kind, receipt.id))}>
+                        {t("accSrSend")}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+              {accSent && !accReversed && isAdmin && (
+                <ReverseReturnButton busy={actionLoading}
+                  onReverse={(reason) => handleAction(() => supplierReceiptApi.reverse(receipt.id, reason))} />
+              )}
+              {!accReturn && !receipt.closed && can('create_receipts') && (
                 <Button variant="destructive" onClick={() => handleAction(() => closeReceiptByKind(kind, receipt.id))} disabled={actionLoading}>
                   {actionLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4 mr-2" />}
                   {t("closeReceipt")}
                 </Button>
               )}
-              {can('delete_receipts') && (
+              {can('delete_receipts') && !accSent && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
                     <Button variant="outline" disabled={actionLoading}>
@@ -498,7 +531,7 @@ const ReceiptDetail = () => {
                 <div className="flex items-center justify-between">
                   <CardTitle>{t("receiptItems")}</CardTitle>
                   {!receipt.closed && can('create_receipts')
-                    && (!isAccessory || (can('issue_accessories') && internalReceipt?.status === "issued")) && (
+                    && (!isAccessory || (can('issue_accessories') && (internalReceipt?.status === "issued" || accReturn))) && (
                     <Button
                       size="sm"
                       onClick={() =>
@@ -515,6 +548,9 @@ const ReceiptDetail = () => {
                   <div className="space-y-2">
                     {internalReceipt?.status === "issued" && (
                       <p className="text-sm text-muted-foreground">{t("accIssueNotPosted")}</p>
+                    )}
+                    {accReturn && !receipt.closed && (
+                      <p className="text-sm text-muted-foreground">{t("accSrNotSent")}</p>
                     )}
                     <IssueLinesTable lines={accLines} />
                   </div>
@@ -537,5 +573,29 @@ const ReceiptDetail = () => {
     </PageTransition>
   );
 };
+
+/** Admin (item 22): reverse a sent accessory supplier return, with a reason. */
+function ReverseReturnButton({ busy, onReverse }: Readonly<{ busy: boolean; onReverse: (reason: string) => void }>) {
+  const { t } = useTranslation();
+  const [reason, setReason] = useState("");
+  return (
+    <AlertDialog onOpenChange={(open) => { if (!open) setReason(""); }}>
+      <AlertDialogTrigger asChild>
+        <Button variant="outline" disabled={busy}>{t("opsReverse")}</Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("opsReverseTitle")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("opsReverseHint")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} placeholder={t("opsReasonRequired")} />
+        <AlertDialogFooter>
+          <AlertDialogCancel>{t("cancel")}</AlertDialogCancel>
+          <AlertDialogAction disabled={!reason.trim()} onClick={() => onReverse(reason.trim())}>{t("opsReverse")}</AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 export default ReceiptDetail;

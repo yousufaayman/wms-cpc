@@ -94,9 +94,11 @@ export function IssueLinesTable({ lines, onRemove, busyId }: Readonly<{
               {fmtQty(line.qty)} <span className="text-xs text-muted-foreground">{line.uom_code}</span>
             </TableCell>
             <TableCell>
-              {line.posted
-                ? <Badge className="bg-green-100 text-green-800 border-green-300" variant="outline">{t("accIssuePosted")}</Badge>
-                : <Badge variant="secondary">{t("issued")}</Badge>}
+              {line.reversed
+                ? <Badge variant="outline" className="text-muted-foreground">{t("accInvReversed")}</Badge>
+                : line.posted
+                  ? <Badge className="bg-green-100 text-green-800 border-green-300" variant="outline">{t("accIssuePosted")}</Badge>
+                  : <Badge variant="secondary">{t("issued")}</Badge>}
             </TableCell>
             {onRemove && (
               <TableCell className="text-right">
