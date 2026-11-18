@@ -11,7 +11,10 @@ admin can reverse it as a whole.
   is still out on that requirement (issued minus returned, in this warehouse).
   The trims go into any pack of the same item in this warehouse, or into a new
   pack. "Returned from" is the internal location / production line they came
-  back from; a new pack records it as its source (supplier pair).
+  back from: only a place this requirement's stock was issued to. The return
+  posting links the latest issue receipt to that place (so the ledger's
+  From / To shows it, and reversing that issue receipt undoes the return
+  too); a new pack also records it as its source (supplier pair).
 - **Split**: part of a pack goes into N new packs (same item, supplier and
   delivery batch; same rack unless another is given). `transfer` rows: minus
   on the source, plus on each new pack.
@@ -85,11 +88,17 @@ class ReturnableLine:
     requirement: models.JobOrderAccessoryRequirement
     issued: Decimal
     returned: Decimal
-    last_location_id: Optional[int]  # where its latest issue went (the default "returned from")
+    # Where its stock was issued to, latest first: [(location, latest issue receipt id)].
+    issued_to: List[Tuple[models.LogicalLocation, int]]
 
     @property
     def out(self) -> Decimal:
         return self.issued - self.returned
+
+    @property
+    def last_location_id(self) -> Optional[int]:
+        """Where its latest issue went (the default "returned from")."""
+        return self.issued_to[0][0].id if self.issued_to else None
 
 
 def _out_totals(db: Session, warehouse_id: int, requirement_ids: Optional[Sequence[int]] = None,
@@ -112,19 +121,26 @@ def _out_totals(db: Session, warehouse_id: int, requirement_ids: Optional[Sequen
     return {req_id: (Decimal(issued), Decimal(returned)) for req_id, issued, returned in db.execute(q).all()}
 
 
-def _last_locations(db: Session, requirement_ids: Sequence[int]) -> dict:
-    """Per requirement: the destination of its most recent confirmed issue."""
+def _issued_to(db: Session, warehouse_id: int, requirement_ids: Sequence[int]) -> dict:
+    """Per requirement: [(location, its latest issue receipt id)], latest first,
+    from this warehouse's issues that are still standing (not reversed)."""
     if not requirement_ids:
         return {}
     rows = db.execute(
-        select(_Led.jo_requirement_id, models.InternalReceipt.target_logical_location_id)
+        select(_Led.jo_requirement_id, models.InternalReceipt.target_logical_location_id, models.InternalReceipt.id)
+        .join(_Pack, _Pack.id == _Led.pack_id)
         .join(models.AccessoryPosting, models.AccessoryPosting.id == _Led.posting_id)
         .join(models.InternalReceipt, models.InternalReceipt.id == models.AccessoryPosting.internal_receipt_id)
         .where(_Led.jo_requirement_id.in_(list(requirement_ids)), _Led.entry_type == "issue",
-               _Led.reversal_of.is_(None))
-        .order_by(_Led.id)
+               _Led.reversal_of.is_(None), _Led.is_reversed.is_(False), _Pack.warehouse_id == warehouse_id)
+        .order_by(_Led.id.desc())
     ).all()
-    return dict(rows)  # later rows win = the latest issue
+    out: dict = {}
+    for req_id, location_id, receipt_id in rows:
+        places = out.setdefault(req_id, [])
+        if all(loc.id != location_id for loc, _ in places):
+            places.append((db.get(models.LogicalLocation, location_id), receipt_id))
+    return out
 
 
 def returnable_lines(db: Session, warehouse_id: int, job_order_id: int) -> List[ReturnableLine]:
@@ -136,18 +152,23 @@ def returnable_lines(db: Session, warehouse_id: int, job_order_id: int) -> List[
     ids = [req_id for req_id, (issued, returned) in totals.items() if issued - returned > 0]
     if not ids:
         return []
-    locations = _last_locations(db, ids)
+    places = _issued_to(db, warehouse_id, ids)
     reqs = db.scalars(select(_Req).where(_Req.id.in_(ids)).order_by(_Req.id)).unique().all()
-    return [ReturnableLine(r, *totals[r.id], locations.get(r.id)) for r in reqs]
+    return [ReturnableLine(r, *totals[r.id], places.get(r.id, [])) for r in reqs]
 
 
-def _return_source(db: Session, location_id: int) -> models.LogicalLocation:
+def _return_source(
+    db: Session, warehouse_id: int, req: models.JobOrderAccessoryRequirement, location_id: int,
+) -> Tuple[models.LogicalLocation, int]:
+    """The place trims come back from must be one this line's stock was issued
+    to. Returns (location, the latest issue receipt to it)."""
     location = db.get(models.LogicalLocation, location_id)
     if location is None:
         raise _bad("Logical location not found", status.HTTP_404_NOT_FOUND)
-    if getattr(location.location_type, "value", location.location_type) not in ISSUE_TARGET_TYPES:
-        raise _bad("Trims come back from a production line or an internal location")
-    return location
+    for place, receipt_id in _issued_to(db, warehouse_id, [req.id]).get(req.id, []):
+        if place.id == location.id:
+            return location, receipt_id
+    raise _bad(f"{req.accessory_item.code} of this job order wasn't issued to {location.name}")
 
 
 def return_trims(db: Session, actor_id: int, data) -> Tuple[models.AccessoryPosting, models.AccessoryPack, bool]:
@@ -161,7 +182,7 @@ def return_trims(db: Session, actor_id: int, data) -> Tuple[models.AccessoryPost
         raise _bad("Requirement not found", status.HTTP_404_NOT_FOUND)
     if req.job_order_id != data.job_order_id:
         raise _bad("This requirement line is for another job order")
-    location = _return_source(db, data.from_location_id)
+    location, issue_receipt_id = _return_source(db, data.warehouse_id, req, data.from_location_id)
     item = req.accessory_item
     qty = qty_in_base(db, item, data.qty, data.uom_id)
 
@@ -187,7 +208,7 @@ def return_trims(db: Session, actor_id: int, data) -> Tuple[models.AccessoryPost
     posting = posting_service.post(
         db, actor_id,
         [LedgerLine(pack.id, "return", qty, job_order_id=req.job_order_id, jo_requirement_id=req.id)],
-        reason=data.reason,
+        reason=data.reason, receipt_kind="internal", receipt_id=issue_receipt_id,
     )
     return posting, pack, created
 

@@ -4,8 +4,10 @@ What these tests prove:
 1. returns: only what is still out on the requirement (issued - returned)
    comes back; into a pack of the same item in this warehouse or a new pack
    whose source is the "returned from" location; Material Requests' returned
-   / remaining move; an empty pack becomes active again; the default
-   "returned from" is where the issue went
+   / remaining move; an empty pack becomes active again; "returned from" is
+   only a place the line was issued to (default: the latest), the return links
+   that issue receipt, the ledger's From / To shows both, and reversing the
+   issue receipt undoes its returns too
 2. split: N new packs with the source's item, supplier, batch and rack; free
    quantity only (open issue lines hold stock back)
 3. merge: same item only, packs held by an open issue refused, emptied packs
@@ -20,6 +22,7 @@ import pytest
 
 from backend import models
 from backend.domains.posting import accessory as ledger
+from backend.domains.posting import service as posting_service
 from backend.domains.posting.accessory import NewPack
 from backend.tests.test_accessory_invariants import check_invariants
 from backend.tests.test_accessory_issuing import _confirm, _issue, _requirement, _scan, iss  # noqa: F401
@@ -66,6 +69,7 @@ def test_return_into_pack_moves_the_requirement_balance(client, db, iss):
     (line,) = r.json()
     assert line["jo_requirement_id"] == s["req"].id and Decimal(line["out"]) == 30
     assert line["last_location_id"] == s["line"].id  # default "returned from" = where the issue went
+    assert line["locations"] == [{"id": s["line"].id, "name": s["line"].name}]
 
     r = _return(client, s, 12, reason="Style change")
     assert r.status_code == 201, r.text
@@ -80,6 +84,54 @@ def test_return_into_pack_moves_the_requirement_balance(client, db, iss):
     entry = posting.entries[0]
     assert entry.entry_type == "return" and entry.jo_requirement_id == s["req"].id
     assert entry.job_order_id == s["jo"].job_order_id and posting.reason == "Style change"
+    check_invariants(db)
+
+
+def test_ledger_shows_where_stock_went_and_came_back_from(client, db, iss):
+    """From / To: an issue row shows where it went, a return row where it came
+    back from (the return is linked to the latest issue receipt to that place)."""
+    s = iss
+    cutting = models.LogicalLocation(name=f"pytest_ops_cut_{s['req'].id}", location_type="production_line")
+    db.add(cutting)
+    db.commit()
+    rid_line = _issued(client, db, s, 10)
+    rid_cut = _issue(client, s, location=cutting)
+    assert _scan(client, s, rid_cut, 5).status_code == 201 and _confirm(client, s, rid_cut).status_code == 200
+    (line,) = client.get(f"{OPS}/returns", params={"warehouse_id": s["wh"].id, "job_order_id": s["jo"].job_order_id},
+                         headers=s["worker"]).json()
+    assert [loc["id"] for loc in line["locations"]] == [cutting.id, s["line"].id]  # latest first
+    assert line["last_location_id"] == cutting.id
+
+    r = _return(client, s, 2)
+    assert r.status_code == 201, r.text
+    assert db.get(models.AccessoryPosting, r.json()["posting_id"]).internal_receipt_id == rid_line
+
+    hist = client.get(f"/api/v1/accessory-packs/{s['pack'].id}/ledger", headers=s["worker"]).json()
+    shown = [(row["entry_type"], row["location_name"]) for row in hist]
+    assert shown[-3:] == [("issue", s["line"].name), ("issue", cutting.name), ("return", s["line"].name)]
+    assert shown[0] == ("receipt", None)
+
+
+def test_return_only_from_where_it_was_issued(client, db, iss):
+    s = iss
+    _issued(client, db, s, 10)
+    elsewhere = models.LogicalLocation(name=f"pytest_ops_far_{s['req'].id}", location_type="production_line")
+    db.add(elsewhere)
+    db.commit()
+    r = _return(client, s, 1, from_location_id=elsewhere.id)
+    assert r.status_code == 400 and "wasn't issued to" in r.json()["detail"]
+
+
+def test_reversing_the_issue_receipt_undoes_its_returns(client, db, iss):
+    s = iss
+    rid = _issued(client, db, s, 10)
+    assert _return(client, s, 4).status_code == 201
+    receipt = db.get(models.InternalReceipt, rid)
+    posting_service.reverse(db, "internal", receipt, s["pack"].created_by, "Issued to the wrong JO")
+    db.commit()
+    body = _requirement(client, s)
+    assert Decimal(body["issued"]) == 0 and Decimal(body["returned"]) == 0
+    assert _pack(db, s["pack"].id).quantity == 50
     check_invariants(db)
 
 

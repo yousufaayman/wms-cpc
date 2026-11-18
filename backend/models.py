@@ -1537,6 +1537,8 @@ class AccessoryPosting(Base):
         "AccessoryLedgerEntry", back_populates="posting", order_by="AccessoryLedgerEntry.id", lazy="selectin"
     )
     creator = relationship("User", foreign_keys=[created_by], lazy="selectin")
+    # An issue's receipt; a return from production links the issue it came back from.
+    internal_receipt = relationship("InternalReceipt", foreign_keys=[internal_receipt_id])
 
     def __repr__(self):
         return f"<AccessoryPosting {self.id}>"
@@ -1643,6 +1645,13 @@ class AccessoryLedgerEntry(Base):
     @property
     def job_order_number(self):
         return self.job_order.job_order_number if self.job_order is not None else None
+
+    @property
+    def location_name(self):
+        """From / To: where an issue went, or where a return came back from
+        (the issue receipt's production line / internal location)."""
+        receipt = self.posting.internal_receipt
+        return receipt.target_logical_location.name if receipt is not None else None
 
     def __repr__(self):
         return f"<AccessoryLedgerEntry {self.id} pack={self.pack_id} {self.entry_type} {self.qty_delta}>"

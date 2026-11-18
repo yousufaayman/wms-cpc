@@ -35,9 +35,9 @@ import Sidebar from "@/components/Sidebar";
 import { Combobox, type ComboItem } from "@/components/Combobox";
 import { ItemSearch, PickedItem, QtyInUnit, fmtQty } from "@/components/accessory-items/AccessoryItemPicker";
 import {
-  accessoryItemApi, accessoryPackApi, accessoryRequirementApi, isInternalTarget, logicalLocationApi, packOpsApi,
+  accessoryItemApi, accessoryPackApi, accessoryRequirementApi, packOpsApi,
   warehouseRackApi,
-  type AccessoryItem, type AccessoryItemUnit, type AccessoryPack, type LogicalLocation, type PackFree,
+  type AccessoryItem, type AccessoryItemUnit, type AccessoryPack, type PackFree,
   type RequirementJobOrder, type ReturnableLine, type WarehouseRack,
 } from "@/lib/api";
 import { generateAccessoryPackLabels, sendZplToDevice, type AccessoryPackLabelData } from "@/lib/zpl";
@@ -303,16 +303,12 @@ function ReturnTab({ warehouseId, presetJo, racks, print }: Readonly<{
   const { t } = useTranslation();
   const [jobOrders, setJobOrders] = useState<RequirementJobOrder[]>([]);
   const [joId, setJoId] = useState<number | null>(presetJo);
-  const [locations, setLocations] = useState<LogicalLocation[]>([]);
   const [lines, setLines] = useState<ReturnableLine[]>([]);
   const [loading, setLoading] = useState(false);
   const [line, setLine] = useState<ReturnableLine | null>(null);
 
   useEffect(() => {
     accessoryRequirementApi.jobOrders().then(setJobOrders).catch(() => undefined);
-    logicalLocationApi.getAll({ limit: 1000 })
-      .then((l) => setLocations(l.filter(isInternalTarget).sort((a, b) => a.name.localeCompare(b.name))))
-      .catch(() => undefined);
   }, []);
 
   const load = (id: number | null) => {
@@ -368,15 +364,15 @@ function ReturnTab({ warehouseId, presetJo, racks, print }: Readonly<{
         ))}
       </CardContent>
       <ReturnDialog
-        line={line} warehouseId={warehouseId} locations={locations} racks={racks} print={print}
+        line={line} warehouseId={warehouseId} racks={racks} print={print}
         onClose={() => setLine(null)} onDone={() => load(joId)}
       />
     </Card>
   );
 }
 
-function ReturnDialog({ line, warehouseId, locations, racks, print, onClose, onDone }: Readonly<{
-  line: ReturnableLine | null; warehouseId: number; locations: LogicalLocation[]; racks: WarehouseRack[];
+function ReturnDialog({ line, warehouseId, racks, print, onClose, onDone }: Readonly<{
+  line: ReturnableLine | null; warehouseId: number; racks: WarehouseRack[];
   print: Print; onClose: () => void; onDone: () => void;
 }>) {
   const { t } = useTranslation();
@@ -435,7 +431,7 @@ function ReturnDialog({ line, warehouseId, locations, racks, print, onClose, onD
               <Select value={fromId === null ? undefined : String(fromId)} onValueChange={(v) => setFromId(Number(v))}>
                 <SelectTrigger><SelectValue placeholder={t("opsReturnedFrom")} /></SelectTrigger>
                 <SelectContent>
-                  {locations.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
+                  {line.locations.map((l) => <SelectItem key={l.id} value={String(l.id)}>{l.name}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

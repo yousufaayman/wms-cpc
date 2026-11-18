@@ -141,6 +141,8 @@ export interface PackLedgerEntry {
   balance: string | null;
   job_order_id: number | null;
   job_order_number: string | null;
+  /** Item 21: where an issue went / a return came back from. */
+  location_name: string | null;
   reversal_of: number | null;
   is_reversed: boolean;
   reason: string | null;
@@ -190,6 +192,8 @@ export interface ReturnableLine {
   returned: string;
   out: string; // issued - returned = the most that can come back
   last_location_id: number | null; // where the latest issue went
+  /** Where this line's stock was issued to, latest first: the only "returned from" choices. */
+  locations: { id: number; name: string }[];
 }
 
 export interface ReturnIn {

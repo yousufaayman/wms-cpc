@@ -67,6 +67,7 @@ def returnable(
             "returned": line.returned,
             "out": line.out,
             "last_location_id": line.last_location_id,
+            "locations": [{"id": loc.id, "name": loc.name} for loc, _ in line.issued_to],
         }
         for line in pack_ops.returnable_lines(db, warehouse_id, job_order_id)
     ]
