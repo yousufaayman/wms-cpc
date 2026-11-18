@@ -214,6 +214,11 @@ def post(
     packs = _lock_packs(db, (line.pack_id for line in lines))
     checked_warehouses = set()
     for pack in packs.values():
+        # Item 23: a merged duplicate's packs are closed for good (this also
+        # makes the merge posting itself irreversible).
+        if pack.item.merged_into_id is not None:
+            raise _bad(f"{pack.item.code} was merged into {pack.item.merged_into_code}: "
+                       f"pack {pack.id} can't change any more")
         if pack.warehouse_id not in checked_warehouses:
             ensure_module(db, pack.warehouse_id, MODULE)
             checked_warehouses.add(pack.warehouse_id)

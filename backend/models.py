@@ -325,7 +325,12 @@ class AccessoryItem(Base):
             "AND ((parent_template_id IS NULL) = (variable_values IS NULL))",
             name="ck_accessory_items_variant",
         ),
+        # Item 23: a merged duplicate is switched off for good.
+        CheckConstraint(
+            "merged_into_id IS NULL OR (merged_into_id <> id AND NOT active)", name="ck_accessory_items_merged"
+        ),
         Index("ix_accessory_items_parent_template", "parent_template_id"),
+        Index("ix_accessory_items_merged_into", "merged_into_id"),
         Index(
             "uq_accessory_items_variant", "parent_template_id", "variant_key",
             unique=True, postgresql_where=text("parent_template_id IS NOT NULL"),
@@ -362,6 +367,11 @@ class AccessoryItem(Base):
     )
     variable_values = Column(JSONB, nullable=True)
     variant_key = Column(String(1000), nullable=True)
+    # Item 23: this item was a duplicate, merged into that one (stock,
+    # references and open delivery lines moved there; `domains/accessories/item_merge.py`).
+    merged_into_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=True
+    )
 
     category = relationship("AccessoryCategory", foreign_keys=[category_id])
     client = relationship("Client", foreign_keys=[client_id])
@@ -376,6 +386,11 @@ class AccessoryItem(Base):
     parent_template = relationship(
         "AccessoryItem", remote_side=[id], foreign_keys=[parent_template_id], lazy="selectin"
     )
+    merged_into = relationship("AccessoryItem", remote_side=[id], foreign_keys=[merged_into_id])
+
+    @property
+    def merged_into_code(self):
+        return self.merged_into.code if self.merged_into_id is not None else None
 
     @property
     def is_template(self) -> bool:

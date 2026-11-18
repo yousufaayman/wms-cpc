@@ -32,6 +32,9 @@
  * - Look-alike warning (item 11): while the form has the same category, client,
  *   description, color and size as another item (ignoring case and spaces),
  *   it says so and offers to open it. Saving is still allowed (user decision).
+ * - Merge duplicates (item 23, admin): "Merge into another item" in an item's
+ *   dialog (`components/accessory-items/MergeItemDialog.tsx`). A merged item
+ *   shows "Merged into <code>" and can't be switched back on.
  * Anyone with a WMS role can look; creating/editing needs `manage_accessory_items`.
  */
 import { useEffect, useMemo, useState } from "react";
@@ -46,7 +49,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Merge, Pencil, Plus, Trash2 } from "lucide-react";
 import { Combobox, type ComboItem } from "@/components/Combobox";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
@@ -61,6 +64,7 @@ import {
 import {
   ALL, GENERIC, ItemFilterBar, ItemPager, toItemQuery, useItemFilters,
 } from "@/components/accessory-items/ItemFilters";
+import { MergeItemDialog } from "@/components/accessory-items/MergeItemDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -96,7 +100,7 @@ const partyParams = (party: string): { client_id?: number; supplier_id?: number 
 const AccessoryItems = () => {
   const { t, language } = useTranslation();
   const { toast } = useToast();
-  const { can } = useCurrentUser();
+  const { can, isAdmin } = useCurrentUser();
   const canManage = can("manage_accessory_items");
 
   // Lookup lists
@@ -128,6 +132,7 @@ const AccessoryItems = () => {
   const [template, setTemplate] = useState<AccessoryItem | null>(null); // of the open variant
   const [similar, setSimilar] = useState<AccessoryItem[]>([]); // look-alikes of the form
   const [openBases, setOpenBases] = useState<Record<number, AccessoryItem[]>>({}); // base id → its variants, when opened
+  const [merging, setMerging] = useState(false); // item 23: merge dialog for `editing`
 
   const categoryById = useMemo(() => new Map(categories.map((c) => [c.id, c])), [categories]);
   const uomById = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms]);
@@ -532,6 +537,9 @@ const AccessoryItems = () => {
           <Badge variant={item.active ? "outline" : "secondary"}>
             {item.active ? t("accActive") : t("accInactive")}
           </Badge>
+          {item.merged_into_code && (
+            <div className="text-xs text-muted-foreground mt-1">{t("itemMergedInto", { code: item.merged_into_code })}</div>
+          )}
         </TableCell>
         <TableCell className="text-right">
           <Button variant="outline" size="sm" onClick={() => openEdit(item)} title={t("accEdit")}>
@@ -700,9 +708,12 @@ const AccessoryItems = () => {
                 {editing && (
                   <div className="flex items-center justify-between">
                     <Label htmlFor="active">{t("accActive")}</Label>
-                    <Switch id="active" checked={form.active} disabled={readOnly}
+                    <Switch id="active" checked={form.active} disabled={readOnly || !!editing.merged_into_id}
                       onCheckedChange={(v) => setForm({ ...form, active: v })} />
                   </div>
+                )}
+                {editing?.merged_into_code && (
+                  <p className="text-sm text-muted-foreground">{t("itemMergedInto", { code: editing.merged_into_code })}</p>
                 )}
 
                 {/* References: the client's / supplier's own codes */}
@@ -839,6 +850,11 @@ const AccessoryItems = () => {
                 )}
 
                 <div className="flex justify-end gap-2">
+                  {editing && isAdmin && !editing.merged_into_id && !editing.is_template && (
+                    <Button variant="outline" className="me-auto" onClick={() => setMerging(true)}>
+                      <Merge className="me-2 h-4 w-4" />{t("itemMergeAction")}
+                    </Button>
+                  )}
                   <Button variant="outline" onClick={() => setDialogOpen(false)}>{t("cancel")}</Button>
                   {canManage && (
                     <Button onClick={save} disabled={saving}>{editing ? t("saveChanges") : t("create")}</Button>
@@ -847,6 +863,10 @@ const AccessoryItems = () => {
               </div>
             </DialogContent>
           </Dialog>
+          {editing && (
+            <MergeItemDialog duplicate={editing} open={merging} onOpenChange={setMerging}
+              onMerged={() => { setDialogOpen(false); loadItems(); }} />
+          )}
         </main>
       </div>
     </PageTransition>
