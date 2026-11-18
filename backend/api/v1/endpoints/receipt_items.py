@@ -4,7 +4,7 @@ from typing import List
 from ....database import get_db
 from ....core.deps import require_permission
 from ....core.authz import PERM_CREATE_RECEIPTS, PERM_ISSUE_ACCESSORIES
-from ....domains.accessories import issuing
+from ....domains.accessories import issuing, supplier_returns
 from .... import crud, schemas, models
 
 # Adding a line goes through the posting service, which also checks the line
@@ -64,9 +64,11 @@ def delete_box_item(item_id: int, db: Session = Depends(get_db), current_user: m
         raise HTTPException(status_code=404, detail="Box receipt item not found")
 
 
-# ── Accessory receipt items (item 20: issue lines) ───────────────────────────
-# Scanning a pack onto an issue = domains/accessories/issuing.py (checks pack,
-# requirement, client-match, over-issue). Needs `issue_accessories`.
+# ── Accessory receipt items ──────────────────────────────────────────────────
+# Scanning a pack onto an issue (internal receipt) = domains/accessories/
+# issuing.py (item 20: pack, requirement, client-match, over-issue); onto a
+# supplier return (supplier receipt) = supplier_returns.py (item 22: pack,
+# same supplier). External receipts take no packs. Needs `issue_accessories`.
 
 _REQUIRE_ISSUE_ACCESSORIES = Depends(require_permission(PERM_ISSUE_ACCESSORIES))
 
@@ -82,7 +84,10 @@ def add_accessory_item(kind: str, receipt_id: int, item: schemas.AccessoryReceip
     _validate_kind(kind)
     if (item.pack_id is None) == (item.barcode is None):
         raise HTTPException(status_code=422, detail="Give the pack barcode or the pack id")
-    line = issuing.add_line(db, kind, receipt_id, item, current_user.id)
+    if kind == "supplier":
+        line = supplier_returns.add_line(db, receipt_id, item, current_user.id)
+    else:
+        line = issuing.add_line(db, kind, receipt_id, item, current_user.id)
     db.commit()
     db.refresh(line)
     line.posted = False  # just scanned: not confirmed yet
@@ -92,5 +97,8 @@ def add_accessory_item(kind: str, receipt_id: int, item: schemas.AccessoryReceip
 @router.delete("/accessory-items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_accessory_item(item_id: int, db: Session = Depends(get_db), current_user: models.User = _REQUIRE_ISSUE_ACCESSORIES):
     line = issuing.get_line_or_404(db, item_id)
-    issuing.check_line_removable(db, line)
+    if line.supplier_receipt_id is not None:
+        supplier_returns.check_line_removable(db, line)
+    else:
+        issuing.check_line_removable(db, line)
     crud.receipt_items.delete_accessory_receipt_item(db, item_id)

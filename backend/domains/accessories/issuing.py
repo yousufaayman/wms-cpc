@@ -88,9 +88,15 @@ def _mark_posted(db: Session, lines: Sequence[models.AccessoryReceiptItem]) -> N
     ids = [line.id for line in lines]
     if not ids:
         return
-    posted = set(db.scalars(select(_Led.accessory_receipt_item_id).where(_Led.accessory_receipt_item_id.in_(ids))).all())
+    rows = db.execute(
+        select(_Led.accessory_receipt_item_id, _Led.is_reversed)
+        .where(_Led.accessory_receipt_item_id.in_(ids), _Led.reversal_of.is_(None))
+    ).all()
+    posted = {line_id for line_id, _ in rows}
+    reversed_ = {line_id for line_id, is_reversed in rows if is_reversed}
     for line in lines:
         line.posted = line.id in posted
+        line.reversed = line.id in reversed_
 
 
 def list_lines(db: Session, receipt_kind: str, receipt_id: int) -> List[models.AccessoryReceiptItem]:
@@ -155,7 +161,7 @@ def check_issue_header(
 def _open_issue_receipt(db: Session, receipt_kind: str, receipt_id: int) -> models.InternalReceipt:
     ensure_receipt_line_kind(db, receipt_kind, receipt_id, "accessory")
     if receipt_kind != "internal":
-        raise _bad("Accessory packs go on issue (internal) receipts")
+        raise _bad("Accessory packs go on issues (internal receipts) or supplier returns")
     receipt = db.get(models.InternalReceipt, receipt_id)
     if receipt.status != "issued" or receipt.closed:
         raise _bad("This issue is already confirmed or closed")

@@ -17,6 +17,7 @@ import LanguageToggle from "@/components/LanguageToggle";
 import { ReceiverField } from "@/components/ReceiverField";
 import AccessoryIssueScan from "@/components/accessory-issue/AccessoryIssueScan";
 import { NewIssueForm } from "@/components/accessory-issue/NewIssueForm";
+import SupplierReturnScan from "@/components/accessory-issue/SupplierReturnScan";
 import {
   supplierReceiptApi,
   internalReceiptApi,
@@ -844,6 +845,21 @@ const CreateReceipt = () => {
                 </Card>
               </div>
             )}
+          </main>
+        </div>
+      </PageTransition>
+    );
+  }
+
+  // Accessory warehouses (item 22): a supplier receipt is a supplier return.
+  // The usual setup form creates it; scanning takes packs instead of rolls.
+  if (resolvedKind === "supplier" && scanning && receiptId !== null
+      && warehouses.find(w => w.id === issueWarehouseId)?.type === "Accessory") {
+    return (
+      <PageTransition>
+        <div className="min-h-screen bg-background flex">
+          <main className="flex-1 p-6">
+            <SupplierReturnScan receiptId={receiptId} warehouseId={issueWarehouseId} />
           </main>
         </div>
       </PageTransition>

@@ -62,11 +62,13 @@ PERM_OPERATIONS = "operations"
 # are admin-only: they get no permission and are checked with ensure_admin.
 #   manage_accessory_items     create/edit items, templates, variants, trim refs
 #   receive_accessories        receive packs against expected deliveries, labels, move packs
-#   confirm_accessory_receipts confirm accessory issue receipts (posts to the ledger);
+#   confirm_accessory_receipts confirm accessory issue receipts and send supplier
+#                              returns (both post to the ledger);
 #                              separate from confirm_receipts so W_Manager can
 #                              confirm accessories while fabric stays admin-only.
 #                              Receiving needs no confirm (D-7)
-#   issue_accessories          issue to JOs, returns from the floor, split/merge packs
+#   issue_accessories          issue to JOs, returns from the floor, split/merge packs,
+#                              scan packs onto supplier returns
 #   needle_exchange            needle exchanges
 #   adjust_accessories         adjustments, write-offs, opening balance (admin only)
 # JO accessory requirements are written by another system; WMS only reads

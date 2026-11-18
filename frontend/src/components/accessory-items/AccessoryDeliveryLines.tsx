@@ -96,7 +96,7 @@ function LinePacks({ line, colSpan }: Readonly<{ line: ExpectedDeliveryItem; col
       .then((p) => { if (live) setPacks(p); })
       .catch(() => { if (live) setPacks([]); });
     return () => { live = false; };
-  }, [line.id, line.received_qty]);
+  }, [line.id, line.received_qty, line.returned_qty]);
 
   let body;
   if (packs === null) {
@@ -112,6 +112,7 @@ function LinePacks({ line, colSpan }: Readonly<{ line: ExpectedDeliveryItem; col
             <TableRow>
               <TableHead>{t("accInvPack")}</TableHead>
               <TableHead className="text-right">{t("accReceivedQty")}</TableHead>
+              <TableHead className="text-right">{t("accEntry_supplier_return")}</TableHead>
               <TableHead className="text-right">{t("accInvOnHand")}</TableHead>
               <TableHead>{t("rack")}</TableHead>
               <TableHead>{t("accReceivedAt")}</TableHead>
@@ -123,6 +124,9 @@ function LinePacks({ line, colSpan }: Readonly<{ line: ExpectedDeliveryItem; col
               <TableRow key={p.id} className={p.status === "empty" ? "text-muted-foreground" : ""}>
                 <TableCell className="font-mono text-sm" dir="ltr">{p.id}</TableCell>
                 <TableCell className="text-right font-mono text-sm" dir="ltr">{fmtQty(p.received_qty)} {line.uom_code}</TableCell>
+                <TableCell className="text-right font-mono text-sm" dir="ltr">
+                  {Number(p.returned_qty) > 0 ? `${fmtQty(p.returned_qty)} ${line.uom_code}` : "—"}
+                </TableCell>
                 <TableCell className="text-right font-mono text-sm" dir="ltr">{fmtQty(p.quantity)} {line.uom_code}</TableCell>
                 <TableCell className="text-sm">{p.rack_code ?? "—"}</TableCell>
                 <TableCell className="text-sm" dir="ltr">{fmtDateTime(p.created_at)}</TableCell>
@@ -261,7 +265,15 @@ export default function AccessoryDeliveryLines({ delivery, canEdit, onChanged, o
         <TableCell className={`text-sm ${tone(differs, "color", grouped)}`}>{line.item_color ?? "—"}</TableCell>
         <TableCell className={`text-sm ${tone(differs, "size", grouped)}`}>{line.item_size ?? "—"}</TableCell>
         <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(line.expected_qty)} {line.uom_code}</TableCell>
-        <TableCell className="text-right text-sm font-mono" dir="ltr">{fmtQty(received)} {line.uom_code}</TableCell>
+        <TableCell className="text-right text-sm font-mono" dir="ltr">
+          {fmtQty(received)} {line.uom_code}
+          {/* Item 22: sent back to the supplier (received doesn't change) */}
+          {Number(line.returned_qty ?? 0) > 0 && (
+            <div className="text-xs text-amber-700 font-sans" dir="auto">
+              {t("accEntry_supplier_return")}: <span dir="ltr">{fmtQty(line.returned_qty)} {line.uom_code}</span>
+            </div>
+          )}
+        </TableCell>
         <TableCell className="text-center">
           <div className="flex flex-col items-center gap-1">
             {line.receive_state && <LineStateBadge state={line.receive_state} />}

@@ -1120,6 +1120,8 @@ class AccessoryReceiptItem(Base):
     # Filled in by domains.accessories.issuing (never stored): the line's
     # `issue` ledger row exists (= the receipt was confirmed)
     posted = False
+    # ... and an admin reversed it since (item 22, shown as "Reversed")
+    reversed = False
 
     @property
     def over_issue(self) -> bool:
@@ -1303,6 +1305,10 @@ class ExpectedDeliveryItem(Base):
     received_qty = None
     # Item 18: waiting | partial | complete | over (same rule as received_qty)
     receive_state = None
+    # Item 22: what went back to the supplier from this line's packs
+    # (-sum of their `supplier_return` rows, reversals net out). Received
+    # doesn't change; shown beside it. Accessory lines only.
+    returned_qty = None
 
     # Item 15 display fields for accessory lines (None on fabric lines)
     @property

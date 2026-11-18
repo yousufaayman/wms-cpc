@@ -225,10 +225,24 @@ export interface ReclassifyIn {
   rack_id?: number | null;
 }
 
+/** Item 22 (admin): what was counted; the difference is posted. "0" = nothing left. */
+export interface AdjustIn {
+  counted: string;
+  uom_id?: number | null;
+  reason: string;
+}
+
+/** Item 22 (admin): damaged / obsolete stock out. qty null = everything free. */
+export interface WriteOffIn {
+  qty?: string | null;
+  uom_id?: number | null;
+  reason: string;
+}
+
 export interface PackFree {
   pack_id: number;
   quantity: string;
-  held: string; // on open issue lines
+  held: string; // on open lines (issues not confirmed, supplier returns not sent)
   free: string;
 }
 
@@ -244,6 +258,10 @@ export const packOpsApi = {
     api.request<{ posting_id: number; pack: AccessoryPack }>(`/accessory-pack-ops/packs/${packId}/merge`, 'POST', { from_pack_ids: fromPackIds }),
   reclassify: (packId: number, body: ReclassifyIn) =>
     api.request<{ posting_id: number; source: AccessoryPack; pack: AccessoryPack }>(`/accessory-pack-ops/packs/${packId}/reclassify`, 'POST', body),
+  adjust: (packId: number, body: AdjustIn) =>
+    api.request<{ posting_id: number; pack: AccessoryPack }>(`/accessory-pack-ops/packs/${packId}/adjust`, 'POST', body),
+  writeOff: (packId: number, body: WriteOffIn) =>
+    api.request<{ posting_id: number; pack: AccessoryPack }>(`/accessory-pack-ops/packs/${packId}/write-off`, 'POST', body),
 };
 
 /** Admin: cancel one whole action (all its rows on all its packs). */

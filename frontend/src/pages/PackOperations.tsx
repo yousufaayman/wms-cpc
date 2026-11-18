@@ -12,8 +12,13 @@
  *   unit) → quantity (empty = everything free) and reason → a new pack of the
  *   new item, label prints.
  *
- * Split / merge / reclassify only move a pack's free quantity (what open
- * issues don't hold back). `?tab=return&jo=<id>` opens a tab directly (the
+ * - Adjustment (admins only, item 22): scan a pack (empty ones too) → type
+ *   the counted quantity → the difference is shown, posted with a reason.
+ * - Write-off (admins only, item 22): scan a pack → quantity (empty =
+ *   everything free) and reason.
+ *
+ * Split / merge / reclassify / write-off only move a pack's free quantity
+ * (what open issues and unsent supplier returns don't hold back). `?tab=return&jo=<id>` opens a tab directly (the
  * Return button in Material Requests). Rules live on the server
  * (`domains/accessories/pack_ops.py`); this page only collects the input.
  */
@@ -45,8 +50,9 @@ import { useWarehouse } from "@/hooks/useWarehouse";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useTranslation } from "@/hooks/useTranslation";
 
-type Tab = "return" | "split" | "merge" | "reclassify";
-const TABS: Tab[] = ["return", "split", "merge", "reclassify"];
+type Tab = "return" | "split" | "merge" | "reclassify" | "adjust" | "writeoff";
+const TABS: Tab[] = ["return", "split", "merge", "reclassify", "adjust", "writeoff"];
+const ADMIN_TABS: Tab[] = ["reclassify", "adjust", "writeoff"];
 const NO_RACK = "none";
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
@@ -236,7 +242,7 @@ export default function PackOperations() {
   const { isAdmin } = useCurrentUser();
   const [params, setParams] = useSearchParams();
   const requested = params.get("tab") as Tab | null;
-  const tab: Tab = requested && TABS.includes(requested) && (requested !== "reclassify" || isAdmin) ? requested : "return";
+  const tab: Tab = requested && TABS.includes(requested) && (!ADMIN_TABS.includes(requested) || isAdmin) ? requested : "return";
   const presetJo = params.get("jo") && /^\d+$/.test(params.get("jo")!) ? Number(params.get("jo")) : null;
   const racks = useRacks(warehouseId);
   const printing = usePrinter();
@@ -275,16 +281,22 @@ export default function PackOperations() {
                 <TabsTrigger value="return">{t("opsTabReturn")}</TabsTrigger>
                 <TabsTrigger value="split">{t("opsTabSplit")}</TabsTrigger>
                 <TabsTrigger value="merge">{t("opsTabMerge")}</TabsTrigger>
-                {isAdmin && <TabsTrigger value="reclassify">{t("opsTabReclassify")}</TabsTrigger>}
+                {isAdmin && <>
+                  <TabsTrigger value="reclassify">{t("opsTabReclassify")}</TabsTrigger>
+                  <TabsTrigger value="adjust">{t("accEntry_adjustment")}</TabsTrigger>
+                  <TabsTrigger value="writeoff">{t("accEntry_write_off")}</TabsTrigger>
+                </>}
               </TabsList>
               <TabsContent value="return">
                 <ReturnTab warehouseId={warehouseId} presetJo={presetJo} racks={racks} print={printing.print} />
               </TabsContent>
               <TabsContent value="split"><SplitTab racks={racks} print={printing.print} /></TabsContent>
               <TabsContent value="merge"><MergeTab /></TabsContent>
-              {isAdmin && (
+              {isAdmin && <>
                 <TabsContent value="reclassify"><ReclassifyTab racks={racks} print={printing.print} /></TabsContent>
-              )}
+                <TabsContent value="adjust"><AdjustTab /></TabsContent>
+                <TabsContent value="writeoff"><WriteOffTab /></TabsContent>
+              </>}
             </Tabs>
           )}
         </main>
@@ -639,6 +651,109 @@ function ReclassifyTab({ racks, print }: Readonly<{ racks: WarehouseRack[]; prin
           <ItemSearch active={picking} onPick={(item) => { setTarget(item); setPicking(false); }} />
         </DialogContent>
       </Dialog>
+    </Card>
+  );
+}
+
+// ── Adjustment (admin, item 22) ──────────────────────────────────────────────
+
+function AdjustTab() {
+  const { t } = useTranslation();
+  const { pack, free, choose } = usePackWithFree();
+  const { units, uomId, setUomId, toBase } = useUnits(pack?.accessory_item_id ?? null);
+  const [counted, setCounted] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const typed = counted.trim() !== "" && Number(counted) >= 0;
+  const diff = pack && typed ? toBase(counted) - Number(pack.quantity) : 0;
+
+  const save = async () => {
+    if (!pack || !typed || !reason.trim()) return;
+    if (diff === 0) { toast.warning(t("opsAdjustSame")); return; }
+    setSaving(true);
+    try {
+      const out = await packOpsApi.adjust(pack.id, { counted, uom_id: uomId, reason: reason.trim() });
+      toast.success(t("opsAdjustDone", { pack: out.pack.id, qty: fmtQty(out.pack.quantity), uom: out.pack.uom_code }));
+      choose(out.pack);
+      setCounted(""); setReason("");
+    } catch (e) {
+      toast.error(errorText(e, t("error")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>{t("accEntry_adjustment")} <span className="text-sm font-normal text-muted-foreground">({t("opsAdminOnly")})</span></CardTitle></CardHeader>
+      <CardContent className="space-y-4 max-w-xl">
+        <p className="text-sm text-muted-foreground">{t("opsAdjustHint")}</p>
+        {pack ? <PackCard pack={pack} free={free} onClear={() => choose(null)} /> : <PackScan label={t("opsScanPack")} onPack={choose} />}
+        {pack && <>
+          <QtyInUnit label={t("opsCounted")} units={units} qty={counted} setQty={setCounted} uomId={uomId} setUomId={setUomId} />
+          {typed && (
+            <p className={`text-sm ${diff < 0 ? "text-red-600" : diff > 0 ? "text-green-700" : "text-muted-foreground"}`}>
+              {diff === 0 ? t("opsAdjustSame") : t("opsAdjustDiff", { diff: `${diff > 0 ? "+" : ""}${fmtQty(diff)}`, uom: pack.uom_code })}
+            </p>
+          )}
+          <div className="space-y-1.5">
+            <Label>{t("opsReasonRequired")}</Label>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
+          </div>
+          <Button onClick={save} disabled={saving || !typed || diff === 0 || !reason.trim()}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5 rtl:mr-0 rtl:ml-1.5" />}{t("accEntry_adjustment")}
+          </Button>
+        </>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Write-off (admin, item 22) ───────────────────────────────────────────────
+
+function WriteOffTab() {
+  const { t } = useTranslation();
+  const { pack, free, choose } = usePackWithFree();
+  const { units, uomId, setUomId } = useUnits(pack?.accessory_item_id ?? null);
+  const [qty, setQty] = useState("");
+  const [reason, setReason] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!pack || !reason.trim()) return;
+    setSaving(true);
+    try {
+      const before = Number(pack.quantity);
+      const out = await packOpsApi.writeOff(pack.id, { qty: Number(qty) > 0 ? qty : null, uom_id: uomId, reason: reason.trim() });
+      toast.success(t("opsWriteOffDone", {
+        qty: fmtQty(before - Number(out.pack.quantity)), uom: out.pack.uom_code, pack: out.pack.id,
+      }));
+      choose(out.pack);
+      setQty(""); setReason("");
+    } catch (e) {
+      toast.error(errorText(e, t("error")));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader><CardTitle>{t("accEntry_write_off")} <span className="text-sm font-normal text-muted-foreground">({t("opsAdminOnly")})</span></CardTitle></CardHeader>
+      <CardContent className="space-y-4 max-w-xl">
+        {pack ? <PackCard pack={pack} free={free} onClear={() => choose(null)} /> : <PackScan label={t("opsScanPack")} onPack={choose} />}
+        {pack && <>
+          <QtyInUnit label={t("opsWriteOffQty")} units={units} qty={qty} setQty={setQty} uomId={uomId} setUomId={setUomId} />
+          <div className="space-y-1.5">
+            <Label>{t("opsReasonRequired")}</Label>
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} />
+          </div>
+          <Button variant="destructive" onClick={save} disabled={saving || !reason.trim()}>
+            {saving && <Loader2 className="h-4 w-4 animate-spin mr-1.5 rtl:mr-0 rtl:ml-1.5" />}{t("accEntry_write_off")}
+          </Button>
+        </>}
+      </CardContent>
     </Card>
   );
 }

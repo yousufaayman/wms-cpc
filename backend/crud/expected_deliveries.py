@@ -470,8 +470,8 @@ def sync_delivery_received(db: Session, delivery_id: int) -> None:
 # receipt is a negative `receipt` row, so it nets out; issuing or moving
 # stock from those packs later doesn't change what was received.
 
-def accessory_received(db: Session, line_ids: List[int]) -> dict:
-    """{line id: received in base units} for accessory lines (missing = 0)."""
+def _line_sums(db: Session, line_ids: List[int], entry_type: str) -> dict:
+    """{line id: sum of `entry_type` rows on the line's packs} (missing = 0)."""
     if not line_ids:
         return {}
     rows = (
@@ -479,12 +479,22 @@ def accessory_received(db: Session, line_ids: List[int]) -> dict:
         .join(AccessoryLedgerEntry, AccessoryLedgerEntry.pack_id == AccessoryPack.id)
         .filter(
             AccessoryPack.expected_delivery_item_id.in_(line_ids),
-            AccessoryLedgerEntry.entry_type == "receipt",
+            AccessoryLedgerEntry.entry_type == entry_type,
         )
         .group_by(AccessoryPack.expected_delivery_item_id)
         .all()
     )
     return {line_id: Decimal(total) for line_id, total in rows}
+
+
+def accessory_received(db: Session, line_ids: List[int]) -> dict:
+    """{line id: received in base units} for accessory lines (missing = 0)."""
+    return _line_sums(db, line_ids, "receipt")
+
+
+def accessory_returned(db: Session, line_ids: List[int]) -> dict:
+    """Item 22: {line id: sent back to the supplier, base units} (missing = 0)."""
+    return {line_id: -total for line_id, total in _line_sums(db, line_ids, "supplier_return").items()}
 
 
 def line_receive_state(expected: Decimal, received: Decimal) -> str:
@@ -498,13 +508,15 @@ def line_receive_state(expected: Decimal, received: Decimal) -> str:
 
 
 def attach_accessory_received(db: Session, lines: Iterable[ExpectedDeliveryItem]) -> None:
-    """Set the transient `received_qty` and `receive_state` on each accessory
-    line (one query)."""
+    """Set the transient `received_qty`, `receive_state` and `returned_qty`
+    on each accessory line (two queries)."""
     acc = [i for i in lines if i is not None and i.accessory_item_id is not None]
     sums = accessory_received(db, [i.id for i in acc])
+    returned = accessory_returned(db, [i.id for i in acc])
     for line in acc:
         line.received_qty = sums.get(line.id, Decimal("0"))
         line.receive_state = line_receive_state(line.expected_qty, line.received_qty)
+        line.returned_qty = returned.get(line.id, Decimal("0"))
 
 
 def attach_delivery_flags(deliveries: Iterable[ExpectedDelivery]) -> None:
@@ -547,9 +559,12 @@ def line_packs(db: Session, line_id: int) -> List[dict]:
     received = func.coalesce(
         func.sum(AccessoryLedgerEntry.qty_delta).filter(AccessoryLedgerEntry.entry_type == "receipt"), 0
     )
+    returned = func.coalesce(  # supplier_return rows are negative: negated below
+        func.sum(AccessoryLedgerEntry.qty_delta).filter(AccessoryLedgerEntry.entry_type == "supplier_return"), 0
+    )
     on_hand = func.coalesce(func.sum(AccessoryLedgerEntry.qty_delta), 0)
     rows = db.execute(
-        select(AccessoryPack, received, on_hand, User.username)
+        select(AccessoryPack, received, returned, on_hand, User.username)
         .outerjoin(AccessoryLedgerEntry, AccessoryLedgerEntry.pack_id == AccessoryPack.id)
         .outerjoin(User, User.id == AccessoryPack.created_by)
         .where(AccessoryPack.expected_delivery_item_id == line_id)
@@ -561,12 +576,13 @@ def line_packs(db: Session, line_id: int) -> List[dict]:
             "id": pack.id,
             "status": pack.status,
             "received_qty": Decimal(rec),
+            "returned_qty": -Decimal(ret),
             "quantity": Decimal(held),
             "rack_code": pack.rack_code,
             "created_at": pack.created_at,
             "received_by": username,
         }
-        for pack, rec, held, username in rows
+        for pack, rec, ret, held, username in rows
     ]
 
 

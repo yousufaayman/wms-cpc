@@ -740,10 +740,31 @@ class AccessoryReclassifyOut(BaseModel):
     pack: AccessoryPack
 
 
+class AccessoryAdjustIn(BaseModel):
+    """Admin (item 22): what was actually counted in the pack, in `uom_id`
+    (None = base unit); 0 = nothing left. The difference is posted."""
+    counted: Decimal = Field(..., ge=0)
+    uom_id: Optional[int] = None
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class AccessoryWriteOffIn(BaseModel):
+    """Admin (item 22): damaged / obsolete stock out. `qty` None = everything free."""
+    qty: Optional[Decimal] = Field(None, gt=0)
+    uom_id: Optional[int] = None
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class AccessoryPackPostingOut(BaseModel):
+    """One posting on one pack (adjustment, write-off) and the pack after it."""
+    posting_id: int
+    pack: AccessoryPack
+
+
 class AccessoryPackFree(BaseModel):
     pack_id: int
     quantity: Decimal  # on hand
-    held: Decimal  # on open (unconfirmed) issue lines
+    held: Decimal  # on open lines (issues not confirmed, supplier returns not sent)
     free: Decimal  # quantity - held
 
 
@@ -1189,7 +1210,8 @@ class AccessoryReceiptItemCreate(BaseModel):
 
 class AccessoryReceiptItem(BaseModel):
     """A pack line of an accessory receipt; `qty` in the item's base unit.
-    `posted` = taken out of stock (the receipt is confirmed)."""
+    `posted` = taken out of stock (the issue is confirmed / the supplier
+    return is sent); `reversed` = an admin reversed it since (item 22)."""
     id: int
     supplier_receipt_id: Optional[int] = None
     internal_receipt_id: Optional[int] = None
@@ -1209,6 +1231,7 @@ class AccessoryReceiptItem(BaseModel):
     over_issue: bool
     over_issue_reason: Optional[str] = None
     posted: bool
+    reversed: bool = False
     created_by: Optional[int] = None
     created_at: datetime
 
@@ -1765,6 +1788,8 @@ class ExpectedDeliveryItemInDB(ExpectedDeliveryItemBase):
     received_qty: Optional[Decimal] = None
     # Item 18: waiting | partial | complete | over (over-receipts are allowed, flagged)
     receive_state: Optional[Literal["waiting", "partial", "complete", "over"]] = None
+    # Item 22: sent back to the supplier from this line's packs (base unit)
+    returned_qty: Optional[Decimal] = None
     item_code: Optional[str] = None
     item_description: Optional[str] = None
     item_color: Optional[str] = None
@@ -1845,6 +1870,7 @@ class DeliveryLinePack(BaseModel):
     id: int
     status: Literal["active", "empty"]
     received_qty: Decimal
+    returned_qty: Decimal = Decimal(0)  # item 22: sent back to the supplier
     quantity: Decimal
     rack_code: Optional[str] = None
     created_at: datetime
