@@ -1082,6 +1082,8 @@ export const translations = {
     rpQtyPerPack: "Quantity per pack",
     rpAddPacks: "Add packs ({{count}})",
     rpPacksThisSession: "Packs received this session ({{count}})",
+    rpModeOpening: "Opening stock",
+    rpOpeningHint: "For stock already on the shelves before the system: no supplier or delivery. Recorded as the opening balance.",
     // Item 18: expected vs received
     lineWaiting: "Waiting",
     linePartial: "Partly received",
@@ -2198,6 +2200,8 @@ export const translations = {
     rpQtyPerPack: "الكمية لكل عبوة",
     rpAddPacks: "إضافة العبوات ({{count}})",
     rpPacksThisSession: "العبوات المستلمة في هذه الجلسة ({{count}})",
+    rpModeOpening: "رصيد افتتاحي",
+    rpOpeningHint: "للمخزون الموجود على الأرفف قبل النظام: بدون مورد أو شحنة. يُسجل كرصيد افتتاحي.",
     // Item 18: expected vs received
     lineWaiting: "بانتظار الاستلام",
     linePartial: "مستلم جزئياً",
