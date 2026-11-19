@@ -138,6 +138,7 @@ export interface StockPage {
 export interface PackLedgerEntry {
   id: number;
   posting_id: number;
+  pack_id: number;
   entry_type: string;
   qty_delta: string;
   balance: string | null;

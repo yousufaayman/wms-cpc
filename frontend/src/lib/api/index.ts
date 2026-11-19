@@ -289,3 +289,14 @@ export {
   type AccessoryShortage,
   type OpenJobOrder,
 } from './accessory-requirements';
+export {
+  accessoryAnalyticsApi,
+  type ReportItem,
+  type FlowRow,
+  type JoIssues,
+  type JoIssueLine,
+  type SlowMovingRow,
+  type DeliveryReportRow,
+  type ReportSheet,
+  type ReportFilters,
+} from './accessory-analytics';

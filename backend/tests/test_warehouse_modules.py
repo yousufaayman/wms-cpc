@@ -60,6 +60,8 @@ def test_every_warehouse_type_is_mapped():
     (True, False, "needle_exchange", False),
     (True, True, "needle_exchange", True),
     (False, False, "warehouse_racks", True),   # set-up pages work with the flag off
+    (False, False, "analytics", False),        # item 26: accessory reports
+    (True, False, "analytics", True),
 ])
 def test_accessory_modules_follow_flags(monkeypatch, acc, needles, module, expected):
     monkeypatch.setattr(settings, "FEATURE_ACCESSORIES", acc)
@@ -68,10 +70,11 @@ def test_accessory_modules_follow_flags(monkeypatch, acc, needles, module, expec
 
 
 def test_fabric_only_modules():
-    for module in ("fabric_inventory", "fabric_rolls", "analytics"):
+    for module in ("fabric_inventory", "fabric_rolls"):
         assert wm.module_enabled("Fabric", module)
         assert not wm.module_enabled("Accessory", module)
         assert not wm.module_enabled("RMG", module)
+    assert wm.module_enabled("Fabric", "analytics") and not wm.module_enabled("RMG", "analytics")
 
 
 # ── 2. The API enforces it ───────────────────────────────────────────────────

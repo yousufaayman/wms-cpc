@@ -2079,3 +2079,80 @@ class MaterialRequestFulfillmentInDB(MaterialRequestFulfillmentBase):
 
 class MaterialRequestFulfillment(MaterialRequestFulfillmentInDB):
     pass
+
+
+# ── Accessory Analytics (item 26) ───────────────────────────────────────────
+# Read-only report rows (crud/accessory_analytics.py). Quantities are in the
+# item's base unit (`uom_code`).
+
+class AccessoryReportItem(BaseModel):
+    accessory_item_id: int
+    item_code: str
+    description: str
+    color: Optional[str] = None
+    size: Optional[str] = None
+    template_code: Optional[str] = None
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    category_name_en: Optional[str] = None
+    category_name_ar: Optional[str] = None
+    uom_code: str
+
+
+class AccessoryFlowRow(AccessoryReportItem):
+    """Opening + the movements = closing. Issued, supplier returns and
+    written off are shown as positive (out-going) quantities."""
+    opening: Decimal
+    received: Decimal
+    issued: Decimal
+    returned: Decimal
+    supplier_returns: Decimal
+    written_off: Decimal
+    adjusted: Decimal
+    reclassified: Decimal
+    closing: Decimal
+    entries: int
+
+
+class AccessoryJoIssueLine(AccessoryReportItem):
+    issued: Decimal
+    returned: Decimal
+    net: Decimal
+
+
+class AccessoryJoIssueTotal(BaseModel):
+    uom_code: str
+    issued: Decimal
+    returned: Decimal
+    net: Decimal
+
+
+class AccessoryJoIssues(BaseModel):
+    job_order_id: int
+    job_order_number: str
+    client_id: Optional[int] = None
+    client_name: Optional[str] = None
+    lines: List[AccessoryJoIssueLine]
+    totals: List[AccessoryJoIssueTotal]
+
+
+class AccessorySlowMovingRow(AccessoryReportItem):
+    on_hand: Decimal
+    pack_count: int
+    unracked: Decimal
+    racks: List[str]
+    last_movement: Optional[datetime] = None
+    in_stock_since: datetime
+    idle_days: int
+    generic: bool
+
+
+class AccessoryDeliveryReportRow(AccessoryReportItem):
+    delivery_id: int
+    delivery_status: str
+    expected_date: Optional[datetime] = None
+    supplier_name: Optional[str] = None
+    expected_qty: Decimal
+    received_qty: Decimal
+    difference: Decimal
+    state: str
