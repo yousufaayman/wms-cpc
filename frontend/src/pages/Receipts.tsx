@@ -108,7 +108,7 @@ function SupplierReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                 <SelectItem value="closed">{t("closedReceipt")}</SelectItem>
               </SelectContent>
             </Select>
-            <div className="flex items-end gap-1">
+            <div className="flex flex-wrap items-end gap-1">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">{t("dateFrom")}</p>
                 <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" />
@@ -249,7 +249,7 @@ function InternalReceiptsTab({ warehouseId, warehouses, logicalLocations }: Read
                 <SelectItem value="closed">{t("closedReceipt")}</SelectItem>
               </SelectContent>
             </Select>
-            <div className="flex items-end gap-1">
+            <div className="flex flex-wrap items-end gap-1">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">{t("dateFrom")}</p>
                 <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" />
@@ -380,7 +380,7 @@ function ExternalReceiptsTab({ warehouseId, warehouses }: Readonly<{
                 <SelectItem value="closed">{t("closedReceipt")}</SelectItem>
               </SelectContent>
             </Select>
-            <div className="flex items-end gap-1">
+            <div className="flex flex-wrap items-end gap-1">
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">{t("dateFrom")}</p>
                 <Input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-36" />
@@ -481,7 +481,7 @@ const Receipts = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-8">
+        <main className="flex-1 min-w-0 p-4 md:p-8">
           <div className="space-y-6">
             <div className="flex items-center gap-3">
               <FileText className="h-8 w-8 text-primary" />

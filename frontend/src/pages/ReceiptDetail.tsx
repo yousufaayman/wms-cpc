@@ -294,7 +294,7 @@ const ReceiptDetail = () => {
       <PageTransition>
         <div className="min-h-screen bg-background flex">
           <Sidebar />
-          <main className="flex-1 p-8 flex items-center justify-center">
+          <main className="flex-1 min-w-0 p-4 md:p-8 flex items-center justify-center">
             <div className="text-center">
               <FileText className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
               <h1 className="text-2xl font-bold mb-2">{t("receiptNotFound")}</h1>

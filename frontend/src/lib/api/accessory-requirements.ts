@@ -84,7 +84,20 @@ export interface AccessoryShortage {
   short: string;
 }
 
+/** Item 24 dashboard: an open job order with lines still to issue (most urgent first). */
+export interface OpenJobOrder {
+  job_order_id: number;
+  job_order_number: string;
+  priority: number | null;
+  client_name: string | null;
+  lines: number;
+  lines_to_issue: number;
+  lines_over_issued: number;
+}
+
 export const accessoryRequirementApi = {
+  openJobOrders: (warehouseId: number, limit = 10) =>
+    api.request<OpenJobOrder[]>(`/accessory-requirements/open-job-orders${toQuery({ warehouse_id: warehouseId, limit })}`),
   list: (params: RequirementQuery = {}) =>
     api.request<AccessoryRequirementPage>(`/accessory-requirements/${toQuery({ ...params })}`),
   get: (id: number) => api.request<AccessoryRequirement>(`/accessory-requirements/${id}`),

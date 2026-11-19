@@ -18,6 +18,8 @@ Item 20 adds:
 - pending = on issue receipts not confirmed yet (not in issued / remaining)
 - `requirement_job_orders`: the job orders with lines (issue: pick the JO)
 - `shortages`: per item, what open job orders still need vs on hand
+
+Item 24 adds `open_job_orders` (dashboard Job Order Balances widget).
 """
 from decimal import Decimal
 from typing import List, Optional, Tuple
@@ -150,6 +152,35 @@ def requirement_job_orders(db: Session, search: Optional[str] = None, limit: int
     if search and search.strip():
         query = query.where(models.JobOrder.job_order_number.ilike(f"%{search.strip()}%"))
     rows = db.execute(query.order_by(models.JobOrder.job_order_id.desc()).limit(limit)).all()
+    return [dict(row._mapping) for row in rows]
+
+
+def open_job_orders(db: Session, limit: int = 10) -> List[dict]:
+    """Item 24: job orders not archived that still have lines to issue
+    (not started or partly issued), most urgent first (priority, lowest
+    number first, like the fabric Material Requests widget; then newest).
+    Per JO: all its lines, the ones still to issue, the over-issued ones."""
+    totals = _totals_subquery()
+    state = _status_expr(totals)
+    to_issue = func.count().filter(state.in_(("not_started", "partly_issued")))
+    rows = db.execute(
+        select(
+            models.JobOrder.job_order_id, models.JobOrder.job_order_number, models.JobOrder.priority,
+            models.Client.client_name,
+            func.count(_Req.id).label("lines"),
+            to_issue.label("lines_to_issue"),
+            func.count().filter(state == "over_issued").label("lines_over_issued"),
+        )
+        .join(_Req, _Req.job_order_id == models.JobOrder.job_order_id)
+        .outerjoin(totals, totals.c.req_id == _Req.id)
+        .outerjoin(models.Client, models.Client.client_id == models.JobOrder.client_id)
+        .where(models.JobOrder.archived_at.is_(None))
+        .group_by(models.JobOrder.job_order_id, models.JobOrder.job_order_number, models.JobOrder.priority,
+                  models.Client.client_name)
+        .having(to_issue > 0)
+        .order_by(models.JobOrder.priority.asc().nulls_last(), models.JobOrder.job_order_id.desc())
+        .limit(limit)
+    ).all()
     return [dict(row._mapping) for row in rows]
 
 

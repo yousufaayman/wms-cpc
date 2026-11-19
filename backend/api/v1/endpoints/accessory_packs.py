@@ -10,6 +10,9 @@ Packs are only made together with their first ledger row: `POST /receive`
 later, the opening balance (item 25). `POST /receive/{posting_id}/undo`
 cancels one Add and `POST /receive/pack/{pack_id}/undo` one pack of it (its
 receiver or an admin, while the packs are unused).
+
+Item 24 dashboard reads: `GET /lookup` (Trim Code Lookup: by our code or a
+reference code, with stock here) and `GET /attention` (Needs Attention counts).
 """
 from typing import Annotated, List
 
@@ -19,11 +22,15 @@ from sqlalchemy.orm import Session
 from backend import models
 from backend.core.authz import PERM_RECEIVE_ACCESSORIES
 from backend.core.deps import get_db, require_permission
+from backend.core.warehouse_modules import ensure_module
+from backend.crud import accessory_dashboard
 from backend.crud import accessory_packs as crud
 from backend.domains.accessories import receiving
 from backend.domains.posting import accessory as accessory_posting
 from backend.schemas import (
+    AccessoryAttention,
     AccessoryLedgerEntry,
+    AccessoryLookupRow,
     AccessoryPack,
     AccessoryPackMove,
     AccessoryPackMoveIn,
@@ -53,6 +60,26 @@ def stock_summary(search: Annotated[AccessoryStockSearch, Query()], db: Session 
     unless `include_empty=true`."""
     rows, total = crud.stock_summary(db, search)
     return {"items": rows, "total": total}
+
+
+@router.get("/lookup", response_model=List[AccessoryLookupRow])
+def lookup(
+    warehouse_id: int = Query(...),
+    code: str = Query(..., min_length=1, max_length=100, description="Our code or a client / supplier code (contains)"),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+):
+    """Dashboard Trim Code Lookup (item 24): items found by our code or a
+    reference code only, with on hand / packs / waiting for put-away here."""
+    ensure_module(db, warehouse_id, crud.MODULE)
+    return accessory_dashboard.lookup(db, warehouse_id, code, limit=limit)
+
+
+@router.get("/attention", response_model=AccessoryAttention)
+def attention(warehouse_id: int = Query(...), db: Session = Depends(get_db)):
+    """Dashboard Needs Attention counts (item 24) for one Accessory warehouse."""
+    ensure_module(db, warehouse_id, crud.MODULE)
+    return accessory_dashboard.attention(db, warehouse_id)
 
 
 @router.post("/receive", response_model=AccessoryReceiveOut, status_code=status.HTTP_201_CREATED)

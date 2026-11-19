@@ -362,7 +362,7 @@ export default function ExpectedDeliveryDetail() {
     return (
       <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <main className="flex-1 flex items-center justify-center">
+        <main className="flex-1 min-w-0 flex items-center justify-center">
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </main>
       </div>
@@ -373,7 +373,7 @@ export default function ExpectedDeliveryDetail() {
     return (
       <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <main className="flex-1 p-6">
+        <main className="flex-1 min-w-0 p-4 md:p-6">
           <p className="text-muted-foreground">{t("deliveryNotFound")}</p>
         </main>
       </div>
@@ -388,7 +388,7 @@ export default function ExpectedDeliveryDetail() {
         <Sidebar />
         {/* min-w-0 lets the items table scroll inside its own overflow wrapper
             instead of stretching the page past the viewport */}
-        <main className="flex-1 min-w-0 p-6 space-y-6">
+        <main className="flex-1 min-w-0 p-4 md:p-6 space-y-6">
 
           {/* Back + title */}
           <div className="flex items-center gap-3">

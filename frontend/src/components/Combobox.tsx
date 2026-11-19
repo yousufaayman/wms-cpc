@@ -49,10 +49,10 @@ export function Combobox<T extends number | string = number>({
         <Button
           variant="outline"
           role="combobox"
-          className="w-full justify-between font-normal"
+          className="w-full min-w-0 justify-between font-normal"
           disabled={disabled}
         >
-          {selected ? selected.label : placeholder}
+          <span className="truncate">{selected ? selected.label : placeholder}</span>
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>

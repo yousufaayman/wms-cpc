@@ -275,6 +275,8 @@ export {
   type PackMove,
   type ReceivePacksIn,
   type ReceivePacksOut,
+  type LookupRow,
+  type AttentionCounts,
 } from './accessory-packs';
 export {
   accessoryRequirementApi,
@@ -285,4 +287,5 @@ export {
   type RequirementEntry,
   type RequirementJobOrder,
   type AccessoryShortage,
+  type OpenJobOrder,
 } from './accessory-requirements';

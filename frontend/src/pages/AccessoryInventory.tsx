@@ -23,6 +23,7 @@
  *   posting (all its rows, on every pack) after asking for a reason.
  * Anyone with a WMS role can look (Tab 1: "everyone, including Viewer").
  */
+import { useSearchParams } from "react-router-dom";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -85,11 +86,16 @@ export default function AccessoryInventory() {
   // Filters (shared by every tab). Item filters live in the page link.
   const { filters: itemForm, update: updateItems, clear: clearItems, advanced } = useItemFilters();
   const [advancedOpen, setAdvancedOpen] = useState(advanced > 0);
-  const [rackFilter, setRackFilter] = useState<string>(ALL);
+  // Dashboard links (item 24): ?tab=packs|item|client|rack, ?rack=unracked
+  const [linkParams] = useSearchParams();
+  const [rackFilter, setRackFilter] = useState<string>(() => (linkParams.get("rack") === UNRACKED ? UNRACKED : ALL));
   const [showEmpty, setShowEmpty] = useState(false);
   const [itemFilter, setItemFilter] = useState<{ id: number; code: string } | null>(null); // from a By item click
 
-  const [tab, setTab] = useState<Tab>("item");
+  const [tab, setTab] = useState<Tab>(() => {
+    const linked = linkParams.get("tab");
+    return linked === "packs" || linked === "client" || linked === "rack" ? linked : "item";
+  });
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<StockRow[]>([]);
   const [packs, setPacks] = useState<AccessoryPack[]>([]);
@@ -360,7 +366,7 @@ export default function AccessoryInventory() {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-8">
+        <main className="flex-1 min-w-0 p-4 md:p-8">
           <div className="space-y-6">
             <h1 className="text-3xl font-bold tracking-tight">{t("accessoryInventory")}</h1>
 
@@ -383,7 +389,7 @@ export default function AccessoryInventory() {
 
                 <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
                   <div className="flex flex-wrap items-center gap-3">
-                    <TabsList>
+                    <TabsList className="flex-wrap h-auto">
                       <TabsTrigger value="item">{t("accInvByItem")}</TabsTrigger>
                       <TabsTrigger value="client">{t("accInvByClient")}</TabsTrigger>
                       <TabsTrigger value="rack">{t("accInvByRack")}</TabsTrigger>

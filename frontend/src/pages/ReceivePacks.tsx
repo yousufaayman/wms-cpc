@@ -427,11 +427,11 @@ const ReceivePacks = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-8 min-w-0">
-          <div className="space-y-6 max-w-6xl">
+        <main className="flex-1 p-4 md:p-8 min-w-0">
+          <div className="space-y-6">
             <div className="flex items-center justify-between gap-4 flex-wrap">
               <h1 className="text-3xl font-bold tracking-tight">{t("receivePacks")}</h1>
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 {warehouseId !== null && (
                   <Button variant="outline" asChild>
                     <Link to={`/accessory-inventory?warehouse=${warehouseId}`}>{t("rpOpenInventory")}</Link>
@@ -485,7 +485,7 @@ const ReceivePacks = () => {
                   </>
                 )}
 
-                <div className="grid gap-4 md:grid-cols-2">
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label>{t("supplier")}{mode === "search" ? " *" : ""}</Label>
                     <Combobox
@@ -498,8 +498,8 @@ const ReceivePacks = () => {
                     {item ? (
                       <PickedItem item={item} onClear={() => { setItem(null); setUnits([]); setLineId(null); }} />
                     ) : (
-                      <Button variant="outline" className="w-full justify-start gap-2" onClick={() => setPickerOpen(true)}>
-                        <Search className="h-4 w-4" /> {t("accSearchItemRefs")}
+                      <Button variant="outline" className="w-full min-w-0 justify-start gap-2" onClick={() => setPickerOpen(true)}>
+                        <Search className="h-4 w-4 shrink-0" /> <span className="truncate">{t("accSearchItemRefs")}</span>
                       </Button>
                     )}
                     {item && (

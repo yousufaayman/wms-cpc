@@ -8,6 +8,7 @@ edit or delete here on purpose. Reads:
   one line (its issue history)
 - GET /accessory-requirements/job-orders   job orders with lines (issue: pick the JO)
 - GET /accessory-requirements/shortages    per item: open JOs' remaining vs on hand (item 20)
+- GET /accessory-requirements/open-job-orders  open JOs with lines still to issue (dashboard, item 24)
 
 Same permission as the Material Requests page (`operations`; Viewer has
 none). The router is off (404) while FEATURE_ACCESSORIES is off (api.py).
@@ -24,6 +25,7 @@ from backend.core.warehouse_modules import ACCESSORY, ensure_module
 from backend.crud import accessory_requirements as crud
 from backend.schemas import (
     AccessoryLedgerEntry,
+    AccessoryOpenJobOrder,
     AccessoryRequirement,
     AccessoryRequirementJobOrder,
     AccessoryRequirementPage,
@@ -80,6 +82,17 @@ def shortages(
 ):
     _check_warehouse(db, warehouse_id)
     return crud.shortages(db, warehouse_id)
+
+
+@router.get("/open-job-orders", response_model=List[AccessoryOpenJobOrder])
+def open_job_orders(
+    warehouse_id: int = Query(..., description="The Accessory warehouse the dashboard is in (checked, not a filter)"),
+    limit: int = Query(10, ge=1, le=50),
+    db: Session = Depends(get_db),
+    current_user: models.User = _REQUIRE_OPERATIONS,
+):
+    _check_warehouse(db, warehouse_id)
+    return crud.open_job_orders(db, limit=limit)
 
 
 @router.get("/{requirement_id}", response_model=AccessoryRequirement)

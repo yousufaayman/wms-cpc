@@ -6,7 +6,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useWarehouse } from "@/hooks/useWarehouse";
-import { widgetRegistry } from "@/widgets/registry";
+import { useCurrentUser } from "@/hooks/useCurrentUser";
+import { gridRows, widgetRegistry } from "@/widgets/registry";
 import { WidgetSize } from "@/widgets/types";
 
 // Grid span per widget size hint; the grid is 1 col on mobile, 2 on lg
@@ -21,14 +22,18 @@ const Dashboard = () => {
   const { t } = useTranslation();
   useLanguage();
   const { warehouse, loading, has } = useWarehouse();
+  const { can, loading: userLoading } = useCurrentUser();
 
-  // A widget tied to a module shows only when this warehouse has that module.
+  // A widget tied to a module shows only when this warehouse has that module,
+  // and one that needs a permission only to people who have it.
   const widgets = warehouse
-    ? widgetRegistry[warehouse.type].filter((w) => !w.module || has(w.module))
+    ? widgetRegistry[warehouse.type].filter(
+        (w) => (!w.module || has(w.module)) && (!w.permission || can(w.permission)),
+      )
     : [];
 
   let content;
-  if (loading) {
+  if (loading || userLoading) {
     content = (
       <div className="flex items-center justify-center py-24">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -42,7 +47,7 @@ const Dashboard = () => {
     content = <p className="text-muted-foreground text-center py-24">{t("noWidgetsYet")}</p>;
   } else {
     content = (
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-2 lg:grid-rows-7 gap-4">
+      <div className={`grid grid-cols-1 lg:grid-cols-2 ${gridRows[warehouse.type]} gap-4`}>
         {widgets.map(({ id, component: Widget, size, gridClass }) => (
           <div key={id} className={`${gridClass ?? SIZE_CLASS[size]} min-h-0`}>
             <Suspense fallback={<Skeleton className="h-full min-h-40 w-full rounded-lg" />}>
@@ -58,7 +63,7 @@ const Dashboard = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-6 flex flex-col lg:h-screen lg:overflow-hidden">
+        <main className="flex-1 min-w-0 p-4 md:p-6 flex flex-col lg:h-screen lg:overflow-y-auto">
           <h1 className="text-2xl font-bold mb-4">{t("dashboard")}</h1>
           {content}
         </main>

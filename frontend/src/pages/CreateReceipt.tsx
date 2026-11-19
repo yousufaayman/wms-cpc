@@ -831,7 +831,7 @@ const CreateReceipt = () => {
       <PageTransition>
         <div className="min-h-screen bg-background flex">
           {receiptId === null && <Sidebar />}
-          <main className="flex-1 p-6">
+          <main className="flex-1 min-w-0 p-4 md:p-6">
             {receiptId !== null ? (
               <AccessoryIssueScan receiptId={receiptId} warehouseId={issueWarehouseId} />
             ) : (
@@ -858,7 +858,7 @@ const CreateReceipt = () => {
     return (
       <PageTransition>
         <div className="min-h-screen bg-background flex">
-          <main className="flex-1 p-6">
+          <main className="flex-1 min-w-0 p-4 md:p-6">
             <SupplierReturnScan receiptId={receiptId} warehouseId={issueWarehouseId} />
           </main>
         </div>
@@ -875,7 +875,7 @@ const CreateReceipt = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         {!scanning && <Sidebar />}
-        <main className="flex-1 p-6">
+        <main className="flex-1 min-w-0 p-4 md:p-6">
           <div className={scanning ? "h-full space-y-4" : "max-w-3xl mx-auto space-y-6"}>
             {!scanning && (
               <Button variant="ghost" onClick={() => navigate(`/receipts${warehouseQuery}`)}>
