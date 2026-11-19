@@ -60,9 +60,10 @@ export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
     },
   ],
   RMG: [],
-  // Accessory dashboard (lg+), 2 columns × 11 rows, scrolls (item 24):
-  // trim lookup + needs attention row 1, shortages + job order balances rows
-  // 2-4, calendar rows 5-8 full width, open receipts rows 9-11 full width.
+  // Accessory dashboard (lg+), 2 columns, rows sized by their content, the
+  // page scrolls (item 24): trim lookup + needs attention, then shortages +
+  // job order balances (fixed height, the list scrolls), the calendar and
+  // open receipts full width.
   // Everything hides while FEATURE_ACCESSORIES is off; shortages and JO
   // balances need `operations` (Viewer has none).
   Accessory: [
@@ -82,7 +83,7 @@ export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
       id: "accessory-shortages",
       component: ShortagesWidget,
       size: "md",
-      gridClass: "lg:row-span-3",
+      gridClass: "lg:h-96",
       module: "material_requests",
       permission: "operations",
     },
@@ -90,7 +91,7 @@ export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
       id: "accessory-job-order-balances",
       component: JobOrderBalancesWidget,
       size: "md",
-      gridClass: "lg:row-span-3",
+      gridClass: "lg:h-96",
       module: "material_requests",
       permission: "operations",
     },
@@ -98,24 +99,24 @@ export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
       id: "accessory-expected-deliveries-calendar",
       component: ExpectedDeliveriesCalendarWidget,
       size: "full",
-      gridClass: "lg:col-span-2 lg:row-span-4",
+      gridClass: "lg:col-span-2 lg:h-[30rem]",
       module: "expected_deliveries",
     },
     {
       id: "accessory-open-receipts",
       component: OpenReceiptsWidget,
       size: "full",
-      gridClass: "lg:col-span-2 lg:row-span-3",
+      gridClass: "lg:col-span-2 lg:h-80",
       module: "receipts",
     },
   ],
 };
 
 /** Grid rows per dashboard (lg+). Fabric fits the screen (7 rows); the
- *  Accessory dashboard has more widgets, so its rows have a fixed height
- *  and the page scrolls. Full class names, so Tailwind keeps them. */
+ *  Accessory dashboard has more widgets, so its rows take their widgets'
+ *  height and the page scrolls. Full class names, so Tailwind keeps them. */
 export const gridRows: Record<WarehouseType, string> = {
   Fabric: "flex-1 min-h-0 lg:grid-rows-7",
   RMG: "flex-1 min-h-0 lg:grid-rows-7",
-  Accessory: "lg:grid-rows-[repeat(11,7rem)]",
+  Accessory: "lg:auto-rows-auto",
 };

@@ -164,9 +164,9 @@ export default function ExpectedDeliveries() {
     <PageTransition>
       <div className="flex min-h-screen bg-background">
         <Sidebar />
-        <main className="flex-1 p-6 space-y-6">
+        <main className="flex-1 min-w-0 p-4 md:p-6 space-y-6">
           {/* Header */}
-          <div className="flex items-start justify-between">
+          <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h1 className="text-2xl font-bold flex items-center gap-2">
                 <PackageOpen className="h-6 w-6 text-primary" />

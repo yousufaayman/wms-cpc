@@ -63,7 +63,7 @@ const Dashboard = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-6 flex flex-col lg:h-screen lg:overflow-y-auto">
+        <main className="flex-1 min-w-0 p-4 md:p-6 flex flex-col lg:h-screen lg:overflow-y-auto">
           <h1 className="text-2xl font-bold mb-4">{t("dashboard")}</h1>
           {content}
         </main>

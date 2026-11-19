@@ -283,7 +283,7 @@ export default function MaterialRequests() {
         <Sidebar />
         {/* min-w-0 lets the requests table scroll inside its own overflow
             wrapper instead of widening the whole page */}
-        <main className="flex-1 min-w-0 p-6 space-y-6">
+        <main className="flex-1 min-w-0 p-4 md:p-6 space-y-6">
           {/* Header */}
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">

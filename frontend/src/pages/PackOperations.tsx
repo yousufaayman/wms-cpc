@@ -214,13 +214,13 @@ export default function PackOperations() {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-4 md:p-8 min-w-0 space-y-6 max-w-6xl">
+        <main className="flex-1 p-4 md:p-8 min-w-0 space-y-6">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">{t("packOps")}</h1>
               <p className="text-muted-foreground text-sm">{t("packOpsDesc")}</p>
             </div>
-            <div className="w-64">
+            <div className="w-full sm:w-64">
               <Select value={printing.printer?.uid ?? ""}
                 onValueChange={(uid) => printing.setPrinter(printing.printers.find((p) => p.uid === uid) ?? null)}>
                 <SelectTrigger><SelectValue placeholder={t("selectPrinter")} /></SelectTrigger>

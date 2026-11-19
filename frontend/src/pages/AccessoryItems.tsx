@@ -554,7 +554,7 @@ const AccessoryItems = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-8">
+        <main className="flex-1 min-w-0 p-4 md:p-8">
           <div className="space-y-6">
             <div className="flex items-start justify-between gap-4">
               <div>

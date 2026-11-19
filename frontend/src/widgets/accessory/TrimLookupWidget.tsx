@@ -66,9 +66,9 @@ const TrimLookupWidget = ({ warehouseId }: WidgetProps) => {
 
   return (
     <WidgetCard title={t("widgetTrimLookup")} icon={<Search className="h-4 w-4 text-primary" />}>
-      <div className="h-full flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">{t("widgetTrimLookupDesc")}</p>
-        <Button onClick={() => { reset(); setOpen(true); }}>
+        <Button className="self-start xl:self-auto shrink-0" onClick={() => { reset(); setOpen(true); }}>
           <Search className="h-4 w-4 mr-2" />
           {t("widgetTrimLookup")}
         </Button>

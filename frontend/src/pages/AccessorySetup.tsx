@@ -217,7 +217,7 @@ const AccessorySetup = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-8">
+        <main className="flex-1 min-w-0 p-4 md:p-8">
           <div className="space-y-6">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">{t("unitsAndCategories")}</h1>

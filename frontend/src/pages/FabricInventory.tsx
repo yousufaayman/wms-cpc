@@ -1057,7 +1057,7 @@ const FabricInventory = () => {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-8 space-y-6 overflow-auto">
+        <main className="flex-1 min-w-0 p-4 md:p-8 space-y-6 overflow-auto">
 
           {/* Header */}
           <div className="flex items-center gap-3">

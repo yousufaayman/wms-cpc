@@ -366,7 +366,7 @@ export default function AccessoryInventory() {
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-8">
+        <main className="flex-1 min-w-0 p-4 md:p-8">
           <div className="space-y-6">
             <h1 className="text-3xl font-bold tracking-tight">{t("accessoryInventory")}</h1>
 
@@ -389,7 +389,7 @@ export default function AccessoryInventory() {
 
                 <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
                   <div className="flex flex-wrap items-center gap-3">
-                    <TabsList>
+                    <TabsList className="flex-wrap h-auto">
                       <TabsTrigger value="item">{t("accInvByItem")}</TabsTrigger>
                       <TabsTrigger value="client">{t("accInvByClient")}</TabsTrigger>
                       <TabsTrigger value="rack">{t("accInvByRack")}</TabsTrigger>

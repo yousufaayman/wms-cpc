@@ -41,32 +41,32 @@ const NeedsAttentionWidget = ({ warehouseId }: WidgetProps) => {
     body = <p className="text-sm text-destructive text-center py-2">{t("widgetLoadFailed")}</p>;
   } else if (!tiles) {
     body = (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="grid grid-cols-2 2xl:grid-cols-4 gap-2">
         {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
       </div>
     );
   } else {
     body = (
-      <div className="space-y-1">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 2xl:grid-cols-4 gap-2">
           {tiles.map((tile) => (
             <button
               key={tile.key}
               type="button"
               onClick={() => navigate(tile.to)}
               title={tile.label}
-              className={`rounded-md border px-2 py-1 text-left hover:bg-muted transition-colors ${
+              className={`rounded-md border px-2.5 py-1.5 text-start hover:bg-muted transition-colors ${
                 tile.count > 0 ? "border-amber-300 bg-amber-50 dark:bg-amber-950/30" : ""
               }`}
             >
               <div className={`text-lg font-semibold leading-tight ${tile.count > 0 ? "text-amber-700 dark:text-amber-400" : "text-muted-foreground"}`}>
                 {tile.count}
               </div>
-              <div className="text-[11px] text-muted-foreground leading-tight truncate">{tile.label}</div>
+              <div className="text-xs text-muted-foreground leading-tight line-clamp-2">{tile.label}</div>
             </button>
           ))}
         </div>
-        <p className="text-[11px] text-muted-foreground">{t("widgetAttnRecent", { days: counts.days })}</p>
+        <p className="text-xs text-muted-foreground">{t("widgetAttnRecent", { days: counts.days })}</p>
       </div>
     );
   }

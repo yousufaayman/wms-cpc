@@ -14,7 +14,7 @@ const ComingSoon = ({ title, description }: { title: TranslationKey; description
     <PageTransition>
       <div className="min-h-screen bg-background flex">
         <Sidebar />
-        <main className="flex-1 p-6">
+        <main className="flex-1 min-w-0 p-4 md:p-6">
           <h1 className="text-2xl font-bold mb-4">{t(title)}</h1>
           <div className="flex flex-col items-center justify-center gap-3 py-24 text-center">
             <Construction className="h-10 w-10 text-muted-foreground" />
