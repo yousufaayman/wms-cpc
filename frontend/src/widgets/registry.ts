@@ -11,6 +11,11 @@ const OpenReceiptsWidget = lazy(() => import("./shared/OpenReceiptsWidget"));
 const MaterialRequestsWidget = lazy(() => import("./fabric/MaterialRequestsWidget"));
 const QuickViewWidget = lazy(() => import("./fabric/QuickViewWidget"));
 const FabricCodeLookupWidget = lazy(() => import("./fabric/FabricCodeLookupWidget"));
+// Accessory only (item 24).
+const TrimLookupWidget = lazy(() => import("./accessory/TrimLookupWidget"));
+const NeedsAttentionWidget = lazy(() => import("./accessory/NeedsAttentionWidget"));
+const ShortagesWidget = lazy(() => import("./accessory/ShortagesWidget"));
+const JobOrderBalancesWidget = lazy(() => import("./accessory/JobOrderBalancesWidget"));
 
 /**
  * Dashboard widgets per warehouse type. Types are developed one at a time —
@@ -55,10 +60,40 @@ export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
     },
   ],
   RMG: [],
-  // Accessory dashboard (lg+): calendar rows 1-4, open receipts rows 5-7, both
-  // full width. Both hide while FEATURE_ACCESSORIES is off. Accessory-specific
-  // widgets (stock, shortages, needles) arrive in item 24.
+  // Accessory dashboard (lg+), 2 columns × 11 rows, scrolls (item 24):
+  // trim lookup + needs attention row 1, shortages + job order balances rows
+  // 2-4, calendar rows 5-8 full width, open receipts rows 9-11 full width.
+  // Everything hides while FEATURE_ACCESSORIES is off; shortages and JO
+  // balances need `operations` (Viewer has none).
   Accessory: [
+    {
+      id: "accessory-trim-lookup",
+      component: TrimLookupWidget,
+      size: "md",
+      module: "accessory_inventory",
+    },
+    {
+      id: "accessory-needs-attention",
+      component: NeedsAttentionWidget,
+      size: "md",
+      module: "accessory_inventory",
+    },
+    {
+      id: "accessory-shortages",
+      component: ShortagesWidget,
+      size: "md",
+      gridClass: "lg:row-span-3",
+      module: "material_requests",
+      permission: "operations",
+    },
+    {
+      id: "accessory-job-order-balances",
+      component: JobOrderBalancesWidget,
+      size: "md",
+      gridClass: "lg:row-span-3",
+      module: "material_requests",
+      permission: "operations",
+    },
     {
       id: "accessory-expected-deliveries-calendar",
       component: ExpectedDeliveriesCalendarWidget,
@@ -74,4 +109,13 @@ export const widgetRegistry: Record<WarehouseType, WidgetDefinition[]> = {
       module: "receipts",
     },
   ],
+};
+
+/** Grid rows per dashboard (lg+). Fabric fits the screen (7 rows); the
+ *  Accessory dashboard has more widgets, so its rows have a fixed height
+ *  and the page scrolls. Full class names, so Tailwind keeps them. */
+export const gridRows: Record<WarehouseType, string> = {
+  Fabric: "flex-1 min-h-0 lg:grid-rows-7",
+  RMG: "flex-1 min-h-0 lg:grid-rows-7",
+  Accessory: "lg:grid-rows-[repeat(11,7rem)]",
 };

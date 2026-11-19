@@ -161,7 +161,42 @@ export interface PackMove {
   moved_at: string;
 }
 
+// ── Dashboard (item 24) ─────────────────────────────────────────────────────
+
+/** Trim Code Lookup row: an item found by our code or a client / supplier code,
+ *  with its stock in this warehouse (base unit; a template = sum of its variants). */
+export interface LookupRow {
+  accessory_item_id: number;
+  code: string;
+  description: string;
+  color: string | null;
+  size: string | null;
+  value_lines: AccessoryValueLine[];
+  uom_code: string;
+  client_name: string | null;
+  is_template: boolean;
+  active: boolean;
+  merged_into_code: string | null;
+  refs: { ref_code: string; party: 'client' | 'supplier'; party_name: string | null }[];
+  on_hand: string;
+  pack_count: number;
+  unracked: string; // of on_hand, waiting for put-away
+}
+
+/** Needs Attention counts. Deliveries count while open or `days` days after closing. */
+export interface AttentionCounts {
+  unracked_packs: number;
+  over_received: number;
+  closed_short: number;
+  over_issue_receipts: number;
+  days: number;
+}
+
 export const accessoryPackApi = {
+  lookup: (warehouseId: number, code: string) =>
+    api.request<LookupRow[]>(`/accessory-packs/lookup${toQuery({ warehouse_id: warehouseId, code })}`),
+  attention: (warehouseId: number) =>
+    api.request<AttentionCounts>(`/accessory-packs/attention${toQuery({ warehouse_id: warehouseId })}`),
   stock: (params: StockQuery) => api.request<StockPage>(`/accessory-packs/stock${toQuery({ ...params })}`),
   list: (params: PackQuery = {}) => api.request<AccessoryPackPage>(`/accessory-packs/${toQuery({ ...params })}`),
   get: (id: number) => api.request<AccessoryPack>(`/accessory-packs/${id}`),

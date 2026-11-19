@@ -57,7 +57,11 @@ export default function ExpectedDeliveries() {
 
   const [deliveries, setDeliveries] = useState<ExpectedDelivery[]>([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
+  // ?flag=over_received|closed_short (dashboard Needs Attention links, item 24)
+  const [statusFilter, setStatusFilter] = useState(() => {
+    const flag = searchParams.get("flag");
+    return flag === "over_received" || flag === "closed_short" ? `flag:${flag}` : "all";
+  });
   const [supplierSearch, setSupplierSearch] = useState("");
 
   const [clients, setClients] = useState<Client[]>([]);

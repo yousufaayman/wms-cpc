@@ -595,6 +595,17 @@ class AccessoryRequirementJobOrder(BaseModel):
     lines: int
 
 
+class AccessoryOpenJobOrder(BaseModel):
+    """Item 24 dashboard: an open job order with requirement lines still to issue."""
+    job_order_id: int
+    job_order_number: str
+    priority: Optional[int] = None
+    client_name: Optional[str] = None
+    lines: int
+    lines_to_issue: int
+    lines_over_issued: int
+
+
 class AccessoryShortage(BaseModel):
     """Item 20 shortage report, one row per item, base unit: what open job
     orders still need vs what this warehouse has. short = remaining - on_hand."""
@@ -853,6 +864,44 @@ class AccessoryStockSearch(StockItemFilters):
     include_empty: bool = False
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
+
+
+class AccessoryLookupRef(BaseModel):
+    """Item 24: a client's or supplier's code for the item, with whose it is."""
+    ref_code: str
+    party: Literal["client", "supplier"]
+    party_name: Optional[str] = None
+
+
+class AccessoryLookupRow(BaseModel):
+    """Item 24 Trim Code Lookup: an item found by our code or a reference
+    code, and its stock in one warehouse (base unit; a template = the sum of
+    its variants). unracked = the part waiting for put-away."""
+    accessory_item_id: int
+    code: str
+    description: str
+    color: Optional[str] = None
+    size: Optional[str] = None
+    value_lines: List[AccessoryValueLine] = []
+    uom_code: str
+    client_name: Optional[str] = None
+    is_template: bool
+    active: bool
+    merged_into_code: Optional[str] = None
+    refs: List[AccessoryLookupRef] = []
+    on_hand: Decimal
+    pack_count: int
+    unracked: Decimal
+
+
+class AccessoryAttention(BaseModel):
+    """Item 24 Needs Attention counts for one warehouse. Deliveries count
+    while open or for `days` days after closing."""
+    unracked_packs: int
+    over_received: int
+    closed_short: int
+    over_issue_receipts: int
+    days: int
 
 
 class AccessoryStockTotal(BaseModel):

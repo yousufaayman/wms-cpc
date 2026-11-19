@@ -15,7 +15,7 @@
  * shows in the history; a second tab holds the shortage report.
  */
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { AlertTriangle, Loader2, PackageMinus, Undo2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -197,11 +197,22 @@ function RequirementLines({ warehouseId }: Readonly<{ warehouseId: number | null
   const [rows, setRows] = useState<AccessoryRequirement[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [query, setQuery] = useState("");
+  // Dashboard links (item 24): ?search=<JO number>, ?issue=<JO id>&jo=<JO number> opens its issue
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [search, setSearch] = useState(() => searchParams.get("search") ?? "");
+  const [query, setQuery] = useState(() => (searchParams.get("search") ?? "").trim());
   const [status, setStatus] = useState<RequirementStatus | "all">("all");
   const [page, setPage] = useState(1);
   const [open, setOpen] = useState<AccessoryRequirement | null>(null);
+
+  // Opened from the dashboard's Issue button: open that JO's issue once, then drop the link params
+  useEffect(() => {
+    const jo = Number(searchParams.get("issue"));
+    if (!jo || !canIssue) return;
+    setIssueFor({ job_order_id: jo, job_order_number: searchParams.get("jo") ?? `#${jo}` });
+    setSearchParams((prev) => { prev.delete("issue"); prev.delete("jo"); return prev; }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Wait until typing stops before asking the server
   useEffect(() => {
@@ -331,13 +342,14 @@ function RequirementLines({ warehouseId }: Readonly<{ warehouseId: number | null
 
 export default function AccessoryRequirementsPanel({ warehouseId }: Readonly<{ warehouseId: number | null }>) {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams(); // ?tab=shortages (dashboard link)
   return (
     <div className="space-y-4">
       <div>
         <h2 className="text-lg font-semibold">{t("accReqTitle")}</h2>
         <p className="text-sm text-muted-foreground">{t("accReqReadOnly")}</p>
       </div>
-      <Tabs defaultValue="lines">
+      <Tabs defaultValue={searchParams.get("tab") === "shortages" ? "shortages" : "lines"}>
         <TabsList>
           <TabsTrigger value="lines">{t("accReqTabLines")}</TabsTrigger>
           <TabsTrigger value="shortages">{t("accShortageTab")}</TabsTrigger>

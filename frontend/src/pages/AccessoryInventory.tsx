@@ -23,6 +23,7 @@
  *   posting (all its rows, on every pack) after asking for a reason.
  * Anyone with a WMS role can look (Tab 1: "everyone, including Viewer").
  */
+import { useSearchParams } from "react-router-dom";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -85,11 +86,16 @@ export default function AccessoryInventory() {
   // Filters (shared by every tab). Item filters live in the page link.
   const { filters: itemForm, update: updateItems, clear: clearItems, advanced } = useItemFilters();
   const [advancedOpen, setAdvancedOpen] = useState(advanced > 0);
-  const [rackFilter, setRackFilter] = useState<string>(ALL);
+  // Dashboard links (item 24): ?tab=packs|item|client|rack, ?rack=unracked
+  const [linkParams] = useSearchParams();
+  const [rackFilter, setRackFilter] = useState<string>(() => (linkParams.get("rack") === UNRACKED ? UNRACKED : ALL));
   const [showEmpty, setShowEmpty] = useState(false);
   const [itemFilter, setItemFilter] = useState<{ id: number; code: string } | null>(null); // from a By item click
 
-  const [tab, setTab] = useState<Tab>("item");
+  const [tab, setTab] = useState<Tab>(() => {
+    const linked = linkParams.get("tab");
+    return linked === "packs" || linked === "client" || linked === "rack" ? linked : "item";
+  });
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<StockRow[]>([]);
   const [packs, setPacks] = useState<AccessoryPack[]>([]);

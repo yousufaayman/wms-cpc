@@ -1,6 +1,7 @@
 import { ComponentType, LazyExoticComponent } from "react";
 import { WarehouseType } from "@/lib/api";
 import type { WarehouseModule } from "@/lib/warehouseModules";
+import type { Permission } from "@/lib/permissions";
 
 /** Props every dashboard widget receives — widgets fetch their own data from these. */
 export interface WidgetProps {
@@ -21,4 +22,6 @@ export interface WidgetDefinition {
   /** The module whose data the widget shows and links to. The dashboard hides
    *  the widget when the warehouse doesn't have it (e.g. accessories switched off). */
   module?: WarehouseModule;
+  /** Shown only to people with this permission (its data endpoint needs it). */
+  permission?: Permission;
 }
