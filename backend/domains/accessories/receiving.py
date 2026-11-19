@@ -17,6 +17,12 @@ What happens when a worker presses Add on the Receive Packs page, in plain words
    (`domains/posting/accessory.receive`), then each touched delivery
    re-works out its status (pending / partial / received).
 
+"Opening stock" mode (item 25): trims already on the shelves before the
+system, loaded rack by rack at go-live with labels printed on the spot. No
+supplier and no delivery line (step 2 is skipped); the rows are `adjustment`
+with reason "Opening balance" instead of `receipt`, so go-live stock never
+shows as goods received and never fills a delivery. Undo works the same.
+
 The batch of a pack is the delivery it was received on (`AccessoryPack.batch_no`).
 
 Undo: the person who pressed Add (or an admin) can cancel it while the packs
@@ -132,13 +138,17 @@ def receive_packs(
     qty = qty_in_base(db, item, payload.qty_per_pack, payload.uom_id)
     supplier = (payload.supplier_type, payload.client_supplier_id)
 
-    if payload.expected_delivery_item_id is not None:
+    if payload.opening_stock:
+        if supplier != (None, None) or payload.expected_delivery_item_id is not None:
+            raise _bad("Opening stock has no supplier or delivery")
+        targets: List[Optional[int]] = [None] * payload.pack_count
+    elif payload.expected_delivery_item_id is not None:
         line = _picked_line(db, payload.expected_delivery_item_id, item, payload.warehouse_id)
         delivery_supplier = (line.delivery.supplier_type, line.delivery.client_supplier_id)
         if supplier != (None, None) and supplier != delivery_supplier:
             raise _bad("The supplier isn't the one on this delivery")
         supplier = delivery_supplier
-        targets: List[Optional[int]] = [line.id] * payload.pack_count
+        targets = [line.id] * payload.pack_count
     else:
         lines = open_lines(db, payload.warehouse_id, item.id, *supplier)
         targets = _match(db, lines, payload.pack_count, qty)
@@ -149,7 +159,7 @@ def receive_packs(
             supplier_type=supplier[0], client_supplier_id=supplier[1],
         )
         for line_id in targets
-    ])
+    ], opening=payload.opening_stock)
     db.flush()
     for line_id in {t for t in targets if t is not None}:
         sync_delivery_item_from_packs(db, line_id)
@@ -164,11 +174,8 @@ def undo_receive(db: Session, user: models.User, posting_id: int) -> models.Acce
     entries = list(posting.entries)
     is_receive = (
         entries
-        and posting.reverses_posting_id is None
-        and posting.supplier_receipt_id is None
-        and posting.internal_receipt_id is None
-        and posting.external_receipt_id is None
-        and all(e.entry_type == "receipt" and e.reversal_of is None for e in entries)
+        and _is_receive_packs_posting(posting)
+        and all(_is_receive_row(e) for e in entries)
     )
     if not is_receive:
         raise _bad("This isn't a Receive Packs entry")
@@ -207,6 +214,16 @@ def _is_receive_packs_posting(posting: models.AccessoryPosting) -> bool:
     )
 
 
+def _is_receive_row(row: models.AccessoryLedgerEntry) -> bool:
+    """A row Receive Packs wrote: a `receipt`, or (Opening stock, item 25) an
+    `adjustment` with the opening-balance reason. Not a reversal."""
+    if row.reversal_of is not None:
+        return False
+    return row.entry_type == "receipt" or (
+        row.entry_type == "adjustment" and row.posting.reason == posting_service.OPENING_REASON
+    )
+
+
 def undo_receive_pack(db: Session, user: models.User, pack_id: int) -> models.AccessoryPosting:
     """Cancel one pack of an Add: its `receipt` row is reversed, so the pack
     is back to 0 (empty) and stops counting toward its delivery line. Refused
@@ -221,8 +238,7 @@ def undo_receive_pack(db: Session, user: models.User, pack_id: int) -> models.Ac
     first = rows[0] if rows else None
     if (
         first is None
-        or first.entry_type != "receipt"
-        or first.reversal_of is not None
+        or not _is_receive_row(first)
         or not _is_receive_packs_posting(first.posting)
     ):
         raise _bad("This pack wasn't made by Receive Packs")

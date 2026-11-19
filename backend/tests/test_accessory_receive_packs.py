@@ -5,6 +5,8 @@ ledger rows and links each to an expected delivery line: the line the worker
 picked ("load a delivery" mode), or else the oldest open line for the item on
 a delivery in this warehouse from this supplier (matched pack by pack, never
 blocking). `POST /accessory-packs/receive/{posting}/undo` cancels one Add.
+Item 25: `opening_stock` = go-live stock (no supplier / delivery, posted as
+the opening balance).
 """
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -283,6 +285,84 @@ def test_undo_one_pack_of_an_add(client, auth_headers, db, s, make_user):
     assert _received(client, h, d.id) == ("partial", [Decimal(10)])
     assert undo(10**9).status_code == 404
     check_invariants(db)
+
+
+# ── 4b. Opening stock (item 25) ──────────────────────────────────────────────
+
+def test_opening_stock_is_an_opening_balance_not_a_receipt(client, auth_headers, db, s, place, setup):
+    """Go-live stock: packs with no supplier and no delivery, posted as
+    `adjustment` rows with reason "Opening balance", even when an open
+    delivery for the item exists. A worker may do it (the floor team counts)."""
+    from backend.domains.posting import accessory as ledger
+
+    h = auth_headers(role="W_Worker")
+    d = _delivery(db, s["wh"], s["supplier"])
+    _line(db, d, s["item"], 100)
+    rack = place["a1"]
+    out = _ok(client, h, _body(s, supplier_type=None, client_supplier_id=None, opening_stock=True,
+                               pack_count=3, qty_per_pack="25", rack_id=rack.id))
+    assert len(out["packs"]) == 3
+    for p in out["packs"]:
+        assert p["delivery_id"] is None and p["expected_delivery_item_id"] is None and p["batch_no"] is None
+        assert p["supplier_type"] is None and p["client_supplier_id"] is None
+        assert p["rack_id"] == rack.id and Decimal(p["quantity"]) == 25 and p["status"] == "active"
+
+    posting = db.get(models.AccessoryPosting, out["posting_id"])
+    assert posting.reason == ledger.OPENING_REASON == "Opening balance"
+    assert {e.entry_type for e in posting.entries} == {"adjustment"}
+    # never counts as received on the open delivery
+    assert _received(client, h, d.id) == ("pending", [Decimal(0)])
+    # and the packs are ordinary stock: an issue can take from them
+    ledger.issue(db, s["user"].id, out["packs"][0]["id"], 5, s["jo"])
+    db.commit()
+    check_invariants(db)
+
+
+def test_opening_stock_takes_no_supplier_or_delivery_line(client, auth_headers, db, s):
+    h = auth_headers(role="W_Worker")
+    line = _line(db, _delivery(db, s["wh"], s["supplier"]), s["item"], 100)
+    r = _post(client, h, _body(s, opening_stock=True))  # supplier still filled in
+    assert r.status_code == 400 and "no supplier or delivery" in r.json()["detail"]
+    r = _post(client, h, _body(s, supplier_type=None, client_supplier_id=None, opening_stock=True,
+                               expected_delivery_item_id=line.id))
+    assert r.status_code == 400
+    assert _post(client, auth_headers(role="Viewer"),
+                 _body(s, supplier_type=None, client_supplier_id=None, opening_stock=True)).status_code == 403
+
+
+def test_opening_stock_undo_whole_add_and_one_pack(client, auth_headers, db, s, make_user):
+    worker = make_user("W_Worker")
+    h = auth_headers(user=worker)
+    body = _body(s, supplier_type=None, client_supplier_id=None, opening_stock=True, pack_count=2)
+
+    out = _ok(client, h, body)
+    assert client.post(f"{RECEIVE}/{out['posting_id']}/undo", headers=auth_headers(role="W_Worker")).status_code == 403
+    r = client.post(f"{RECEIVE}/{out['posting_id']}/undo", headers=h)
+    assert r.status_code == 201, r.text
+    for p in out["packs"]:
+        pack = client.get(f"/api/v1/accessory-packs/{p['id']}", headers=h).json()
+        assert Decimal(pack["quantity"]) == 0 and pack["status"] == "empty"
+
+    out = _ok(client, h, body)
+    first, second = (p["id"] for p in out["packs"])
+    r = client.post(f"{RECEIVE}/pack/{first}/undo", headers=h)
+    assert r.status_code == 201, r.text
+    assert Decimal(client.get(f"/api/v1/accessory-packs/{second}", headers=h).json()["quantity"]) == 10
+    check_invariants(db)
+
+
+def test_undo_refuses_an_ordinary_adjustment(client, auth_headers, db, s):
+    """Only Receive Packs' own rows can be undone there: an admin's count
+    correction (Pack Operations) is not one, whatever its reason."""
+    from backend.domains.posting import accessory as ledger
+
+    h = auth_headers(user=s["user"])
+    out = _ok(client, h, _body(s))
+    adj = ledger.post(db, s["user"].id, [ledger.LedgerLine(out["packs"][0]["id"], "adjustment", Decimal(2))],
+                      reason="Recount")
+    db.commit()
+    r = client.post(f"{RECEIVE}/{adj.id}/undo", headers=auth_headers(role="admin"))
+    assert r.status_code == 400 and "isn't a Receive Packs" in r.json()["detail"]
 
 
 # ── 5. Access ───────────────────────────────────────────────────────────────

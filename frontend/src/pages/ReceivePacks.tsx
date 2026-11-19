@@ -9,6 +9,9 @@
  *    - "Search item": pick the supplier and search the item. The server puts
  *      each pack on the oldest open line for that item from that supplier
  *      (or on no delivery). A panel shows what's still expected.
+ *    - "Opening stock" (item 25): trims already on the shelves before the
+ *      system, loaded rack by rack at go-live. No supplier, no delivery; the
+ *      server records them as the opening balance, not as received goods.
  * 2. Rack (optional: no rack = put away later) and printer, then Lock.
  *    These stay set while going from line to line.
  * 3. Number of packs × quantity per pack, in any of the item's units, or in
@@ -54,7 +57,7 @@ import {
 } from "@/lib/api";
 import { generateAccessoryPackLabels, sendZplToDevice, type AccessoryPackLabelData } from "@/lib/zpl";
 
-type Mode = "delivery" | "search";
+type Mode = "delivery" | "search" | "opening";
 
 /** The unit-select value for "Conversion for this delivery". */
 const CONVERSION = -1;
@@ -68,6 +71,7 @@ interface Batch {
   item: AccessoryItem;
   uomAr: string;
   undone: number[];
+  opening: boolean; // added in "Opening stock" mode
 }
 
 const remaining = (line: ExpectedDeliveryItem) =>
@@ -206,7 +210,8 @@ const ReceivePacks = () => {
   const switchMode = (m: Mode) => {
     setMode(m);
     setLineId(null);
-    if (m === "search") setDelivery(null);
+    if (m !== "delivery") setDelivery(null);
+    if (m === "opening") setSupplier(null);
   };
 
   // ── Supplier picker: suppliers with open deliveries first ──
@@ -322,6 +327,8 @@ const ReceivePacks = () => {
     }
   };
 
+  const opening = mode === "opening";
+
   const handleAdd = async () => {
     if (!item || !base || warehouseId === null || adding) return;
     if (usingConversion && !(Number(convFromQty) > 0 && Number(convToQty) > 0)) { toast.error(t("rpSetConversion")); return; }
@@ -331,16 +338,17 @@ const ReceivePacks = () => {
       const out = await accessoryPackApi.receive({
         warehouse_id: warehouseId,
         accessory_item_id: item.id,
-        supplier_type: supplierType,
-        client_supplier_id: supplierId,
+        supplier_type: opening ? null : supplierType,
+        client_supplier_id: opening ? null : supplierId,
         rack_id: rack?.id ?? null,
         expected_delivery_item_id: mode === "delivery" ? lineId : null,
         pack_count: count,
         qty_per_pack: usingConversion ? String(perPackBase.value) : qty,
         uom_id: usingConversion ? null : uomId,
+        opening_stock: opening,
       });
       const uomAr = base.name_ar;
-      setBatches((prev) => [{ postingId: out.posting_id, packs: out.packs, item, uomAr, undone: [] }, ...prev]);
+      setBatches((prev) => [{ postingId: out.posting_id, packs: out.packs, item, uomAr, undone: [], opening }, ...prev]);
       print(out.packs, item, uomAr);
       toast.success(t("rpReceivedToast", { count: String(out.packs.length) }));
       setQty("");
@@ -450,6 +458,7 @@ const ReceivePacks = () => {
                     <TabsList>
                       <TabsTrigger value="delivery">{t("rpModeDelivery")}</TabsTrigger>
                       <TabsTrigger value="search">{t("rpModeSearch")}</TabsTrigger>
+                      <TabsTrigger value="opening">{t("rpModeOpening")}</TabsTrigger>
                     </TabsList>
                   </Tabs>
                 </div>
@@ -485,14 +494,18 @@ const ReceivePacks = () => {
                   </>
                 )}
 
+                {opening && <p className="text-sm text-muted-foreground">{t("rpOpeningHint")}</p>}
+
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div className="space-y-1.5">
-                    <Label>{t("supplier")}{mode === "search" ? " *" : ""}</Label>
-                    <Combobox
-                      items={supplierItems} value={supplier} placeholder={t("supplier")}
-                      onSelect={(id) => { setSupplier(id); if (openLine) setLineId(null); }}
-                    />
-                  </div>
+                  {!opening && (
+                    <div className="space-y-1.5">
+                      <Label>{t("supplier")}{mode === "search" ? " *" : ""}</Label>
+                      <Combobox
+                        items={supplierItems} value={supplier} placeholder={t("supplier")}
+                        onSelect={(id) => { setSupplier(id); if (openLine) setLineId(null); }}
+                      />
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label>{t("accessory")} *</Label>
                     {item ? (
@@ -707,6 +720,8 @@ const ReceivePacks = () => {
                               <Badge variant="outline" className="gap-1 text-green-700 border-green-400">
                                 <Check className="h-3 w-3" /> {t("matchedToDelivery", { id: String(p.delivery_id) })}
                               </Badge>
+                            ) : b.opening ? (
+                              <Badge variant="secondary">{t("rpModeOpening")}</Badge>
                             ) : <span className="text-muted-foreground">{t("rpNoDelivery")}</span>}
                           </TableCell>
                           <TableCell className="font-mono" dir="ltr">{p.batch_no ?? "—"}</TableCell>

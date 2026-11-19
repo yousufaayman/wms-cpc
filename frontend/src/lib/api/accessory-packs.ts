@@ -57,6 +57,8 @@ export interface ReceivePacksIn {
   pack_count: number;
   qty_per_pack: string;
   uom_id: number | null;
+  /** Item 25: go-live stock; no supplier / delivery, recorded as the opening balance. */
+  opening_stock?: boolean;
 }
 
 export interface ReceivePacksOut {

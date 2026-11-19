@@ -51,6 +51,10 @@ STOCK_IN = {"receipt", "return"}
 STOCK_OUT = {"issue", "supplier_return", "write_off"}
 NEEDS_JOB_ORDER = {"issue", "return"}
 NEEDS_REASON = {"adjustment", "write_off"}
+# Item 25: go-live stock loaded through Receive Packs ("Opening stock") is
+# posted as `adjustment` rows with exactly this reason. Reports (item 26) tell
+# it apart from received goods (`receipt`) and from count corrections by it.
+OPENING_REASON = "Opening balance"
 
 _RECEIPT_MODELS = {
     "supplier": models.SupplierReceipt,
@@ -268,10 +272,14 @@ def post(
 # ── Short forms for the screens of later items ──────────────────────────────
 
 def receive(
-    db: Session, actor_id: int, warehouse_id: int, new_packs: Sequence[NewPack]
+    db: Session, actor_id: int, warehouse_id: int, new_packs: Sequence[NewPack], *, opening: bool = False,
 ) -> Tuple[models.AccessoryPosting, List[models.AccessoryPack]]:
     """Receive Packs (item 17): make each pack and its `receipt` row, all
-    under one posting. Quantities are in the item's base unit and > 0."""
+    under one posting. Quantities are in the item's base unit and > 0.
+
+    `opening=True` (item 25, "Opening stock"): stock that was on the shelves
+    before the system. Same packs, but the rows are `adjustment` with reason
+    OPENING_REASON, so it never counts as goods received from a supplier."""
     from ...crud.accessory_packs import create_pack  # crud imports this module's neighbours
 
     if not new_packs:
@@ -285,9 +293,10 @@ def receive(
             expected_delivery_item_id=new.expected_delivery_item_id, supplier_type=new.supplier_type,
             client_supplier_id=new.client_supplier_id,
         ))
+    entry_type = "adjustment" if opening else "receipt"
     posting = post(db, actor_id, [
-        LedgerLine(pack_id=p.id, entry_type="receipt", qty_delta=new.qty) for p, new in zip(packs, new_packs)
-    ])
+        LedgerLine(pack_id=p.id, entry_type=entry_type, qty_delta=new.qty) for p, new in zip(packs, new_packs)
+    ], reason=OPENING_REASON if opening else None)
     return posting, packs
 
 

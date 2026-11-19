@@ -650,10 +650,13 @@ class AccessoryReceiveIn(BaseModel):
     `qty_per_pack` in `uom_id` (default: the item's base unit). With
     `expected_delivery_item_id` (the line picked in "load a delivery" mode)
     every pack goes to that line; without it each pack is matched to the
-    oldest open line for the item from this supplier. The acting user is the
+    oldest open line for the item from this supplier. `opening_stock` (item
+    25): stock already on the shelves before the system: no supplier, no
+    delivery line, posted as the opening balance. The acting user is the
     logged-in one."""
     warehouse_id: int
     accessory_item_id: int
+    opening_stock: bool = False
     supplier_type: Optional[Literal["client", "logical_location"]] = None
     client_supplier_id: Optional[int] = None
     rack_id: Optional[int] = None  # None = put away later
