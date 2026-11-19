@@ -27,6 +27,7 @@ Rules checked here, raised as HTTP errors:
   size, every variant gets it automatically and can't change it. Setting or
   changing it on the base copies it to all its variants (refused if two
   would become the same); clearing it on the base leaves the variants' own.
+- merged duplicates (item 23): an item merged into another stays switched off.
 """
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
@@ -337,6 +338,9 @@ def update_item(db: Session, item_id: int, payload: AccessoryItemUpdate) -> Acce
     for field in ("description", "base_uom_id", "active"):
         if changes.get(field, ...) is None:
             changes.pop(field)
+
+    if changes.get("active") and item.merged_into_id is not None:
+        raise _bad(f"{item.code} was merged into {item.merged_into_code}: it stays switched off")
 
     new_values = changes.pop("variable_values", None)
     if item.parent_template is not None:

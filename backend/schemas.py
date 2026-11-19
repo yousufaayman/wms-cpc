@@ -433,6 +433,9 @@ class AccessoryItem(BaseModel):
     variable_values: Optional[Dict[str, str]] = None
     value_lines: List[AccessoryValueLine] = []  # a variant's values, labelled, in print order
     client_refs: List[AccessoryClientRef] = []  # own, or the template's for a variant
+    # Item 23: set when this item was a duplicate merged into another one
+    merged_into_id: Optional[int] = None
+    merged_into_code: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -759,6 +762,31 @@ class AccessoryPackPostingOut(BaseModel):
     """One posting on one pack (adjustment, write-off) and the pack after it."""
     posting_id: int
     pack: AccessoryPack
+
+
+class AccessoryItemMergeIn(BaseModel):
+    """Admin (item 23): merge this item (the duplicate) into `keep_item_id`."""
+    keep_item_id: int
+    reason: str = Field(..., min_length=1, max_length=400)
+
+
+class AccessoryItemMergePreview(BaseModel):
+    """What a merge would do, and what stops it (`blockers`, empty = ready)."""
+    duplicate: AccessoryItem
+    keep: AccessoryItem
+    packs: List[AccessoryPack]  # packs with stock that get a new pack of the kept item
+    total: Decimal  # their stock together, base unit
+    refs: int
+    delivery_lines: int  # on open deliveries
+    conversions: int  # copied to the kept item
+    category_differs: bool
+    blockers: List[str]
+
+
+class AccessoryItemMergeOut(BaseModel):
+    posting_id: Optional[int] = None  # None when the duplicate had no stock
+    item: AccessoryItem  # the duplicate, now switched off
+    new_packs: List[AccessoryPack]
 
 
 class AccessoryPackFree(BaseModel):

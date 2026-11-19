@@ -19,22 +19,30 @@ Templates + variants (item 10): `/{id}/fields` are a template's variable lines
 creates its variants; `/{id}/variants/check` tells the form whether a
 combination already exists. A variant is edited with the normal PATCH
 (`variable_values`, color, size).
+
+Merge duplicates (item 23, admin only): `GET /{id}/merge-preview?keep_item_id=`
+says what merging item `id` into the kept item would move and what blocks
+it; `POST /{id}/merge` does it (rules in `domains/accessories/item_merge.py`).
 """
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from backend.core.authz import PERM_MANAGE_ACCESSORY_ITEMS
+from backend import models
+from backend.core.authz import PERM_MANAGE_ACCESSORY_ITEMS, ensure_admin
 from backend.core.deps import get_db, require_permission
 from backend.crud import accessory_items as crud
-from backend.domains.accessories import uom
+from backend.domains.accessories import item_merge, uom
 from backend.schemas import (
     AccessoryItem,
     AccessoryItemCreate,
     AccessoryItemField,
     AccessoryItemFieldCreate,
     AccessoryItemFieldUpdate,
+    AccessoryItemMergeIn,
+    AccessoryItemMergeOut,
+    AccessoryItemMergePreview,
     AccessoryItemPage,
     AccessoryItemRef,
     AccessoryItemRefIn,
@@ -196,3 +204,39 @@ def create_variant(
     item_id: int, payload: AccessoryVariantCreate, db: Session = Depends(get_db), user=Depends(_can_manage)
 ):
     return crud.create_variant(db, item_id, payload, user_id=user.id)
+
+
+# ── Merge duplicates (item 23, admin) ───────────────────────────────────────
+
+def _preview_out(p: item_merge.MergePreview) -> dict:
+    return {
+        "duplicate": p.duplicate, "keep": p.keep, "packs": p.packs, "total": p.total, "refs": p.refs,
+        "delivery_lines": len(p.delivery_lines), "conversions": len(p.conversions),
+        "category_differs": p.category_differs, "blockers": p.blockers,
+    }
+
+
+@router.get("/{item_id}/merge-preview", response_model=AccessoryItemMergePreview)
+def merge_preview(
+    item_id: int, keep_item_id: int = Query(...), db: Session = Depends(get_db),
+    current_user: models.User = Depends(_can_manage),
+):
+    ensure_admin(db, current_user)
+    return _preview_out(item_merge.preview(db, item_id, keep_item_id))
+
+
+@router.post("/{item_id}/merge", response_model=AccessoryItemMergeOut)
+def merge_item(
+    item_id: int, payload: AccessoryItemMergeIn, db: Session = Depends(get_db),
+    current_user: models.User = Depends(_can_manage),
+):
+    ensure_admin(db, current_user)
+    _p, posting, new_packs = item_merge.merge(db, current_user.id, item_id, payload.keep_item_id, payload.reason)
+    db.commit()
+    for pack in new_packs:
+        db.refresh(pack)
+    return {
+        "posting_id": posting.id if posting is not None else None,
+        "item": crud.get_item_or_404(db, item_id),
+        "new_packs": new_packs,
+    }

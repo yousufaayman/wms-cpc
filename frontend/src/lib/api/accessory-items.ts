@@ -1,5 +1,6 @@
 import { api } from './client';
 import type { UomConversion } from './accessory-setup';
+import type { AccessoryPack } from './accessory-packs';
 
 /**
  * Accessory items (item 8). The server makes the code on create:
@@ -109,6 +110,27 @@ export interface AccessoryItem {
   variable_values: Record<string, string> | null;
   value_lines: AccessoryValueLine[];
   client_refs: AccessoryClientRef[]; // own, or the template's for a variant
+  merged_into_id?: number | null; // item 23: this duplicate was merged into that item
+  merged_into_code?: string | null;
+}
+
+/** Item 23: what merging a duplicate into the kept item would do. */
+export interface AccessoryItemMergePreview {
+  duplicate: AccessoryItem;
+  keep: AccessoryItem;
+  packs: AccessoryPack[]; // packs with stock that get a new pack of the kept item
+  total: string; // their stock together, base unit
+  refs: number;
+  delivery_lines: number; // on open deliveries
+  conversions: number; // copied to the kept item
+  category_differs: boolean;
+  blockers: string[]; // empty = ready to merge
+}
+
+export interface AccessoryItemMergeOut {
+  posting_id: number | null; // null when the duplicate had no stock
+  item: AccessoryItem; // the duplicate, now switched off
+  new_packs: AccessoryPack[];
 }
 
 export interface AccessoryItemCreate {
@@ -243,4 +265,9 @@ export const accessoryItemApi = {
     api.request<AccessoryItem | null>(`/accessory-items/${id}/variants/check`, 'POST', variant),
   createVariant: (id: number, variant: AccessoryVariantCreate) =>
     api.request<AccessoryItem>(`/accessory-items/${id}/variants`, 'POST', variant),
+  /** Item 23 (admin): merge item `id` (the duplicate) into `keepItemId`. */
+  mergePreview: (id: number, keepItemId: number) =>
+    api.request<AccessoryItemMergePreview>(`/accessory-items/${id}/merge-preview${toQuery({ keep_item_id: keepItemId })}`),
+  merge: (id: number, keepItemId: number, reason: string) =>
+    api.request<AccessoryItemMergeOut>(`/accessory-items/${id}/merge`, 'POST', { keep_item_id: keepItemId, reason }),
 };

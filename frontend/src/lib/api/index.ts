@@ -86,6 +86,8 @@ export {
   type AccessoryValueLine,
   type AccessoryClientRef,
   type AccessoryVariantCreate,
+  type AccessoryItemMergePreview,
+  type AccessoryItemMergeOut,
   type FieldType
 } from './accessory-items';
 
