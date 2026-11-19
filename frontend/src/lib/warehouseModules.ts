@@ -41,7 +41,7 @@ export const WAREHOUSE_MODULES: Record<WarehouseType, Partial<Record<WarehouseMo
     analytics: null,
   },
   // Behind FEATURE_ACCESSORIES, except the set-up pages so the warehouse can
-  // be prepared in advance. Accessory analytics arrives in item 26.
+  // be prepared in advance. Analytics shows the accessory reports there (item 26).
   Accessory: {
     dashboard: null,
     accessory_inventory: "accessories",
@@ -54,6 +54,7 @@ export const WAREHOUSE_MODULES: Record<WarehouseType, Partial<Record<WarehouseMo
     material_requests: "accessories",
     warehouse_racks: null,
     logical_locations: null,
+    analytics: "accessories",
   },
   // RMG is out of scope for now: set-up pages only.
   RMG: {
