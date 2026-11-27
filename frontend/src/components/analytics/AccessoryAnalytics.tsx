@@ -12,8 +12,11 @@
  * - Expected vs received: lines of open deliveries, and over-received lines of
  *   closed ones.
  *
- * Filters: from / to days (flow and job orders), client, category (not job
- * orders: there the client is the job order's), days (slow-moving). "Export
+ * Filters: from / to days (flow and job orders), client, category and
+ * supplier (not job orders: there the client is the job order's), days
+ * (slow-moving). Supplier = who delivered the packs (or the delivery's
+ * supplier); each item also shows its supplier codes, and an opened flow item
+ * shows what each supplier delivered in the range. "Export
  * to Excel" downloads the open tab's sheet, "Export all" the five-sheet
  * workbook (the fifth sheet is stock on hand) with the same filters, in the
  * app's language. Quantities are in each item's base unit and never added
@@ -29,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SupplierRefs } from "@/components/accessory-items/AccessoryItemPicker";
 import { DateRangeFilter, ExportButton, todayISO, type DateRange } from "@/components/analytics/AnalyticsControls";
 import {
   accessoryAnalyticsApi, accessoryCategoryApi, clientApi,
@@ -64,6 +68,7 @@ function ItemCell({ item }: Readonly<{ item: ReportItem }>) {
       <div className="text-xs text-muted-foreground">
         {item.description}{details ? ` · ${details}` : ""}
       </div>
+      <SupplierRefs refs={item.supplier_refs} />
     </div>
   );
 }
@@ -108,18 +113,29 @@ const FLOW_COLUMNS: { key: keyof FlowRow; label: TranslationKey; signed?: boolea
 function FlowEntries({ row, filters, cols }: Readonly<{ row: FlowRow; filters: ReportFilters; cols: number }>) {
   const { t } = useTranslation();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["acc-analytics-entries", row.accessory_item_id, filters.warehouseId, filters.dateFrom, filters.dateTo],
+    queryKey: ["acc-analytics-entries", row.accessory_item_id, filters.warehouseId, filters.dateFrom, filters.dateTo, filters.supplier],
     queryFn: () => accessoryAnalyticsApi.flowEntries(row.accessory_item_id, filters),
   });
   return (
     <TableRow className="bg-muted/30 hover:bg-muted/30">
-      <TableCell colSpan={cols} className="p-3">
+      <TableCell colSpan={cols} className="p-3 space-y-2">
+        {row.received_by_supplier.length > 0 && (
+          <div className="text-sm">
+            <span className="font-medium">{t("aaReceivedBySupplier")}:</span>{" "}
+            {row.received_by_supplier.map((x) => (
+              <Badge key={`${x.supplier_type}-${x.client_supplier_id}`} variant="outline" className="me-1.5">
+                {x.supplier_name ?? t("aaNoSupplier")} · <span dir="ltr" className="ms-1">{fmtQty(x.qty)} {row.uom_code}</span>
+              </Badge>
+            ))}
+          </div>
+        )}
         <div className="overflow-x-auto rounded-md border bg-background">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>{t("accTypeDate")}</TableHead>
                 <TableHead>{t("accInvPack")}</TableHead>
+                <TableHead>{t("supplier")}</TableHead>
                 <TableHead>{t("accLineType")}</TableHead>
                 <TableHead className="text-end">{t("accInvChange")}</TableHead>
                 <TableHead>{t("accInvJobOrder")}</TableHead>
@@ -128,11 +144,12 @@ function FlowEntries({ row, filters, cols }: Readonly<{ row: FlowRow; filters: R
               </TableRow>
             </TableHeader>
             <TableBody>
-              <TableState loading={isLoading} error={error} empty={!data?.length} cols={7} />
+              <TableState loading={isLoading} error={error} empty={!data?.length} cols={8} />
               {data?.map((e) => (
                 <TableRow key={e.id} className={e.reversal_of != null || e.is_reversed ? "text-muted-foreground" : ""}>
                   <TableCell className="whitespace-nowrap">{new Date(e.created_at).toLocaleString()}</TableCell>
                   <TableCell className="font-mono" dir="ltr">{e.pack_id}</TableCell>
+                  <TableCell>{e.supplier_name ?? "—"}</TableCell>
                   <TableCell className="whitespace-nowrap">
                     {t(`accEntry_${e.entry_type}` as TranslationKey)}
                     {e.is_reversed && <Badge variant="outline" className="ms-2 text-[10px]">{t("accInvReversed")}</Badge>}
@@ -381,11 +398,18 @@ export default function AccessoryAnalytics({ warehouseId }: Readonly<{ warehouse
   const [range, setRange] = useState<DateRange>(() => ({ from: monthStartISO(), to: todayISO() }));
   const [clientId, setClientId] = useState<string>(ALL);
   const [categoryId, setCategoryId] = useState<string>(ALL);
+  const [supplier, setSupplier] = useState<string>(ALL);
   const [daysText, setDaysText] = useState(String(DEFAULT_DAYS));
 
   const { data: clients = [] } = useQuery({ queryKey: ["clients"], queryFn: () => clientApi.getAll(), staleTime: 5 * 60_000 });
   const { data: categories = [] } = useQuery({
     queryKey: ["accessory-categories"], queryFn: () => accessoryCategoryApi.getAll(), staleTime: 5 * 60_000,
+  });
+
+  const { data: suppliers = [] } = useQuery({
+    queryKey: ["acc-analytics-suppliers", warehouseId],
+    queryFn: () => accessoryAnalyticsApi.suppliers(warehouseId),
+    staleTime: 5 * 60_000,
   });
 
   const days = Math.max(1, Math.min(3650, Number.parseInt(daysText, 10) || DEFAULT_DAYS));
@@ -396,7 +420,8 @@ export default function AccessoryAnalytics({ warehouseId }: Readonly<{ warehouse
     clientId: clientId === ALL ? null : Number(clientId),
     categoryId: categoryId === ALL ? null : Number(categoryId),
     days,
-  }), [warehouseId, range, clientId, categoryId, days]);
+    supplier: supplier === ALL ? null : supplier,
+  }), [warehouseId, range, clientId, categoryId, days, supplier]);
 
   const dated = tab === "flow" || tab === "jos";
   const lang = language === "ar" ? "ar" : "en";
@@ -434,6 +459,21 @@ export default function AccessoryAnalytics({ warehouseId }: Readonly<{ warehouse
                 {categories.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>{c.code} · {language === "ar" ? c.name_ar : c.name_en}</SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        {tab !== "jos" && (
+          <div className="space-y-1">
+            <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("supplier")}</Label>
+            <Select value={supplier} onValueChange={setSupplier}>
+              <SelectTrigger className="h-9 w-48 text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL}>{t("allSuppliers")}</SelectItem>
+                {suppliers.map((x) => {
+                  const key = `${x.supplier_type}:${x.client_supplier_id}`;
+                  return <SelectItem key={key} value={key}>{x.name}</SelectItem>;
+                })}
               </SelectContent>
             </Select>
           </div>

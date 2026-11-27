@@ -11,7 +11,6 @@ PCS and metres.
 """
 from collections import defaultdict
 from datetime import date, datetime
-from decimal import Decimal
 from typing import Any, Callable, Dict, List, Optional, Sequence
 
 from openpyxl import Workbook
@@ -84,6 +83,9 @@ _LABELS: Dict[str, Dict[str, str]] = {
         "state_over": "Over-received",
         "total": "Total ({uom})",
         "no_data": "No data",
+        "supplier_codes": "Supplier codes",
+        "received_by_supplier": "Received by supplier",
+        "no_supplier": "No supplier",
     },
     "ar": {
         "title": "تقرير الإكسسوارات",
@@ -138,6 +140,9 @@ _LABELS: Dict[str, Dict[str, str]] = {
         "state_over": "مستلم بالزيادة",
         "total": "الإجمالي ({uom})",
         "no_data": "لا توجد بيانات",
+        "supplier_codes": "أكواد المورد",
+        "received_by_supplier": "المستلم حسب المورد",
+        "no_supplier": "بدون مورد",
     },
 }
 
@@ -169,7 +174,15 @@ def _item_columns(lang: str) -> List[Column]:
         ("client", lambda r: r.get("client_name") or labels["generic"], False),
         ("category", lambda r: r.get(cat), False),
         ("unit", lambda r: r["uom_code"], False),
+        ("supplier_codes", _supplier_codes, False),
     ]
+
+
+def _supplier_codes(r: dict) -> Optional[str]:
+    """'YKK: SUP-1; Coats: C-77' (the item's supplier references)."""
+    refs = r.get("supplier_refs") or []
+    return "; ".join(f"{x['supplier_name']}: {x['ref_code']}" if x.get("supplier_name") else x["ref_code"]
+                     for x in refs) or None
 
 
 def _qty(key: str) -> Column:
@@ -226,10 +239,16 @@ def _stock(ws, data, meta, lang):
 
 
 def _flow(ws, data, meta, lang):
+    labels = _LABELS[lang]
+
+    def by_supplier(r):
+        return "; ".join(f"{x.get('supplier_name') or labels['no_supplier']}: {_num(x['qty']):g}"
+                         for x in r.get("received_by_supplier") or []) or None
+
     columns = _item_columns(lang) + [_qty(k) for k in (
         "opening", "received", "issued", "returned", "supplier_returns", "written_off", "adjusted",
         "reclassified", "closing",
-    )]
+    )] + [("received_by_supplier", by_supplier, False)]
     _write_sheet(ws, _LABELS[lang]["sheet_flow"], meta, columns, data["flow"], lang)
 
 
@@ -290,10 +309,11 @@ _DATED = {"flow", "jo_issues"}
 
 def build_workbook(
     sheets: Sequence[str], data: Dict[str, Any], *, warehouse_name: str,
-    date_from: Optional[date], date_to: Optional[date], lang: str = "en",
+    date_from: Optional[date], date_to: Optional[date], supplier_name: Optional[str] = None, lang: str = "en",
 ) -> bytes:
     """`data` holds the rows of each sheet in `sheets` (keys as in SHEETS),
-    plus `days` for the slow-moving sheet."""
+    plus `days` for the slow-moving sheet. `supplier_name`: the Supplier
+    filter, written at the top of the sheets it applies to."""
     labels = _LABELS[lang if lang in _LABELS else "en"]
     lang = lang if lang in _LABELS else "en"
     if date_from or date_to:
@@ -307,5 +327,7 @@ def build_workbook(
         meta = [("warehouse", warehouse_name), ("printed", date.today().isoformat())]
         if key in _DATED:
             meta.insert(1, ("period", period))
+        if supplier_name and key != "jo_issues":  # job orders aren't filtered by supplier
+            meta.insert(1, ("supplier", supplier_name))
         _BUILDERS[key](ws, data, meta, lang)
     return _to_bytes(wb)

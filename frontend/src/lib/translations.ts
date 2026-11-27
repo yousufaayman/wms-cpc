@@ -999,6 +999,8 @@ export const translations = {
     aaGenericOrClient: "Generic / Client-specific",
     aaExpectedVsReceived: "Expected vs received",
     aaExportAll: "Export all",
+    aaReceivedBySupplier: "Received by supplier",
+    aaNoSupplier: "No supplier",
     // Item 21: pack operations (returns, split, merge, reclassify)
     packOps: "Pack Operations",
     packOpsDesc: "Return trims from production, split, merge and reclassify packs",
@@ -2138,6 +2140,8 @@ export const translations = {
     aaGenericOrClient: "عام / خاص بعميل",
     aaExpectedVsReceived: "المتوقع مقابل المستلم",
     aaExportAll: "تصدير الكل",
+    aaReceivedBySupplier: "المستلم حسب المورد",
+    aaNoSupplier: "بدون مورد",
     // Item 21: pack operations (returns, split, merge, reclassify)
     packOps: "عمليات العبوات",
     packOpsDesc: "إرجاع الإكسسوار من الإنتاج، وتقسيم العبوات ودمجها وإعادة تصنيفها",

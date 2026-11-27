@@ -49,6 +49,13 @@ export interface AccessoryClientRef {
   ref_code: string;
 }
 
+/** A supplier's code for an item, with the supplier's name (e.g. "YKK · 5-ZIP-BLK"). */
+export interface AccessorySupplierRef {
+  supplier_id: number;
+  supplier_name: string | null;
+  ref_code: string;
+}
+
 export interface AccessoryValueLine {
   field_key: string;
   label_en: string;
@@ -110,6 +117,7 @@ export interface AccessoryItem {
   variable_values: Record<string, string> | null;
   value_lines: AccessoryValueLine[];
   client_refs: AccessoryClientRef[]; // own, or the template's for a variant
+  supplier_refs: AccessorySupplierRef[]; // same rule
   merged_into_id?: number | null; // item 23: this duplicate was merged into that item
   merged_into_code?: string | null;
 }

@@ -9,6 +9,8 @@ Every report is checked against numbers worked out by hand:
   first pack when there was none (opening stock only)
 - expected deliveries: open lines + over-received lines of closed deliveries
 - the Excel workbook (sheets, Arabic right-to-left) and the access rules
+- suppliers: the Supplier filter (packs / deliveries of one supplier), the
+  received-by-supplier split, supplier codes on items, the filter's choices
 """
 import io
 from datetime import timedelta
@@ -24,7 +26,7 @@ from backend.domains.posting.accessory import LedgerLine, NewPack
 from backend.tests.test_accessory_issuing import _jo
 from backend.tests.test_accessory_items import (  # noqa: F401  (fixtures)
     _create,
-    _category,
+    _supplier,
     accessories_on,
     setup,
 )
@@ -294,3 +296,51 @@ def test_rules(client, auth_headers, place, monkeypatch):
     assert client.get(f"{BASE}/slow-moving", params={"warehouse_id": acc, "days": 0}, headers=h).status_code == 422
     monkeypatch.setattr(settings, "FEATURE_ACCESSORIES", False)
     assert client.get(f"{BASE}/flow", params={"warehouse_id": acc}, headers=h).status_code == 404
+
+
+# ── Suppliers ────────────────────────────────────────────────────────────────
+
+def test_supplier_filter_split_and_codes(client, auth_headers, db, setup, place, make_user):
+    h = auth_headers(role="W_Manager")
+    user = make_user("W_Worker")
+    wh = place["acc"]
+    ykk, coats = setup["supplier"], _supplier(db, "pytest_analytics_coats")
+    item = _item(client, h, setup, refs=[{"supplier_id": ykk.id, "ref_code": "YKK-5"}])["id"]
+    by = lambda s: {"supplier_type": "logical_location", "client_supplier_id": s.id}  # noqa: E731
+    ledger.receive(db, user.id, wh.id, [NewPack(item, 30, **by(ykk)), NewPack(item, 10, **by(ykk))])
+    ledger.receive(db, user.id, wh.id, [NewPack(item, 7, **by(coats))])
+    ledger.receive(db, user.id, wh.id, [NewPack(item, 5)])                                  # no supplier
+    ledger.receive(db, user.id, wh.id, [NewPack(item, 100)], opening=True)                  # opening: not received
+    _line(db, _delivery(db, wh, coats), item, 50)
+    _line(db, _delivery(db, wh, ykk), item, 9)
+    db.commit()
+
+    row = _rows_by_item(_get(client, h, "/flow", warehouse_id=wh.id))[item]
+    assert float(row["received"]) == 52
+    assert [(x["supplier_name"], float(x["qty"])) for x in row["received_by_supplier"]] == [
+        (ykk.name, 40), (coats.name, 7), (None, 5)]
+    assert row["supplier_refs"] == [{"supplier_id": ykk.id, "supplier_name": ykk.name, "ref_code": "YKK-5"}]
+
+    only = f"logical_location:{coats.id}"
+    row = _rows_by_item(_get(client, h, "/flow", warehouse_id=wh.id, supplier=only))[item]
+    assert (float(row["received"]), float(row["adjusted"]), float(row["closing"])) == (7, 0, 7)
+    entries = _get(client, h, f"/flow/{item}/entries", warehouse_id=wh.id)
+    assert {e["supplier_name"] for e in entries} == {ykk.name, coats.name, None}
+    assert [e["supplier_name"] for e in _get(client, h, f"/flow/{item}/entries", warehouse_id=wh.id,
+                                              supplier=only)] == [coats.name]
+    assert [r["supplier_name"] for r in _get(client, h, "/deliveries", warehouse_id=wh.id, supplier=only)] == [coats.name]
+    slow = _get(client, h, "/slow-moving", warehouse_id=wh.id, days=1, supplier=only)
+    assert slow == []                                    # received today
+    names = [s["name"] for s in _get(client, h, "/suppliers", warehouse_id=wh.id)]
+    assert names == sorted([ykk.name, coats.name], key=str.lower)
+
+    wb = _workbook(client, h, warehouse_id=wh.id, sheets=["flow"], supplier=only)
+    values = [[c.value for c in r] for r in wb.active.iter_rows()]
+    assert [coats.name] in [[v for v in r if v is not None][1:] for r in values if r[0] == "Supplier"]
+    header = next(r for r in values if r[0] == "Item code")
+    first = values[values.index(header) + 1]
+    assert first[header.index("Supplier codes")] == f"{ykk.name}: YKK-5"
+    assert first[header.index("Received by supplier")] == f"{coats.name}: 7"
+
+    bad = client.get(f"{BASE}/flow", params={"warehouse_id": wh.id, "supplier": "vendor:1"}, headers=h)
+    assert bad.status_code == 422

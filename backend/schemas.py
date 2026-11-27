@@ -331,6 +331,13 @@ class AccessoryClientRef(BaseModel):
     ref_code: str
 
 
+class AccessorySupplierRef(BaseModel):
+    """A supplier's code for an item, with the supplier's name for display."""
+    supplier_id: int
+    supplier_name: Optional[str] = None
+    ref_code: str
+
+
 class AccessoryItemCreate(BaseModel):
     category_id: int
     client_id: Optional[int] = None  # None = generic
@@ -433,6 +440,7 @@ class AccessoryItem(BaseModel):
     variable_values: Optional[Dict[str, str]] = None
     value_lines: List[AccessoryValueLine] = []  # a variant's values, labelled, in print order
     client_refs: List[AccessoryClientRef] = []  # own, or the template's for a variant
+    supplier_refs: List[AccessorySupplierRef] = []  # same rule
     # Item 23: set when this item was a duplicate merged into another one
     merged_into_id: Optional[int] = None
     merged_into_code: Optional[str] = None
@@ -2097,6 +2105,27 @@ class AccessoryReportItem(BaseModel):
     category_name_en: Optional[str] = None
     category_name_ar: Optional[str] = None
     uom_code: str
+    supplier_refs: List[AccessorySupplierRef] = []
+
+
+class AccessoryReceivedBySupplier(BaseModel):
+    """Received in the range from one supplier (both None = no supplier)."""
+    supplier_type: Optional[str] = None
+    client_supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    qty: Decimal
+
+
+class AccessoryReportSupplier(BaseModel):
+    """A Supplier filter choice: a supplier location or a client."""
+    supplier_type: str
+    client_supplier_id: int
+    name: str
+
+
+class AccessoryFlowEntry(AccessoryLedgerEntry):
+    """A drill-down ledger row, with the supplier that delivered its pack."""
+    supplier_name: Optional[str] = None
 
 
 class AccessoryFlowRow(AccessoryReportItem):
@@ -2112,6 +2141,7 @@ class AccessoryFlowRow(AccessoryReportItem):
     reclassified: Decimal
     closing: Decimal
     entries: int
+    received_by_supplier: List[AccessoryReceivedBySupplier] = []
 
 
 class AccessoryJoIssueLine(AccessoryReportItem):

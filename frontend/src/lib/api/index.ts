@@ -85,6 +85,7 @@ export {
   type AccessoryItemKind,
   type AccessoryValueLine,
   type AccessoryClientRef,
+  type AccessorySupplierRef,
   type AccessoryVariantCreate,
   type AccessoryItemMergePreview,
   type AccessoryItemMergeOut,
@@ -299,4 +300,7 @@ export {
   type DeliveryReportRow,
   type ReportSheet,
   type ReportFilters,
+  type ReportSupplier,
+  type ReceivedBySupplier,
+  type FlowEntry,
 } from './accessory-analytics';

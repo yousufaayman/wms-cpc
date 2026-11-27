@@ -420,6 +420,23 @@ class AccessoryItem(Base):
         ]
 
     @property
+    def supplier_refs(self):
+        """Suppliers' codes for this item (e.g. "YKK · 5-ZIP-BLK"), so the same
+        trim from different suppliers can be told apart. A variant usually has
+        none of its own and shows its template's."""
+        refs = [r for r in self.refs if r.supplier_id is not None]
+        if not refs and self.parent_template is not None:
+            refs = [r for r in self.parent_template.refs if r.supplier_id is not None]
+        return [
+            {
+                "supplier_id": r.supplier_id,
+                "supplier_name": r.supplier.name if r.supplier is not None else None,
+                "ref_code": r.ref_code,
+            }
+            for r in refs
+        ]
+
+    @property
     def value_lines(self):
         """A variant's values in its template's print order, with the line labels."""
         if self.parent_template is None:
@@ -521,6 +538,7 @@ class AccessoryItemRef(Base):
 
     item = relationship("AccessoryItem", back_populates="refs")
     client = relationship("Client", foreign_keys=[client_id], lazy="selectin")
+    supplier = relationship("LogicalLocation", foreign_keys=[supplier_id], lazy="selectin")
 
     def __repr__(self):
         return f"<AccessoryItemRef {self.ref_code} item={self.accessory_item_id}>"

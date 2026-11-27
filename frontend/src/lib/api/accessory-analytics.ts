@@ -5,6 +5,7 @@
 import { api } from './client';
 import type { ExportLang } from './analytics';
 import type { PackLedgerEntry } from './accessory-packs';
+import type { AccessorySupplierRef } from './accessory-items';
 
 export interface ReportItem {
   accessory_item_id: number;
@@ -18,7 +19,27 @@ export interface ReportItem {
   category_name_en: string | null;
   category_name_ar: string | null;
   uom_code: string;
+  /** The item's supplier codes (a variant shows its template's). */
+  supplier_refs: AccessorySupplierRef[];
 }
+
+/** Received in the range from one supplier (null type = received with no supplier). */
+export interface ReceivedBySupplier {
+  supplier_type: string | null;
+  client_supplier_id: number | null;
+  supplier_name: string | null;
+  qty: string;
+}
+
+/** A Supplier filter choice. `key` for the API = `${supplier_type}:${client_supplier_id}`. */
+export interface ReportSupplier {
+  supplier_type: 'client' | 'logical_location';
+  client_supplier_id: number;
+  name: string;
+}
+
+/** A drill-down ledger row with the supplier that delivered its pack. */
+export type FlowEntry = PackLedgerEntry & { supplier_name: string | null };
 
 /** Opening + the movements = closing. Issued, supplier returns and written
     off are positive (out-going) quantities; adjusted / reclassified are signed. */
@@ -33,6 +54,7 @@ export interface FlowRow extends ReportItem {
   reclassified: string;
   closing: string;
   entries: number;
+  received_by_supplier: ReceivedBySupplier[];
 }
 
 export interface JoIssueLine extends ReportItem {
@@ -82,6 +104,8 @@ export interface ReportFilters {
   clientId?: number | null;
   categoryId?: number | null;
   days?: number;
+  /** `logical_location:<id>` or `client:<id>`; not used by the job orders report. */
+  supplier?: string | null;
 }
 
 function query(f: ReportFilters, extra: Record<string, string> = {}): string {
@@ -91,6 +115,7 @@ function query(f: ReportFilters, extra: Record<string, string> = {}): string {
   if (f.clientId != null) p.append('client_id', String(f.clientId));
   if (f.categoryId != null) p.append('category_id', String(f.categoryId));
   if (f.days != null) p.append('days', String(f.days));
+  if (f.supplier) p.append('supplier', f.supplier);
   return p.toString();
 }
 
@@ -99,9 +124,10 @@ const BASE = '/analytics/accessories';
 export const accessoryAnalyticsApi = {
   flow: (f: ReportFilters) => api.request<FlowRow[]>(`${BASE}/flow?${query({ ...f, days: undefined })}`),
   flowEntries: (itemId: number, f: ReportFilters) =>
-    api.request<PackLedgerEntry[]>(`${BASE}/flow/${itemId}/entries?${query({ warehouseId: f.warehouseId, dateFrom: f.dateFrom, dateTo: f.dateTo })}`),
+    api.request<FlowEntry[]>(`${BASE}/flow/${itemId}/entries?${query({ warehouseId: f.warehouseId, dateFrom: f.dateFrom, dateTo: f.dateTo, supplier: f.supplier })}`),
   jobOrders: (f: ReportFilters) =>
-    api.request<JoIssues[]>(`${BASE}/job-orders?${query({ ...f, categoryId: undefined, days: undefined })}`),
+    api.request<JoIssues[]>(`${BASE}/job-orders?${query({ ...f, categoryId: undefined, days: undefined, supplier: undefined })}`),
+  suppliers: (warehouseId: number) => api.request<ReportSupplier[]>(`${BASE}/suppliers?${query({ warehouseId })}`),
   slowMoving: (f: ReportFilters) =>
     api.request<SlowMovingRow[]>(`${BASE}/slow-moving?${query({ ...f, dateFrom: undefined, dateTo: undefined })}`),
   deliveries: (f: ReportFilters) =>
