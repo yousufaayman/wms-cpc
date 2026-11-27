@@ -278,4 +278,52 @@ export const accessoryItemApi = {
     api.request<AccessoryItemMergePreview>(`/accessory-items/${id}/merge-preview${toQuery({ keep_item_id: keepItemId })}`),
   merge: (id: number, keepItemId: number, reason: string) =>
     api.request<AccessoryItemMergeOut>(`/accessory-items/${id}/merge`, 'POST', { keep_item_id: keepItemId, reason }),
+
+  /** Item 35: Excel import. Preview saves nothing; confirm creates every row or none. */
+  downloadImportTemplate: (lang: string) =>
+    api.downloadFile(`/accessory-items/import/template?lang=${lang}`, `accessory-items-import_${lang}.xlsx`),
+  previewImport: (file: File) => api.upload<ItemImportPreview>('/accessory-items/import/preview', file),
+  confirmImport: (file: File) => api.upload<ItemImportCreated[]>('/accessory-items/import/confirm', file),
+  downloadImportResult: (ids: number[], lang: string) =>
+    api.downloadFile(
+      `/accessory-items/import/result?${ids.map((id) => `ids=${id}`).join('&')}&lang=${lang}`,
+      `accessory-items-created_${lang}.xlsx`,
+    ),
 };
+
+/** Columns of the import sheet, in order. */
+export const IMPORT_COLUMNS = [
+  'category', 'client', 'base_unit', 'description', 'color', 'size', 'ref_owner', 'ref_code', 'ref_description',
+] as const;
+export type ImportColumn = (typeof IMPORT_COLUMNS)[number];
+
+/** One problem on a row; the screen turns the code into a sentence. */
+export interface ItemImportMessage {
+  code:
+    | 'required' | 'too_long' | 'unknown' | 'switched_off' | 'no_client_code'
+    | 'other_client' | 'ref_taken' | 'ref_twice' | 'similar_item' | 'similar_row';
+  field: ImportColumn | null;
+  value: string | null;
+  max: number | null;
+  row: number | null;
+  item_code: string | null;
+}
+
+export interface ItemImportRow {
+  row: number;
+  values: Record<ImportColumn, string | null>;
+  errors: ItemImportMessage[];
+  warnings: ItemImportMessage[];
+}
+
+export interface ItemImportPreview {
+  rows: ItemImportRow[];
+  ok_count: number;
+  error_count: number;
+}
+
+export interface ItemImportCreated {
+  row: number;
+  id: number;
+  code: string;
+}

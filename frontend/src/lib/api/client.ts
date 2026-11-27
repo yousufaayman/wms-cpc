@@ -43,6 +43,28 @@ export class ApiClient {
     return (await response.json()) as T;
   }
 
+  /** Sends one file as multipart form data (field `file`) and returns the JSON reply. */
+  async upload<T>(path: string, file: File): Promise<T> {
+    const headers: Record<string, string> = {};
+    const token = this.getToken?.();
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const form = new FormData();
+    form.append("file", file);
+
+    const response = await fetch(`${this.baseUrl}${path}`, { method: "POST", headers, body: form });
+    if (!response.ok) {
+      let message = `Request failed with status ${response.status}`;
+      try {
+        const data = await response.json();
+        message = (data as { detail?: string })?.detail || message;
+      } catch (_) {
+        // ignore
+      }
+      throw new Error(message);
+    }
+    return (await response.json()) as T;
+  }
+
   /** Downloads a binary response (e.g. an Excel export) and triggers a
       browser save using the filename from Content-Disposition, if present. */
   async downloadFile(path: string, fallbackFilename: string): Promise<void> {

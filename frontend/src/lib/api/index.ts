@@ -89,7 +89,13 @@ export {
   type AccessoryVariantCreate,
   type AccessoryItemMergePreview,
   type AccessoryItemMergeOut,
-  type FieldType
+  type FieldType,
+  IMPORT_COLUMNS,
+  type ImportColumn,
+  type ItemImportMessage,
+  type ItemImportRow,
+  type ItemImportPreview,
+  type ItemImportCreated
 } from './accessory-items';
 
 // Export supplier receipt types and API
