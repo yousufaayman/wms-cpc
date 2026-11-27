@@ -57,6 +57,11 @@ export interface AccessoryPackLabelData {
   variantLines?: { label: string; value: string }[] | null;
   /** The delivery batch (item 17), e.g. "B-12"; printed under the quantity. None = no row. */
   batchNo?: string | null;
+  /** Returnable tools (item 33) use the same label: barcode `<id>*TL` instead
+      of `<id>*ACC`, and the row under the quantity shows the serial number. */
+  barcodeSuffix?: string;
+  /** Arabic caption of the row under the quantity (default "الدفعة", batch). */
+  batchCaption?: string;
 }
 
 export type PackLabelVersion = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
@@ -170,7 +175,7 @@ export function generateAccessoryPackLabel(data: AccessoryPackLabelData, copies 
   const rowsRight = withVariant ? DIVIDER_X - 12 : RIGHT;
   const valueW = rowsRight - LEFT - CAPTION_W - 15;
   const id = String(data.packId);
-  const code = packBarcode(data.packId);
+  const code = data.barcodeSuffix ? `${data.packId}${data.barcodeSuffix}` : packBarcode(data.packId);
   const qty = zplSafe(`${data.quantity} ${data.uomAr}`.trim());
 
   // Top block: barcode + big pack id on the left, quantity on the right.
@@ -189,7 +194,7 @@ export function generateAccessoryPackLabel(data: AccessoryPackLabelData, copies 
   ];
   if (batch) {
     // "B-12  الدفعة": caption at the right edge, the batch just left of it.
-    const label = 'الدفعة';
+    const label = data.batchCaption ?? 'الدفعة';
     const labelW = Math.ceil(textWidthAtSize(label, ROW_FONT));
     const batchSize = fitSize(batch, ROW_FONT, qtyW - labelW - 15);
     top.push(

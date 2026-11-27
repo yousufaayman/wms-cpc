@@ -110,6 +110,8 @@ export interface AccessoryItem {
   updated_at: string | null;
   refs: AccessoryItemRef[];
   is_template: boolean;
+  is_tool?: boolean; // item 33: a returnable tool (its category is tracked), never a trim
+  is_individual_tool?: boolean; // a tool with one label per piece
   fields: AccessoryItemField[]; // a template's lines
   variant_count: number; // a base item's variants (item 11)
   parent_template_id: number | null; // set = this is a variant
@@ -177,6 +179,7 @@ export interface AccessoryItemQuery {
   active_only?: boolean; // server default: true
   kind?: AccessoryItemKind;
   template_id?: number;
+  tracked?: boolean; // item 33: true = returnable tools only, false = trims only
   sort?: 'code' | 'newest';
   group_variants?: boolean; // fold variants under their base (a base is listed when one of its variants matches)
   limit?: number;

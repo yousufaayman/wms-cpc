@@ -201,8 +201,11 @@ export function PickedItem({ item, onClear, children }: Readonly<{
 }
 
 /** Search box + results (debounced 300 ms). Wide rows: code, description,
-    color / size, every value, the client codes and the supplier codes are all shown. */
-export function ItemSearch({ onPick, active = true }: Readonly<{ onPick: (item: AccessoryItem) => void; active?: boolean }>) {
+    color / size, every value, the client codes and the supplier codes are all shown.
+    `tools` (item 33): returnable tools only; otherwise trims only (tools are never trims). */
+export function ItemSearch({ onPick, active = true, tools = false }: Readonly<{
+  onPick: (item: AccessoryItem) => void; active?: boolean; tools?: boolean;
+}>) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<AccessoryItem[]>([]);
@@ -215,13 +218,13 @@ export function ItemSearch({ onPick, active = true }: Readonly<{ onPick: (item: 
     let cancelled = false;
     const timer = setTimeout(() => {
       setSearching(true);
-      accessoryItemApi.search({ q, limit: 30 })
+      accessoryItemApi.search({ q, limit: 30, tracked: tools })
         .then((page) => { if (!cancelled) setResults(page.items.filter((i) => !i.is_template).slice(0, 20)); })
         .catch(() => { if (!cancelled) setResults([]); })
         .finally(() => { if (!cancelled) setSearching(false); });
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [search, active]);
+  }, [search, active, tools]);
 
   return (
     <div className="space-y-1.5">

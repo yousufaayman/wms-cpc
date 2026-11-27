@@ -310,3 +310,10 @@ export {
   type ReceivedBySupplier,
   type FlowEntry,
 } from './accessory-analytics';
+export {
+  returnableToolApi,
+  type ReturnableUnit,
+  type ReturnableAddIn,
+  type ReturnableAdded,
+  type ReturnableSummaryRow,
+} from './returnable-tools';

@@ -47,6 +47,7 @@ WAREHOUSE_MODULES = {
         "receive_packs": "accessories",
         "pack_operations": "accessories",
         "accessory_items": "accessories",
+        "returnable_tools": "accessories",
         "needle_exchange": "needles",
         "receipts": "accessories",
         "expected_deliveries": "accessories",
