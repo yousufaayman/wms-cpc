@@ -20,18 +20,26 @@ creates its variants; `/{id}/variants/check` tells the form whether a
 combination already exists. A variant is edited with the normal PATCH
 (`variable_values`, color, size).
 
+Excel import (item 35, `manage_accessory_items`): `GET /import/template`
+(blank sheet), `POST /import/preview` (upload, check every row, save
+nothing), `POST /import/confirm` (same file; creates every row or none),
+`GET /import/result?ids=` (the created items with their codes). Rules in
+`crud/accessory_item_import.py`.
+
 Merge duplicates (item 23, admin only): `GET /{id}/merge-preview?keep_item_id=`
 says what merging item `id` into the kept item would move and what blocks
 it; `POST /{id}/merge` does it (rules in `domains/accessories/item_merge.py`).
 """
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy.orm import Session
 
 from backend import models
+from backend.api.v1.endpoints.analytics import _LANG_PATTERN, _xlsx_response
 from backend.core.authz import PERM_MANAGE_ACCESSORY_ITEMS, ensure_admin
 from backend.core.deps import get_db, require_permission
+from backend.crud import accessory_item_import as item_import
 from backend.crud import accessory_items as crud
 from backend.domains.accessories import item_merge, uom
 from backend.schemas import (
@@ -40,6 +48,8 @@ from backend.schemas import (
     AccessoryItemField,
     AccessoryItemFieldCreate,
     AccessoryItemFieldUpdate,
+    AccessoryImportCreated,
+    AccessoryImportPreview,
     AccessoryItemMergeIn,
     AccessoryItemMergeOut,
     AccessoryItemMergePreview,
@@ -57,6 +67,35 @@ from backend.schemas import (
 
 router = APIRouter()
 _can_manage = require_permission(PERM_MANAGE_ACCESSORY_ITEMS)
+
+
+# ── Excel import (item 35) ──────────────────────────────────────────────────
+
+@router.get("/import/template")
+def import_template(
+    lang: str = Query("en", pattern=_LANG_PATTERN), db: Session = Depends(get_db), _user=Depends(_can_manage),
+):
+    return _xlsx_response(item_import.build_template(db, lang), f"accessory-items-import_{lang}.xlsx")
+
+
+@router.post("/import/preview", response_model=AccessoryImportPreview)
+async def import_preview(file: UploadFile = File(...), db: Session = Depends(get_db), _user=Depends(_can_manage)):
+    return item_import.preview(db, await file.read())
+
+
+@router.post("/import/confirm", response_model=List[AccessoryImportCreated], status_code=status.HTTP_201_CREATED)
+async def import_confirm(file: UploadFile = File(...), db: Session = Depends(get_db), user=Depends(_can_manage)):
+    return item_import.create_all(db, await file.read(), user.id)
+
+
+@router.get("/import/result")
+def import_result(
+    ids: List[int] = Query(..., max_length=item_import.MAX_ROWS),
+    lang: str = Query("en", pattern=_LANG_PATTERN),
+    db: Session = Depends(get_db),
+    _user=Depends(_can_manage),
+):
+    return _xlsx_response(item_import.build_result(db, ids, lang), f"accessory-items-created_{lang}.xlsx")
 
 
 @router.get("/", response_model=AccessoryItemPage)

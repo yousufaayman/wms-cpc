@@ -49,7 +49,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ChevronDown, ChevronRight, Merge, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, FileSpreadsheet, Merge, Pencil, Plus, Trash2 } from "lucide-react";
 import { Combobox, type ComboItem } from "@/components/Combobox";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
@@ -65,6 +65,7 @@ import {
   ALL, GENERIC, ItemFilterBar, ItemPager, toItemQuery, useItemFilters,
 } from "@/components/accessory-items/ItemFilters";
 import { MergeItemDialog } from "@/components/accessory-items/MergeItemDialog";
+import { ItemImportDialog } from "@/components/accessory-items/ItemImportDialog";
 import { useCurrentUser } from "@/hooks/useCurrentUser";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -122,6 +123,7 @@ const AccessoryItems = () => {
   // Dialog
   const [editing, setEditing] = useState<AccessoryItem | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [importing, setImporting] = useState(false); // Excel import (item 35)
   const [form, setForm] = useState<Form>(BLANK);
   const [saving, setSaving] = useState(false);
   const [conversions, setConversions] = useState<UomConversion[]>([]);
@@ -562,9 +564,14 @@ const AccessoryItems = () => {
                 <p className="text-muted-foreground">{t("accessoryItemsDesc")}</p>
               </div>
               {canManage && (
-                <Button onClick={openNew}>
-                  <Plus className="mr-2 h-4 w-4" />{t("accNewItem")}
-                </Button>
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="outline" onClick={() => setImporting(true)}>
+                    <FileSpreadsheet className="mr-2 h-4 w-4" />{t("accImportExcel")}
+                  </Button>
+                  <Button onClick={openNew}>
+                    <Plus className="mr-2 h-4 w-4" />{t("accNewItem")}
+                  </Button>
+                </div>
               )}
             </div>
 
@@ -867,6 +874,7 @@ const AccessoryItems = () => {
             <MergeItemDialog duplicate={editing} open={merging} onOpenChange={setMerging}
               onMerged={() => { setDialogOpen(false); loadItems(); }} />
           )}
+          {canManage && <ItemImportDialog open={importing} onOpenChange={setImporting} onCreated={loadItems} />}
         </main>
       </div>
     </PageTransition>

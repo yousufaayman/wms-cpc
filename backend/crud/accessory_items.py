@@ -283,6 +283,16 @@ def _active_uom(db: Session, uom_id: int) -> Uom:
 
 
 def create_item(db: Session, payload: AccessoryItemCreate, user_id: int) -> AccessoryItem:
+    item = build_item(db, payload, user_id)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def build_item(db: Session, payload: AccessoryItemCreate, user_id: int) -> AccessoryItem:
+    """`create_item` without the commit: checks, takes a code, adds the item
+    and its references and flushes. The Excel import (item 35) calls it once
+    per row and commits once, so the whole sheet is created or none of it."""
     category = db.get(AccessoryCategory, payload.category_id)
     if category is None:
         raise _bad("Category not found", status.HTTP_404_NOT_FOUND)
@@ -317,8 +327,7 @@ def create_item(db: Session, payload: AccessoryItemCreate, user_id: int) -> Acce
     db.flush()
     for ref in payload.refs:
         db.add(_new_ref(item.id, ref, user_id))
-    db.commit()
-    db.refresh(item)
+    db.flush()
     return item
 
 

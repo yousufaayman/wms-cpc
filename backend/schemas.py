@@ -811,6 +811,42 @@ class AccessoryItemMergeOut(BaseModel):
     new_packs: List[AccessoryPack]
 
 
+# ── Item import from Excel (item 35) ────────────────────────────────────────
+
+class AccessoryImportMessage(BaseModel):
+    """One problem on a row, as a code the screen translates. `field` is a
+    column key (category, client, base_unit, description, color, size,
+    ref_owner, ref_code, ref_description)."""
+    code: Literal[
+        "required", "too_long", "unknown", "switched_off", "no_client_code",
+        "other_client", "ref_taken", "ref_twice", "similar_item", "similar_row",
+    ]
+    field: Optional[str] = None
+    value: Optional[str] = None
+    max: Optional[int] = None
+    row: Optional[int] = None  # the other row (ref_twice, similar_row)
+    item_code: Optional[str] = None  # the existing item (ref_taken, similar_item)
+
+
+class AccessoryImportRow(BaseModel):
+    row: int  # row number in the sheet
+    values: Dict[str, Optional[str]]
+    errors: List[AccessoryImportMessage]  # any error blocks the whole import
+    warnings: List[AccessoryImportMessage]  # allowed
+
+
+class AccessoryImportPreview(BaseModel):
+    rows: List[AccessoryImportRow]
+    ok_count: int
+    error_count: int
+
+
+class AccessoryImportCreated(BaseModel):
+    row: int
+    id: int
+    code: str
+
+
 class AccessoryPackFree(BaseModel):
     pack_id: int
     quantity: Decimal  # on hand
