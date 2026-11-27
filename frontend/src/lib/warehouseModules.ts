@@ -22,6 +22,7 @@ export type WarehouseModule =
   | "receive_packs"
   | "pack_operations"
   | "accessory_items"
+  | "returnable_tools"
   | "needle_exchange";
 
 type Feature = keyof Features;
@@ -48,6 +49,7 @@ export const WAREHOUSE_MODULES: Record<WarehouseType, Partial<Record<WarehouseMo
     receive_packs: "accessories",
     pack_operations: "accessories",
     accessory_items: "accessories",
+    returnable_tools: "accessories",
     needle_exchange: "needles",
     receipts: "accessories",
     expected_deliveries: "accessories",

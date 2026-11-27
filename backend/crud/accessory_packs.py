@@ -129,6 +129,8 @@ def find_by_barcode(db: Session, barcode: str) -> AccessoryPack:
     (a roll, a rack, a bare number), 404 for an unknown pack."""
     pack_id = parse_pack_barcode(barcode)
     if pack_id is None:
+        if barcode.strip().upper().endswith("*TL"):
+            raise _bad("This is a returnable tool label: use the Returnable Tools page")
         raise _bad("Not a pack label")
     return get_pack_or_404(db, pack_id)
 

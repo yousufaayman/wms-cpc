@@ -254,6 +254,9 @@ class AccessoryCategoryCreate(BaseModel):
     name_ar: str = Field(..., min_length=1, max_length=100)
     default_uom_id: int
     default_client_specific: bool = False
+    # Returnable tools (item 33): tracked = in / out, individual = one label per piece.
+    tracked: bool = False
+    individual: bool = False
 
     _norm_code = field_validator("code", mode="before")(_upper_code)
     _norm_names = field_validator("name_en", "name_ar", mode="before")(_strip)
@@ -263,6 +266,8 @@ class AccessoryCategoryUpdate(BaseModel):
     name_ar: Optional[str] = Field(None, min_length=1, max_length=100)
     default_uom_id: Optional[int] = None
     default_client_specific: Optional[bool] = None
+    tracked: Optional[bool] = None
+    individual: Optional[bool] = None
     active: Optional[bool] = None
 
     _norm_names = field_validator("name_en", "name_ar", mode="before")(_strip)
@@ -274,6 +279,8 @@ class AccessoryCategory(BaseModel):
     name_ar: str
     default_uom_id: int
     default_client_specific: bool
+    tracked: bool = False
+    individual: bool = False
     active: bool
 
     class Config:
@@ -433,6 +440,9 @@ class AccessoryItem(BaseModel):
     refs: List[AccessoryItemRef] = []
     # Item 10
     is_template: bool = False
+    # Item 33: a returnable tool (category `tracked`), counted per piece or not
+    is_tool: bool = False
+    is_individual_tool: bool = False
     variant_count: int = 0
     fields: List[AccessoryItemField] = []  # a template's variable lines
     parent_template_id: Optional[int] = None
@@ -485,6 +495,8 @@ class AccessoryItemSearch(BaseModel):
     active_only: bool = True
     kind: Optional[Literal["plain", "template", "variant"]] = None
     template_id: Optional[int] = None
+    # Item 33: true = returnable tools only, false = trims only, none = both.
+    tracked: Optional[bool] = None
     sort: Literal["code", "newest"] = "code"
     # Variants folded under their base: list only plain items and bases; a
     # base is listed when it or one of its variants matches (item 11).
@@ -2222,3 +2234,85 @@ class AccessoryDeliveryReportRow(AccessoryReportItem):
     received_qty: Decimal
     difference: Decimal
     state: str
+
+
+# ── Returnable tools (item 33): rules in domains/accessories/tools.py ───────
+
+class ReturnableAddIn(BaseModel):
+    """Add tools. An individual item (one label per piece): `count` pieces,
+    optional `serial_nos` (one per piece, in order; blank = none). A tracked
+    pack item: `qty` = how many in the new pack. Quantities are whole pieces
+    in the item's base unit. The acting user is the logged-in one."""
+    warehouse_id: int
+    accessory_item_id: int
+    count: Optional[int] = Field(None, ge=1, le=500)
+    qty: Optional[Decimal] = Field(None, gt=0)
+    serial_nos: List[Optional[str]] = Field(default_factory=list, max_length=500)
+    rack_id: Optional[int] = None
+    supplier_type: Optional[Literal["client", "logical_location"]] = None
+    client_supplier_id: Optional[int] = None
+    remarks: Optional[str] = Field(None, max_length=500)
+
+    _blank_remarks = field_validator("remarks", mode="before")(_blank_to_none)
+
+    @field_validator("serial_nos")
+    @classmethod
+    def _serial_length(cls, v):
+        if any(s is not None and len(s.strip()) > 100 for s in v):
+            raise ValueError("A serial number is at most 100 characters")
+        return v
+
+
+class ReturnableTopUpIn(BaseModel):
+    """More identical tools into an existing tracked pack."""
+    qty: Decimal = Field(..., gt=0)
+
+
+class ReturnableUnit(BaseModel):
+    """One tool (a piece or a tracked pack) with its numbers: owned = added −
+    retired, out = with workers, in_stock = owned − out."""
+    id: int
+    barcode: str
+    accessory_item_id: int
+    item_code: str
+    item_description: str
+    item_color: Optional[str] = None
+    item_size: Optional[str] = None
+    uom_code: str
+    is_individual: bool
+    warehouse_id: int
+    rack_id: Optional[int] = None
+    rack_code: Optional[str] = None
+    supplier_type: Optional[str] = None
+    client_supplier_id: Optional[int] = None
+    supplier_name: Optional[str] = None
+    serial_no: Optional[str] = None
+    remarks: Optional[str] = None
+    created_by: int
+    created_at: datetime
+    owned: Decimal
+    in_stock: Decimal
+    out: Decimal
+    retired: Decimal
+
+
+class ReturnableAddedRow(BaseModel):
+    """What one Add made: the tool and its `added` row (Undo takes the row id)."""
+    movement_id: int
+    unit: ReturnableUnit
+
+
+class ReturnableSummaryRow(BaseModel):
+    """Returnable Tools page: one row per tool item in the warehouse."""
+    accessory_item_id: int
+    item_code: str
+    item_description: str
+    item_color: Optional[str] = None
+    item_size: Optional[str] = None
+    uom_code: str
+    is_individual: bool
+    labels: int
+    owned: Decimal
+    in_stock: Decimal
+    out: Decimal
+    retired: Decimal

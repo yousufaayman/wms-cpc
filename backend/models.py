@@ -288,10 +288,16 @@ class UomConversion(Base):
 class AccessoryCategory(Base):
     """Trim type (BTN, ZIP, LBL...). The code goes into item codes
     (`UA-ELS-0007`), so it never changes once created. Default UOM and
-    client-specific flag only pre-fill the item form."""
+    client-specific flag only pre-fill the item form.
+
+    `tracked` (item 33) = a returnable-tools category (folders, presser feet):
+    its items are never trims, they live in `wms.returnable_units` and go in
+    and out. `individual` = one barcode per piece (off = a tracked pack with a
+    quantity); it needs `tracked`."""
     __tablename__ = "accessory_categories"
     __table_args__ = (
         CheckConstraint("code ~ '^[A-Z]{2,5}$'", name="ck_accessory_categories_code"),
+        CheckConstraint("NOT individual OR tracked", name="ck_accessory_categories_individual_tracked"),
         {"schema": "core"},
     )
 
@@ -301,6 +307,8 @@ class AccessoryCategory(Base):
     name_ar = Column(String(100), nullable=False)
     default_uom_id = Column(BigInteger, ForeignKey(_FK_UOMS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
     default_client_specific = Column(Boolean, nullable=False, server_default="false")
+    tracked = Column(Boolean, nullable=False, server_default="false")
+    individual = Column(Boolean, nullable=False, server_default="false")
     active = Column(Boolean, nullable=False, server_default="true")
     created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
@@ -397,6 +405,16 @@ class AccessoryItem(Base):
         """A base item: has variable lines (a ticket template) or variants (e.g.
         one client button code in black, olive, white; item 11). Never stocked."""
         return bool(self.fields) or bool(self.has_variants)
+
+    @property
+    def is_tool(self) -> bool:
+        """A returnable tool (item 33): its category is `tracked`. Never a trim."""
+        return bool(self.category is not None and self.category.tracked)
+
+    @property
+    def is_individual_tool(self) -> bool:
+        """A tool counted piece by piece (one label each) rather than in packs."""
+        return bool(self.is_tool and self.category.individual)
 
     @property
     def template_code(self):
@@ -1716,6 +1734,103 @@ AccessoryPosting.reversed_by_posting_id = column_property(
     .correlate_except(_reversal_posting)
     .scalar_subquery()
 )
+
+
+# ── Returnable tools (items 33–34) ──────────────────────────────────────────
+
+class Worker(Base):
+    """A factory worker (`core.workers`, shared with other CPC systems; WMS
+    only reads it). Returnable tools are checked out to a worker (item 34)."""
+    __tablename__ = "workers"
+    __table_args__ = {"schema": "core"}
+
+    worker_id = Column(Integer, primary_key=True)
+    worker_name = Column(String(255), nullable=False)
+    worker_group_id = Column(Integer, nullable=True)
+    active = Column(Boolean, nullable=False, server_default="true")
+
+
+class ReturnableUnit(Base):
+    """One returnable tool: a single **piece** (`is_individual`, quantity
+    always 1, may have a serial number) or a **tracked pack** of identical
+    tools (one label, a quantity). Its label barcode is the id + `*TL`
+    (`domains/accessories/tools.py`). How many it holds and how many are out
+    come from its movements, not from this row. `is_individual` is copied
+    from the category when the row is made, so changing the category later
+    doesn't change old tools. Supplier pair = the same as on packs."""
+    __tablename__ = "returnable_units"
+    __table_args__ = (
+        CheckConstraint(
+            "supplier_type IS NULL OR supplier_type IN ('client', 'logical_location')",
+            name="ck_returnable_units_supplier_type",
+        ),
+        CheckConstraint(_CK_DELIVERY_SUPPLIER_PAIR, name="ck_returnable_units_supplier_pair"),
+        CheckConstraint("serial_no IS NULL OR is_individual", name="ck_returnable_units_serial_piece"),
+        Index("ix_returnable_units_item", "accessory_item_id"),
+        Index("ix_returnable_units_warehouse_rack", "warehouse_id", "rack_id"),
+        {"schema": "wms"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    accessory_item_id = Column(
+        BigInteger, ForeignKey("core.accessory_items.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    is_individual = Column(Boolean, nullable=False)
+    warehouse_id = Column(Integer, ForeignKey(_FK_WAREHOUSES, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    rack_id = Column(
+        Integer, ForeignKey(_FK_RACKS, onupdate="CASCADE", ondelete=_ON_DELETE_SET_NULL), nullable=True
+    )
+    supplier_type = Column(String(20), nullable=True)
+    client_supplier_id = Column(Integer, nullable=True)
+    serial_no = Column(String(100), nullable=True)
+    remarks = Column(String(500), nullable=True)
+    created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    item = relationship("AccessoryItem", foreign_keys=[accessory_item_id], lazy="selectin")
+    rack = relationship("WarehouseRack", foreign_keys=[rack_id], lazy="selectin")
+    movements = relationship("ReturnableMovement", back_populates="unit", order_by="ReturnableMovement.id")
+
+    def __repr__(self):
+        return f"<ReturnableUnit {self.id}>"
+
+
+class ReturnableMovement(Base):
+    """What happened to a tool, append-only: `added` (bought / registered),
+    `out` (taken by a worker), `in` (brought back), `retired` (lost / broken,
+    admin only). Owned / in / out are worked out from these rows."""
+    __tablename__ = "returnable_movements"
+    __table_args__ = (
+        CheckConstraint(
+            "movement_type IN ('added', 'out', 'in', 'retired')", name="ck_returnable_movements_type"
+        ),
+        CheckConstraint("qty > 0", name="ck_returnable_movements_qty"),
+        CheckConstraint(
+            "movement_type NOT IN ('out', 'in') OR worker_id IS NOT NULL", name="ck_returnable_movements_worker"
+        ),
+        CheckConstraint(
+            "movement_type <> 'retired' OR reason IS NOT NULL", name="ck_returnable_movements_reason"
+        ),
+        Index("ix_returnable_movements_unit", "unit_id"),
+        Index("ix_returnable_movements_worker", "worker_id"),
+        {"schema": "wms"},
+    )
+
+    id = Column(BigInteger, primary_key=True)
+    unit_id = Column(
+        BigInteger, ForeignKey("wms.returnable_units.id", ondelete=_ON_DELETE_RESTRICT), nullable=False
+    )
+    movement_type = Column(String(10), nullable=False)
+    qty = Column(NUMERIC(14, 4), nullable=False)
+    worker_id = Column(Integer, ForeignKey("core.workers.worker_id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    job_order_id = Column(Integer, ForeignKey("core.job_orders.job_order_id", ondelete=_ON_DELETE_RESTRICT), nullable=True)
+    note = Column(String(200), nullable=True)
+    reason = Column(String(500), nullable=True)
+    created_by = Column(Integer, ForeignKey(_FK_USERS, ondelete=_ON_DELETE_RESTRICT), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    unit = relationship("ReturnableUnit", back_populates="movements")
+    worker = relationship("Worker", foreign_keys=[worker_id], lazy="selectin")
 
 
 # On-hand stock per pack (item 14): the **view** `wms.accessory_stock`, made by a

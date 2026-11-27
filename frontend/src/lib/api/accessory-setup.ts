@@ -46,6 +46,8 @@ export interface AccessoryCategory {
   name_ar: string;
   default_uom_id: number;
   default_client_specific: boolean;
+  tracked: boolean; // item 33: returnable tools (in / out), not trims
+  individual: boolean; // one label per piece (needs tracked)
   active: boolean;
 }
 
@@ -55,6 +57,8 @@ export interface AccessoryCategoryCreate {
   name_ar: string;
   default_uom_id: number;
   default_client_specific?: boolean;
+  tracked?: boolean;
+  individual?: boolean;
 }
 
 export type AccessoryCategoryUpdate = Partial<Omit<AccessoryCategory, 'id' | 'code'>>;

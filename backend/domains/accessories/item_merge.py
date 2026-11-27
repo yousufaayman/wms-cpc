@@ -101,6 +101,8 @@ def _item_rules(duplicate: models.AccessoryItem, keep: models.AccessoryItem) -> 
     for item in (duplicate, keep):
         if item.is_template:
             out.append(f"{item.code} is a template: merge its variants one by one")
+        if item.is_tool:
+            out.append(f"{item.code} is a returnable tool: tools can't be merged")
     if duplicate.base_uom_id != keep.base_uom_id:
         out.append(f"{duplicate.code} is counted in {duplicate.base_uom.code}, {keep.code} in "
                    f"{keep.base_uom.code}: only items with the same base unit")

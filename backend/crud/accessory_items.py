@@ -28,6 +28,9 @@ Rules checked here, raised as HTTP errors:
   changing it on the base copies it to all its variants (refused if two
   would become the same); clearing it on the base leaves the variants' own.
 - merged duplicates (item 23): an item merged into another stays switched off.
+- returnable tools (item 33): an item in a `tracked` category is a tool, never
+  a trim (`ensure_stockable` refuses it), and its base unit must be a
+  whole-number one (PCS). Tools count as stock for the rules above.
 """
 from datetime import datetime, timezone
 from typing import List, Optional, Tuple
@@ -48,6 +51,7 @@ from backend.models import (
     Client,
     LogicalLocation,
     LogicalLocationType,
+    ReturnableUnit,
     Uom,
     UomConversion,
 )
@@ -69,10 +73,19 @@ def _bad(detail: str, code: int = status.HTTP_400_BAD_REQUEST) -> HTTPException:
 
 
 def has_stock(db: Session, item_id: int) -> bool:
-    """Has this item ever held stock, i.e. was a pack ever made of it (item 12)?
-    Empty packs count too: the item's history uses its unit and values. Every
-    ledger row (item 13) belongs to a pack, so packs are enough to look at."""
-    return bool(db.scalar(select(select(AccessoryPack.id).where(AccessoryPack.accessory_item_id == item_id).exists())))
+    """Has this item ever held stock, i.e. was a pack ever made of it (item 12)
+    or a returnable tool (item 33)? Empty packs count too: the item's history
+    uses its unit and values. Every ledger row (item 13) belongs to a pack, so
+    packs are enough to look at."""
+    pack = select(AccessoryPack.id).where(AccessoryPack.accessory_item_id == item_id).exists()
+    tool = select(ReturnableUnit.id).where(ReturnableUnit.accessory_item_id == item_id).exists()
+    return bool(db.scalar(select(or_(pack, tool))))
+
+
+def ensure_whole_unit_for_tools(category: AccessoryCategory, uom: Uom) -> None:
+    """Returnable tools are counted in whole pieces (item 33)."""
+    if category.tracked and uom.allows_decimals:
+        raise _bad(f"Returnable tools need a whole-number unit: {uom.code} allows decimals")
 
 
 def ensure_stockable(item: AccessoryItem) -> None:
@@ -80,6 +93,8 @@ def ensure_stockable(item: AccessoryItem) -> None:
     variants of a switched-on template can hold stock."""
     if item.is_template:
         raise _bad(f"{item.code} is a template: pick one of its variants")
+    if item.is_tool:
+        raise _bad(f"{item.code} is a returnable tool: add it on the Returnable Tools page")
     if not item.active:
         raise _bad(f"{item.code} is switched off")
     if item.parent_template is not None and not item.parent_template.active:
@@ -195,6 +210,9 @@ def _search_conditions(f: AccessoryItemSearch, with_kind: bool = True) -> list:
         _KINDS[f.kind]() if with_kind and f.kind in _KINDS else None,
         _equals(AccessoryItem.parent_template_id, f.template_id),
         _equals(AccessoryItem.category_id, f.category_id),
+        AccessoryItem.category_id.in_(
+            select(AccessoryCategory.id).where(AccessoryCategory.tracked.is_(f.tracked))
+        ) if f.tracked is not None else None,
         AccessoryItem.client_id.is_(None) if f.generic_only else _equals(AccessoryItem.client_id, f.client_id),
         AccessoryItem.active.is_(True) if f.active_only else None,
     ]
@@ -298,7 +316,7 @@ def build_item(db: Session, payload: AccessoryItemCreate, user_id: int) -> Acces
         raise _bad("Category not found", status.HTTP_404_NOT_FOUND)
     if not category.active:
         raise _bad(f"Category {category.code} is switched off")
-    _active_uom(db, payload.base_uom_id)
+    ensure_whole_unit_for_tools(category, _active_uom(db, payload.base_uom_id))
 
     client_code = None
     if payload.client_id is not None:
@@ -365,7 +383,7 @@ def update_item(db: Session, item_id: int, payload: AccessoryItemUpdate) -> Acce
             raise _bad("A variant uses its template's base unit")
         if _has_variants(db, item.id):
             raise _bad("The base unit can't change once the template has variants")
-        _active_uom(db, new_uom)
+        ensure_whole_unit_for_tools(item.category, _active_uom(db, new_uom))
         if has_stock(db, item.id):
             raise _bad("The base unit can't change once the item has stock")
         if _own_conversions(db, item.id):

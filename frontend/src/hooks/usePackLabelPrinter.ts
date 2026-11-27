@@ -3,11 +3,13 @@
  * duplicates on the Items page, item 23). Lists the Zebra printers BrowserPrint
  * finds, keeps the chosen one, and `print(packs)` sends one label per pack
  * (each item is fetched once for its references and Arabic unit name).
+ * `printTools(units)` does the same for returnable tools (item 33): same
+ * layout, barcode `<id>*TL`, the serial number under the quantity.
  */
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { fmtQty } from "@/components/accessory-items/AccessoryItemPicker";
-import { accessoryItemApi, type AccessoryItem, type AccessoryPack } from "@/lib/api";
+import { accessoryItemApi, type AccessoryItem, type AccessoryPack, type ReturnableUnit } from "@/lib/api";
 import { generateAccessoryPackLabels, sendZplToDevice, type AccessoryPackLabelData } from "@/lib/zpl";
 import { useTranslation } from "@/hooks/useTranslation";
 
@@ -21,21 +23,24 @@ export function usePackLabelPrinter() {
     BrowserPrint.getLocalDevices((d) => setPrinters(d as BrowserPrint.Device[]), () => undefined, "printer");
   }, []);
 
+  const cache = new Map<number, [AccessoryItem, string]>();
+  /** The item (for its references) and its base unit's Arabic name, fetched once. */
+  const itemFor = async (itemId: number, uomCode: string): Promise<[AccessoryItem, string]> => {
+    let entry = cache.get(itemId);
+    if (!entry) {
+      const [item, units] = await Promise.all([accessoryItemApi.get(itemId), accessoryItemApi.units(itemId)]);
+      entry = [item, units.find((u) => u.is_base)?.name_ar ?? uomCode];
+      cache.set(itemId, entry);
+    }
+    return entry;
+  };
+
   const print = async (packs: AccessoryPack[]) => {
     if (packs.length === 0) return;
     if (!printer) { toast.warning(t("opsNoPrinter")); return; }
     const labels: AccessoryPackLabelData[] = [];
-    const cache = new Map<number, [AccessoryItem, string]>();
     for (const pack of packs) {
-      let entry = cache.get(pack.accessory_item_id);
-      if (!entry) {
-        const [item, units] = await Promise.all([
-          accessoryItemApi.get(pack.accessory_item_id), accessoryItemApi.units(pack.accessory_item_id),
-        ]);
-        entry = [item, units.find((u) => u.is_base)?.name_ar ?? pack.uom_code];
-        cache.set(pack.accessory_item_id, entry);
-      }
-      const [item, uomAr] = entry;
+      const [item, uomAr] = await itemFor(pack.accessory_item_id, pack.uom_code);
       labels.push({
         packId: pack.id,
         quantity: fmtQty(pack.quantity),
@@ -53,5 +58,31 @@ export function usePackLabelPrinter() {
     }
     await sendZplToDevice(printer, generateAccessoryPackLabels(labels)).catch(() => toast.warning(t("opsNoPrinter")));
   };
-  return { printers, printer, setPrinter, print };
+
+  const printTools = async (tools: ReturnableUnit[]) => {
+    if (tools.length === 0) return;
+    if (!printer) { toast.warning(t("opsNoPrinter")); return; }
+    const labels: AccessoryPackLabelData[] = [];
+    for (const tool of tools) {
+      const [item, uomAr] = await itemFor(tool.accessory_item_id, tool.uom_code);
+      labels.push({
+        packId: tool.id,
+        barcodeSuffix: "*TL",
+        quantity: fmtQty(tool.owned),
+        uomAr,
+        itemCode: tool.item_code,
+        clientRef: item.client_refs?.[0]?.ref_code ?? null,
+        supplierRef: (item.refs.find((r) => r.supplier_id != null && r.supplier_id === tool.client_supplier_id)
+          ?? item.refs.find((r) => r.supplier_id != null))?.ref_code ?? null,
+        color: tool.item_color,
+        size: tool.item_size,
+        description: tool.item_description,
+        variantLines: item.value_lines.map((v) => ({ label: v.label_en, value: v.value })),
+        batchNo: tool.serial_no,
+        batchCaption: "مسلسل",
+      });
+    }
+    await sendZplToDevice(printer, generateAccessoryPackLabels(labels)).catch(() => toast.warning(t("opsNoPrinter")));
+  };
+  return { printers, printer, setPrinter, print, printTools };
 }

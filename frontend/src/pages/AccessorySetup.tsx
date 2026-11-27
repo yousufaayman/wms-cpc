@@ -5,7 +5,9 @@
  *  - Units: PCS, M, CONE... with the Arabic name printed on pack labels.
  *  - Conversions: 1 DOZ = 12 PCS. One row per pair, it works both ways.
  *  - Categories: trim types (BTN, ZIP...) with a default unit and whether new
- *    items in it are client-specific by default (both only pre-fill the item form).
+ *    items in it are client-specific by default (both only pre-fill the item form),
+ *    and (item 33) whether it holds returnable tools: "tracked" (in / out, not
+ *    trims) and "one barcode per piece" (needs tracked; off = tracked packs).
  * Codes can't be changed once created (category codes are part of item codes),
  * and units/categories are switched off rather than deleted.
  * Needs `manage_accessory_items`; Accessory warehouses only (module accessory_items).
@@ -63,7 +65,7 @@ const AccessorySetup = () => {
   const [form, setForm] = useState({
     code: "", name_en: "", name_ar: "", allows_decimals: false, active: true,
     from_uom_id: "", to_uom_id: "", factor: "",
-    default_uom_id: "", default_client_specific: false,
+    default_uom_id: "", default_client_specific: false, tracked: false, individual: false,
   });
 
   const uomById = useMemo(() => new Map(uoms.map((u) => [u.id, u])), [uoms]);
@@ -103,6 +105,7 @@ const AccessorySetup = () => {
     const blank = {
       code: "", name_en: "", name_ar: "", allows_decimals: false, active: true,
       from_uom_id: "", to_uom_id: "", factor: "", default_uom_id: "", default_client_specific: false,
+      tracked: false, individual: false,
     };
     const e = next.editing;
     if (next.kind === "uom" && e) {
@@ -116,6 +119,7 @@ const AccessorySetup = () => {
       setForm({
         ...blank, code: c.code, name_en: c.name_en, name_ar: c.name_ar, active: c.active,
         default_uom_id: String(c.default_uom_id), default_client_specific: c.default_client_specific,
+        tracked: c.tracked, individual: c.individual,
       });
     } else {
       setForm(blank);
@@ -162,7 +166,10 @@ const AccessorySetup = () => {
           from_uom_id: Number(form.from_uom_id), to_uom_id: Number(form.to_uom_id), factor: Number(form.factor),
         });
       } else {
-        const common = { ...names, default_uom_id: Number(form.default_uom_id), default_client_specific: form.default_client_specific };
+        const common = {
+          ...names, default_uom_id: Number(form.default_uom_id), default_client_specific: form.default_client_specific,
+          tracked: form.tracked, individual: form.tracked && form.individual,
+        };
         if (dialog.editing) await accessoryCategoryApi.update(dialog.editing.id, { ...common, active: form.active });
         else await accessoryCategoryApi.create({ ...common, code: form.code.trim().toUpperCase() });
       }
@@ -249,6 +256,7 @@ const AccessorySetup = () => {
                             <TableHead>{t("accNameAr")}</TableHead>
                             <TableHead>{t("accDefaultUnit")}</TableHead>
                             <TableHead>{t("accClientSpecific")}</TableHead>
+                            <TableHead>{t("toolsTracked")}</TableHead>
                             <TableHead>{t("accStatus")}</TableHead>
                             <TableHead className="text-right">{t("actions")}</TableHead>
                           </TableRow>
@@ -261,6 +269,9 @@ const AccessorySetup = () => {
                               <TableCell dir="rtl">{c.name_ar}</TableCell>
                               <TableCell>{uomLabel(c.default_uom_id)}</TableCell>
                               <TableCell>{c.default_client_specific ? t("accYes") : t("accNo")}</TableCell>
+                              <TableCell>
+                                {c.tracked ? (c.individual ? t("toolsPiece") : t("toolsPack")) : t("accNo")}
+                              </TableCell>
                               <TableCell><ActiveBadge active={c.active} t={t} /></TableCell>
                               <TableCell className="text-right">{editButton(() => open({ kind: "category", editing: c }))}</TableCell>
                             </TableRow>
@@ -423,6 +434,19 @@ const AccessorySetup = () => {
                           <Switch id="client_specific" checked={form.default_client_specific}
                             onCheckedChange={(v) => setForm({ ...form, default_client_specific: v })} />
                         </div>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="tracked">{t("toolsTrackedSwitch")}</Label>
+                          <Switch id="tracked" checked={form.tracked}
+                            onCheckedChange={(v) => setForm({ ...form, tracked: v, individual: v && form.individual })} />
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <Label htmlFor="individual" className={form.tracked ? "" : "text-muted-foreground"}>
+                            {t("toolsIndividualSwitch")}
+                          </Label>
+                          <Switch id="individual" checked={form.individual} disabled={!form.tracked}
+                            onCheckedChange={(v) => setForm({ ...form, individual: v })} />
+                        </div>
+                        {form.tracked && <p className="text-xs text-muted-foreground">{t("toolsTrackedHint")}</p>}
                       </>
                     )}
                     {editing && (
