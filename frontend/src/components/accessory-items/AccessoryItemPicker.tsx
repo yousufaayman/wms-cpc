@@ -7,7 +7,9 @@
  *   any variable value. Templates are left out (only real items hold stock);
  *   variants of one template are listed together under its header.
  * - `PickedItem`: the card shown once an item is chosen.
- * - `ValueChips`, `ClientRefs`: a variant's values and the clients' own codes.
+ * - `ValueChips`, `ClientRefs`, `SupplierRefs`: a variant's values, the
+ *   clients' own codes and the suppliers' codes (to tell the same trim from
+ *   different suppliers apart).
  * - `QtyInUnit`: a quantity box + unit picker with the "= N base" preview.
  * - `groupByTemplate` / `differing` / `tone`: how variants are grouped and
  *   what tells them apart (bold = differs inside the group, muted = shared).
@@ -22,7 +24,7 @@ import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import {
   accessoryItemApi,
-  type AccessoryClientRef, type AccessoryItem, type AccessoryItemUnit, type AccessoryValueLine, type ExpectedDeliveryItem,
+  type AccessoryClientRef, type AccessoryItem, type AccessorySupplierRef, type AccessoryItemUnit, type AccessoryValueLine, type ExpectedDeliveryItem,
 } from "@/lib/api";
 
 export const fmtQty = (q: string | number | null | undefined) =>
@@ -114,6 +116,21 @@ export function ClientRefs({ refs, inline = false }: Readonly<{ refs: AccessoryC
   );
 }
 
+/** Suppliers' codes for the item, e.g. "YKK 5-ZIP-BLK" (supplier name, then their code). */
+export function SupplierRefs({ refs }: Readonly<{ refs: AccessorySupplierRef[] }>) {
+  if (!refs.length) return null;
+  return (
+    <div className="flex flex-wrap gap-x-3 text-xs">
+      {refs.map((r) => (
+        <div key={`${r.supplier_id}-${r.ref_code}`}>
+          <span className="text-muted-foreground">{r.supplier_name ?? `#${r.supplier_id}`} </span>
+          <span className="font-mono" dir="ltr">{r.ref_code}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Quantity box + unit picker. `units` = the item's units, base first. */
 export function QtyInUnit({ label, units, qty, setQty, uomId, setUomId, extraUnits, inputRef, onEnter }: Readonly<{
   label: string;
@@ -159,7 +176,7 @@ export function QtyInUnit({ label, units, qty, setQty, uomId, setUomId, extraUni
   );
 }
 
-/** The chosen item: code, description, template, color / size, values, client codes. */
+/** The chosen item: code, description, template, color / size, values, client and supplier codes. */
 export function PickedItem({ item, onClear, children }: Readonly<{
   item: AccessoryItem; onClear?: () => void; children?: ReactNode;
 }>) {
@@ -175,6 +192,7 @@ export function PickedItem({ item, onClear, children }: Readonly<{
         <div className="text-xs text-muted-foreground">{[item.color, item.size].filter(Boolean).join(" · ")}</div>
         <ValueChips values={item.value_lines} />
         <ClientRefs refs={item.client_refs ?? []} inline />
+        <SupplierRefs refs={item.supplier_refs ?? []} />
         {children}
       </div>
       {onClear && <Button size="sm" variant="ghost" onClick={onClear}>{t("cancel")}</Button>}
@@ -183,7 +201,7 @@ export function PickedItem({ item, onClear, children }: Readonly<{
 }
 
 /** Search box + results (debounced 300 ms). Wide rows: code, description,
-    color / size, every value and the client codes are all shown. */
+    color / size, every value, the client codes and the supplier codes are all shown. */
 export function ItemSearch({ onPick, active = true }: Readonly<{ onPick: (item: AccessoryItem) => void; active?: boolean }>) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
@@ -232,7 +250,10 @@ export function ItemSearch({ onPick, active = true }: Readonly<{ onPick: (item: 
                   </div>
                   <ValueChips values={item.value_lines} differs={differs} grouped={grouped} />
                 </div>
-                <ClientRefs refs={item.client_refs ?? []} inline />
+                <div className="space-y-0.5">
+                  <ClientRefs refs={item.client_refs ?? []} inline />
+                  <SupplierRefs refs={item.supplier_refs ?? []} />
+                </div>
               </button>
             );
             if (!grouped) return result(group.rows[0]);

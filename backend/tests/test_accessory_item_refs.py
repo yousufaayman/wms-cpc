@@ -16,6 +16,7 @@ from backend.domains.accessories.normalize import normalize_code
 from backend.tests.test_accessory_items import (  # noqa: F401  (fixtures)
     ITEMS,
     _client,
+    _create,
     _supplier,
     accessories_on,
     setup,
@@ -185,3 +186,23 @@ def test_search_by_reference_code(client, auth_headers, setup):
     for q in ("4501", "4501 blk", "4501BLK"):
         codes = [i["code"] for i in client.get(ITEMS, params={"q": q}, headers=h).json()["items"]]
         assert item["code"] in codes, q
+
+
+def test_supplier_refs_with_names_and_variant_inherits(client, auth_headers, db, setup):
+    """Item search / Receive Packs show who supplies a trim (user, 2026-11-27)."""
+    h = auth_headers(role="W_Manager")
+    coats = _supplier(db, "pytest_refs_coats")
+    db.commit()
+    r = _create(client, h, setup, refs=[{"supplier_id": setup["supplier"].id, "ref_code": "YKK 5"},
+                                        {"supplier_id": coats.id, "ref_code": "C-77"},
+                                        {"client_id": setup["client"].id, "ref_code": "CL-1"}])
+    assert r.status_code == 201, r.text
+    item = r.json()
+    assert item["supplier_refs"] == [
+        {"supplier_id": setup["supplier"].id, "supplier_name": setup["supplier"].name, "ref_code": "YKK 5"},
+        {"supplier_id": coats.id, "supplier_name": coats.name, "ref_code": "C-77"},
+    ]
+    variant = client.post(f"/api/v1/accessory-items/{item['id']}/variants", json={"color": "Red"}, headers=h).json()
+    assert [x["ref_code"] for x in variant["supplier_refs"]] == ["YKK 5", "C-77"]   # the template's
+    found = client.get("/api/v1/accessory-items/", params={"q": "C-77"}, headers=h).json()["items"]
+    assert any(i["id"] == variant["id"] and i["supplier_refs"] for i in found)

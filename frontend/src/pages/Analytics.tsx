@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDown, ChevronRight, Download, Loader2, TrendingUp } from "lucide-react";
-import { toast } from "sonner";
+import { ChevronDown, ChevronRight, Loader2, TrendingUp } from "lucide-react";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import { Combobox } from "@/components/Combobox";
+import AccessoryAnalytics from "@/components/analytics/AccessoryAnalytics";
+import { useWarehouse } from "@/hooks/useWarehouse";
+import { DateRangeFilter, ExportButton, todayISO, type DateRange } from "@/components/analytics/AnalyticsControls";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import {
@@ -31,12 +31,6 @@ import {
 function fmt(n: number | null | undefined, decimals = 1): string {
   if (n == null) return "—";
   return n.toLocaleString(undefined, { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
-}
-
-/** Today as a local ISO day (YYYY-MM-DD) — the default range for both tabs. */
-function todayISO(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function dayLabel(key: string, locale: string): string {
@@ -68,11 +62,6 @@ function addEntry(acc: FlowStats, e: RollFlowEntryBase): void {
     acc.digested_length += e.total_length;
     acc.digested_rolls += e.roll_count;
   }
-}
-
-interface DateRange {
-  from: string;
-  to: string;
 }
 
 /** Keep entries whose day falls inside the (optional) range. Unknown-date
@@ -158,76 +147,6 @@ function RollGroupTotalsBadge({ weight, length, count, cls }: { weight: number; 
       <span className="opacity-60">·</span>
       <span>{count} {count === 1 ? t("rollUnit") : t("rollsUnit")}</span>
     </span>
-  );
-}
-
-// ── Date range filter (from / to / clear; empty = all time) ───────────────────
-
-function DateRangeFilter({ range, onChange }: { range: DateRange; onChange: (r: DateRange) => void }) {
-  const { t } = useTranslation();
-  const active = !!(range.from || range.to);
-  return (
-    <div className="flex items-end gap-3 flex-wrap">
-      <div className="space-y-1">
-        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("fromDate")}</Label>
-        <Input
-          type="date"
-          className="h-9 w-40 text-sm"
-          value={range.from}
-          max={range.to || undefined}
-          onChange={(e) => onChange({ ...range, from: e.target.value })}
-        />
-      </div>
-      <div className="space-y-1">
-        <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t("toDate")}</Label>
-        <Input
-          type="date"
-          className="h-9 w-40 text-sm"
-          value={range.to}
-          min={range.from || undefined}
-          onChange={(e) => onChange({ ...range, to: e.target.value })}
-        />
-      </div>
-      {active && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-9 text-xs text-muted-foreground hover:text-foreground"
-          onClick={() => onChange({ from: "", to: "" })}
-        >
-          {t("clearAll")}
-        </Button>
-      )}
-    </div>
-  );
-}
-
-// ── Export-to-Excel button (shared by both tabs) ───────────────────────────────
-
-function ExportButton({ onExport, label, variant = "default" }: {
-  onExport: () => Promise<void>;
-  label: string;
-  variant?: "default" | "outline";
-}) {
-  const { t } = useTranslation();
-  const [exporting, setExporting] = useState(false);
-
-  const handleClick = async () => {
-    setExporting(true);
-    try {
-      await onExport();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : t("failedToExport"));
-    } finally {
-      setExporting(false);
-    }
-  };
-
-  return (
-    <Button variant={variant} size="sm" className="h-9 text-xs gap-1.5" onClick={handleClick} disabled={exporting}>
-      {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-      {label}
-    </Button>
   );
 }
 
@@ -934,6 +853,9 @@ const Analytics = () => {
   const [searchParams] = useSearchParams();
   const currentWarehouseId = searchParams.get("warehouse");
   const { t } = useTranslation();
+  // Item 26: an Accessory warehouse shows its own reports instead of roll flow.
+  const { warehouse, loading } = useWarehouse();
+  const isAccessory = warehouse?.type === "Accessory";
 
   if (!currentWarehouseId) {
     return (
@@ -962,7 +884,12 @@ const Analytics = () => {
             <h1 className="text-3xl font-bold text-primary">{t("analytics")}</h1>
           </div>
 
-          <Tabs defaultValue="rollFlow">
+{loading ? (
+            <div className="flex items-center gap-2 text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" /> {t("loadingAnalytics")}</div>
+          ) : isAccessory && warehouse ? (
+            <AccessoryAnalytics warehouseId={warehouse.id} />
+          ) : (
+                    <Tabs defaultValue="rollFlow">
             <TabsList className="h-12 p-1.5 bg-muted/60 border rounded-xl gap-1 w-auto inline-flex">
               <TabsTrigger
                 value="rollFlow"
@@ -985,6 +912,7 @@ const Analytics = () => {
               <AccountsTab />
             </TabsContent>
           </Tabs>
+          )}
         </main>
       </div>
     </PageTransition>

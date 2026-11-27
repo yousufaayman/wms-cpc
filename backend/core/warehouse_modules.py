@@ -40,7 +40,7 @@ WAREHOUSE_MODULES = {
     },
     # The whole accessory warehouse is behind FEATURE_ACCESSORIES, except the
     # set-up pages (racks, logical locations) so it can be prepared in advance.
-    # Accessory analytics arrives in item 26.
+    # Analytics shows the accessory reports there (item 26).
     ACCESSORY: {
         "dashboard": None,
         "accessory_inventory": "accessories",
@@ -53,6 +53,7 @@ WAREHOUSE_MODULES = {
         "material_requests": "accessories",
         "warehouse_racks": None,
         "logical_locations": None,
+        "analytics": "accessories",
     },
     # RMG is out of scope for now: set-up pages only.
     RMG: {
